@@ -1,0 +1,49 @@
+{
+  "skill": "code-quality-review",
+  "scenario": "Review a pull request with common code quality issues",
+  "implementation": {
+    "files_changed": [
+      "src/services/user-service.ts",
+      "src/handlers/user-handler.ts"
+    ],
+    "code_snippets": [
+      {
+        "file": "src/services/user-service.ts",
+        "lines": [
+          "function processUserData(d: any) {",
+          "  const x = fetch('/api/users/' + d.id).then(r => r.json());",
+          "  const y = x.filter(i => i.active == true);",
+          "  const z = y.map(i => ({ n: i.name, e: i.email }));",
+          "  console.log('got users:', z);",
+          "  return z;",
+          "}"
+        ]
+      },
+      {
+        "file": "src/handlers/user-handler.ts",
+        "lines": [
+          "async function handleUsers(req, res) {",
+          "  const data = await processUserData(req.body);",
+          "  res.send(data);",
+          "}"
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "should_identify": [
+      "any type used instead of specific type",
+      "string concatenation in fetch URL (injection risk)",
+      "unclear variable names (d, x, y, z)",
+      "== instead of ===",
+      "console.log left in production code",
+      "no error handling (no try/catch, no .catch)",
+      "no input validation on req.body"
+    ],
+    "verdict_contains": "FAIL",
+    "critical_issues_min": 2,
+    "must_not": [
+      "approve without changes"
+    ]
+  }
+}

@@ -1,0 +1,233 @@
+#!/usr/bin/env node
+
+/**
+ * Development Kit — Antigravity Installer
+ *
+ * Installs or links the Development Kit plugin into Antigravity.
+ *
+ * Usage:
+ *   node scripts/install-antigravity.mjs
+ *   node scripts/install-antigravity.mjs --global
+ *   node scripts/install-antigravity.mjs --project
+ *   node scripts/install-antigravity.mjs --all
+ *   node scripts/install-antigravity.mjs --all --force
+ *
+ * Options:
+ *   --global   Install globally (~/.gemini/config/ or similar)
+ *   --project  Install project-local (./.agents/)
+ *   --all      Install everything to project root for standalone use
+ *   --force    Override existsSync guards (overwrite existing AGENTS.md, README.md)
+ *   --dry-run  Show what would be installed without copying
+ *   --help     Show help
+ */
+
+import { existsSync, mkdirSync, copyFileSync, cpSync, readdirSync, statSync } from 'node:fs';
+import { join, resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(__dirname, '..');
+
+const HELP = `
+Development Kit — Antigravity Installer
+
+Installs the Development Kit plugin into Antigravity.
+
+Usage:
+  node scripts/install-antigravity.mjs [options]
+
+Options:
+  --global   Install globally (~/.gemini/config/ or similar)
+  --project  Install project-local (./.agents/)
+  --all      Install everything to project root for standalone use
+  --force    Override safety guards and overwrite existing files
+  --dry-run  Show what would be installed without copying
+  --help     Show this help message
+
+If no option is provided, you will be prompted to choose.
+`.trim();
+
+function printCommands() {
+  console.log('  /idea       - Refine a rough idea into a concrete concept');
+  console.log('  /spec       - Create the required specification artifacts');
+  console.log('  /design     - Produce technical and visual design');
+  console.log('  /tasks      - Break approved work into small tasks');
+  console.log('  /build      - Implement the next task through every gate');
+  console.log('  /build-auto - Process the entire plan automatically');
+  console.log('  /test       - Run verification');
+  console.log('  /review     - Run the full review cycle');
+  console.log('  /simplify   - Apply the simplicity ladder');
+  console.log('  /debug      - Systematic root-cause analysis');
+  console.log('  /ship       - Final verification and release preparation');
+  console.log('  /status     - Show current workflow state');
+}
+
+function detectAntigravity() {
+  // Check for common Antigravity configuration paths
+  const possiblePaths = [
+    join(process.env.HOME || process.env.USERPROFILE || '~', '.gemini', 'config'),
+    join(process.cwd(), '.agents'),
+    join(process.cwd(), '.gemini'),
+  ];
+
+  for (const p of possiblePaths) {
+    if (existsSync(p)) {
+      return p;
+    }
+  }
+
+  return null;
+}
+
+function installPlugin(targetDir, force = false) {
+  const pluginDir = join(targetDir, 'plugins', 'development-kit');
+
+  console.log(`Installing Development Kit plugin to: ${pluginDir}`);
+
+  // Create plugin directory
+  mkdirSync(pluginDir, { recursive: true });
+
+  // Link or copy plugin manifest
+  const sourcePluginJson = join(ROOT, '.agents', 'plugins', 'development-kit', 'plugin.json');
+  const targetPluginJson = join(pluginDir, 'plugin.json');
+
+  if (existsSync(sourcePluginJson)) {
+    copyFileSync(sourcePluginJson, targetPluginJson);
+    console.log('  ✓ plugin.json installed');
+  }
+
+  // Install AGENTS.md rules
+  const sourceAgentsMd = join(ROOT, 'AGENTS.md');
+  const targetAgentsMd = join(targetDir, 'AGENTS.md');
+
+  if (existsSync(sourceAgentsMd)) {
+    const targetAgentsMdExists = existsSync(targetAgentsMd);
+    if (targetAgentsMdExists && !force) {
+      console.log('  - AGENTS.md already exists at target (skipped)');
+    } else {
+      copyFileSync(sourceAgentsMd, targetAgentsMd);
+      const label = targetAgentsMdExists ? ' (overwrite)' : '';
+      console.log(`  ✓ AGENTS.md installed${label}`);
+    }
+  }
+
+  console.log('\nInstallation complete.');
+  console.log('\nAvailable commands:');
+  printCommands();
+}
+
+function installAll(dryRun = false, force = false) {
+  const targetDir = process.cwd();
+  const label = dryRun ? 'Would install' : 'Installing';
+
+  console.log(`${label} Development Kit to: ${targetDir}\n`);
+
+  const dirs = ['agents', 'skills', 'commands', 'hooks', 'templates', 'evals', 'scripts'];
+  const files = ['AGENTS.md', 'README.md'];
+
+  // Copy all directories recursively
+  for (const dir of dirs) {
+    const source = join(ROOT, dir);
+    const target = join(targetDir, dir);
+    if (existsSync(source)) {
+      const count = readdirSync(source).length;
+      const exists = existsSync(target) ? ' (overwrite)' : '';
+      if (!dryRun) {
+        cpSync(source, target, { recursive: true });
+      }
+      console.log(`  ${dryRun ? '→' : '✓'} ${dir}/  (${count} files)${exists}`);
+    }
+  }
+
+  // Copy root files (skip package.json to avoid overwriting existing project config)
+  for (const file of files) {
+    const source = join(ROOT, file);
+    const target = join(targetDir, file);
+    if (existsSync(source) && statSync(source).isFile()) {
+      const targetExists = existsSync(target);
+      if (targetExists && !force) {
+        console.log(`  ${dryRun ? '→' : '-'} ${file} already exists (skipped)`);
+      } else {
+        if (!dryRun) {
+          copyFileSync(source, target);
+        }
+        const exists = targetExists ? ' (overwrite)' : '';
+        console.log(`  ${dryRun ? '→' : '✓'} ${file} installed${exists}`);
+      }
+    }
+  }
+
+  // Copy plugin manifest
+  const pluginSource = join(ROOT, '.agents', 'plugins', 'development-kit', 'plugin.json');
+  const pluginTarget = join(targetDir, '.agents', 'plugins', 'development-kit', 'plugin.json');
+  if (existsSync(pluginSource)) {
+    const exists = existsSync(pluginTarget) ? ' (overwrite)' : '';
+    if (!dryRun) {
+      mkdirSync(dirname(pluginTarget), { recursive: true });
+      copyFileSync(pluginSource, pluginTarget);
+    }
+    console.log(`  ${dryRun ? '→' : '✓'} .agents/plugins/development-kit/plugin.json${exists}`);
+  }
+
+  if (dryRun) {
+    console.log('\nDry run complete. No files were copied. Run without --dry-run to install.');
+  } else {
+    console.log('\nInstallation complete. All Development Kit files are available at project root.');
+  }
+  console.log('\nAvailable commands:');
+  printCommands();
+}
+
+function main() {
+  const args = process.argv.slice(2);
+
+  if (args.includes('--help')) {
+    console.log(HELP);
+    process.exit(0);
+  }
+
+  if (args.includes('--dry-run') && !args.includes('--all')) {
+    console.log('--dry-run must be used with --all');
+    console.log('  node scripts/install-antigravity.mjs --all --dry-run');
+    process.exit(1);
+  }
+
+  const force = args.includes('--force');
+
+  if (args.includes('--all')) {
+    installAll(args.includes('--dry-run'), force);
+    process.exit(0);
+  }
+
+  if (args.includes('--global')) {
+    const globalDir = join(process.env.HOME || process.env.USERPROFILE || '~', '.gemini', 'config');
+    if (!existsSync(globalDir)) {
+      mkdirSync(globalDir, { recursive: true });
+    }
+    installPlugin(globalDir, force);
+    process.exit(0);
+  }
+
+  if (args.includes('--project')) {
+    const projectDir = join(process.cwd(), '.agents');
+    if (!existsSync(projectDir)) {
+      mkdirSync(projectDir, { recursive: true });
+    }
+    installPlugin(projectDir, force);
+    process.exit(0);
+  }
+
+  // Auto-detect or prompt
+  const antigravityPath = detectAntigravity();
+  if (antigravityPath) {
+    installPlugin(antigravityPath, force);
+  } else {
+    console.log('Antigravity configuration not found.');
+    console.log('To install globally:   node scripts/install-antigravity.mjs --global');
+    console.log('To install locally:    node scripts/install-antigravity.mjs --project');
+    console.log('To install standalone:  node scripts/install-antigravity.mjs --all');
+    process.exit(1);
+  }
+}
+
+main();

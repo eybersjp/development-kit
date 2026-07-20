@@ -1,0 +1,23 @@
+{
+  "skill": "idea-discovery",
+  "scenario": "User has a vague feature request",
+  "input": "I want to add a way for users to share things",
+  "expected": {
+    "questions_asked": [
+      "What specific problem are we solving?",
+      "Who will use this feature?",
+      "What kind of content should be shareable?"
+    ],
+    "output_sections": [
+      "problem",
+      "intended_users",
+      "success_criteria",
+      "requirements",
+      "assumptions"
+    ],
+    "must_not": [
+      "proceed_to_implementation",
+      "assume_implementation_details"
+    ]
+  }
+}

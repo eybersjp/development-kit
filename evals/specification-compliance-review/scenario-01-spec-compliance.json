@@ -1,0 +1,41 @@
+{
+  "skill": "specification-compliance-review",
+  "scenario": "Review an implementation against its specification",
+  "specification": {
+    "feature": "User profile editing",
+    "requirements": [
+      "User can edit their display name",
+      "User can edit their bio (max 500 chars)",
+      "Changes are saved on form submission",
+      "Cancel button discards changes"
+    ],
+    "exclusions": [
+      "Do not add avatar upload",
+      "Do not change the existing email field"
+    ]
+  },
+  "implementation_facts": {
+    "display_name": "editable",
+    "bio": "editable with 500 char limit",
+    "save": "form submission saves",
+    "cancel": "discards changes",
+    "avatar_upload": "added",
+    "email_field": "unchanged"
+  },
+  "expected": {
+    "should_pass": [
+      "display_name editable",
+      "bio editable with limit",
+      "form saves on submit",
+      "cancel discards changes",
+      "email field unchanged"
+    ],
+    "should_fail": [
+      "avatar upload not in spec"
+    ],
+    "verdict": "FAIL",
+    "must_identify": [
+      "scope_creep: avatar_upload"
+    ]
+  }
+}
