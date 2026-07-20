@@ -45,6 +45,8 @@ npx development-kit init --all --dry-run
 | `--project` | Install plugin to project-local `.agents/` |
 | `--all` | **Standalone mode** — copy all 7 directories (agents, skills, commands, hooks, templates, evals, scripts), root files (AGENTS.md, README.md), and the plugin manifest to the project root |
 | `--all --dry-run` | Preview what `--all` would copy without writing any files |
+| `--opencode` | Install skills and rules for **OpenCode** (copies 43 skills to `.opencode/skills/`, plus `opencode.json` and `AGENTS.md`) |
+| `--opencode --dry-run` | Preview what `--opencode` would install without copying any files |
 | `--force` | Override safety guards — overwrite existing `AGENTS.md` and `README.md` even if they already exist |
 
 **Preserving customizations:** The installer never overwrites an existing `AGENTS.md` at the target. If you reinstall, your rules are preserved. Root files (`AGENTS.md`, `README.md`) in `--all` mode follow the same guard — existing files are skipped, only new ones are installed. Library content (skills, agents, commands, hooks, templates, evals, scripts) is updated unconditionally on re-run.
@@ -146,6 +148,7 @@ development-kit/
 ├── skills/                             # Lifecycle skills
 ├── commands/                           # Slash commands
 ├── hooks/                              # Lifecycle hooks
+├── opencode.json                       # OpenCode configuration
 ├── templates/                          # Reusable templates
 ├── evals/                              # Skill evaluations
 └── scripts/                            # CLI and utilities
@@ -252,6 +255,28 @@ The Development Kit ships with 43 skills covering the complete software-developm
 | **task-completion-gate** | Every task passes all gates before completion |
 | **branch-completion** | Final test suite, diff inspection, commit prep |
 | **release-readiness** | Broader pre-release check (security, perf, docs) |
+
+## OpenCode Compatibility
+
+The Development Kit works with **OpenCode** — the open-source AI coding agent. All 43 skills include `compatibility: opencode` in their `SKILL.md` frontmatter, making them auto-discoverable by OpenCode when installed to `.opencode/skills/`.
+
+```bash
+# Install skills and rules for OpenCode
+npx development-kit init --opencode
+
+# Preview what would be installed
+npx development-kit init --opencode --dry-run
+
+# Force overwrite existing skills
+npx development-kit init --opencode --force
+```
+
+This installs:
+- **43 skills** → `.opencode/skills/` (OpenCode's auto-discovery path)
+- **`opencode.json`** → project root (OpenCode configuration referencing `AGENTS.md`)
+- **`AGENTS.md`** → project root (always-on rules)
+
+OpenCode discovers `SKILL.md` files automatically in `.opencode/skills/`, `.claude/skills/`, and `.agents/skills/`. The skills are loaded progressively — only their `name` and `description` are loaded at session start, and the full content is loaded when the agent calls the skill.
 
 ## License
 
