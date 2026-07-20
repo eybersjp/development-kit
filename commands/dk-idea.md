@@ -1,5 +1,5 @@
 ---
-name: idea
+name: dk-idea
 description: >-
   Refine a rough idea into a concrete concept with problem definition, user
   identification, success criteria, and requirement categorisation.

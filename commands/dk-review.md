@@ -1,5 +1,5 @@
 ---
-name: review
+name: dk-review
 description: >-
   Run the full review cycle: specification compliance, code quality,
   and conditional specialist reviews (security, accessibility, design

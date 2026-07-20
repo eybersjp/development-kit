@@ -1,5 +1,5 @@
 ---
-name: build
+name: dk-build
 description: >-
   Implement the next task through every verification gate: implement, test,
   spec review, code review, simplify. Stops when all gates pass. Applies

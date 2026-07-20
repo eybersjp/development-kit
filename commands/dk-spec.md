@@ -1,5 +1,5 @@
 ---
-name: spec
+name: dk-spec
 description: >-
   Create the minimum required specification artifacts for the approved concept
   or idea.

@@ -1,5 +1,5 @@
 ---
-name: test
+name: dk-test
 description: >-
   Run task-specific verification: unit tests, integration tests, type checking,
   linting, and browser tests as applicable.

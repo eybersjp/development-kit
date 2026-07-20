@@ -1,5 +1,5 @@
 ---
-name: design
+name: dk-design
 description: >-
   Produce the technical and visual design for the approved specification.
   Activates the appropriate design skills based on what needs to be designed:

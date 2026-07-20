@@ -1,5 +1,5 @@
 ---
-name: debug
+name: dk-debug
 description: >-
   Systematic root-cause analysis using the Reproduce → Localise → Identify
   → Fix → Protect cycle.

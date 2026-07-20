@@ -1,5 +1,5 @@
 ---
-name: build-auto
+name: dk-build-auto
 description: >-
   Process the entire approved task plan automatically, running each task
   through every gate sequentially. Pauses automatically on failures.

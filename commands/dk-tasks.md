@@ -1,5 +1,5 @@
 ---
-name: tasks
+name: dk-tasks
 description: >-
   Break the approved design into small, independently verifiable tasks
   and subtasks ordered by dependency and risk. Uses the full planning

@@ -1,5 +1,5 @@
 ---
-name: ship
+name: dk-ship
 description: >-
   Performs final verification and release preparation: full test suite,
   diff inspection, documentation update, task completion gate, branch

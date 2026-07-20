@@ -1,5 +1,5 @@
 ---
-name: simplify
+name: dk-simplify
 description: >-
   Run the Ponytail simplicity ladder over the current diff. Check whether
   code, abstractions, dependencies, or files can be removed.

@@ -1,5 +1,5 @@
 ---
-name: status
+name: dk-status
 description: >-
   Show the current workflow state: active lifecycle stage, current task,
   completed tasks, pending reviews, and any blocked items.
