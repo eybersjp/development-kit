@@ -11,11 +11,13 @@
  *   node scripts/install-antigravity.mjs --project
  *   node scripts/install-antigravity.mjs --all
  *   node scripts/install-antigravity.mjs --all --force
+ *   node scripts/install-antigravity.mjs --opencode
  *
  * Options:
  *   --global   Install globally (~/.gemini/config/ or similar)
  *   --project  Install project-local (./.agents/)
  *   --all      Install everything to project root for standalone use
+ *   --opencode Install skills and rules for OpenCode (.opencode/skills/)
  *   --force    Override existsSync guards (overwrite existing AGENTS.md, README.md)
  *   --dry-run  Show what would be installed without copying
  *   --help     Show help
@@ -40,6 +42,7 @@ Options:
   --global   Install globally (~/.gemini/config/ or similar)
   --project  Install project-local (./.agents/)
   --all      Install everything to project root for standalone use
+  --opencode Install skills and rules for OpenCode (.opencode/skills/)
   --force    Override safety guards and overwrite existing files
   --dry-run  Show what would be installed without copying
   --help     Show this help message
@@ -116,6 +119,80 @@ function installPlugin(targetDir, force = false) {
   printCommands();
 }
 
+function installOpencode(dryRun = false, force = false) {
+  const targetDir = process.cwd();
+  const skillsTarget = join(targetDir, '.opencode', 'skills');
+  const label = dryRun ? 'Would install' : 'Installing';
+
+  console.log(`${label} Development Kit for OpenCode at: ${targetDir}\n`);
+
+  // Install skills to .opencode/skills/
+  const skillsSource = join(ROOT, 'skills');
+  if (existsSync(skillsSource)) {
+    const count = readdirSync(skillsSource).length;
+    const prefix = dryRun ? '→' : '';
+    if (!dryRun) {
+      mkdirSync(skillsTarget, { recursive: true });
+    }
+    for (const skillDir of readdirSync(skillsSource)) {
+      const src = join(skillsSource, skillDir);
+      const dst = join(skillsTarget, skillDir);
+      if (statSync(src).isDirectory()) {
+        const targetSkillExists = existsSync(dst);
+        if (targetSkillExists && !force) {
+          console.log(`  ${dryRun ? '→' : '-'} ${skillDir} already exists (skipped)`);
+        } else {
+          if (!dryRun) {
+            cpSync(src, dst, { recursive: true });
+          }
+          const mark = targetSkillExists ? ' (overwrite)' : '';
+          console.log(`  ${dryRun ? '→' : '✓'} skills/${skillDir} installed${mark}`);
+        }
+      }
+    }
+  }
+
+  // Copy opencode.json
+  const opencodeJsonSource = join(ROOT, 'opencode.json');
+  const opencodeJsonTarget = join(targetDir, 'opencode.json');
+  if (existsSync(opencodeJsonSource)) {
+    const targetExists = existsSync(opencodeJsonTarget);
+    if (targetExists && !force) {
+      console.log(`  ${dryRun ? '→' : '-'} opencode.json already exists (skipped)`);
+    } else {
+      if (!dryRun) {
+        copyFileSync(opencodeJsonSource, opencodeJsonTarget);
+      }
+      const mark = targetExists ? ' (overwrite)' : '';
+      console.log(`  ${dryRun ? '→' : '✓'} opencode.json installed${mark}`);
+    }
+  }
+
+  // Copy AGENTS.md rules
+  const agentsMdSource = join(ROOT, 'AGENTS.md');
+  const agentsMdTarget = join(targetDir, 'AGENTS.md');
+  if (existsSync(agentsMdSource)) {
+    const targetExists = existsSync(agentsMdTarget);
+    if (targetExists && !force) {
+      console.log(`  ${dryRun ? '→' : '-'} AGENTS.md already exists at project root (skipped)`);
+    } else {
+      if (!dryRun) {
+        copyFileSync(agentsMdSource, agentsMdTarget);
+      }
+      const mark = targetExists ? ' (overwrite)' : '';
+      console.log(`  ${dryRun ? '→' : '✓'} AGENTS.md installed${mark}`);
+    }
+  }
+
+  if (dryRun) {
+    console.log('\nDry run complete. No files were copied. Run without --dry-run to install.');
+  } else {
+    console.log('\nInstallation complete. Skills are available at .opencode/skills/');
+  }
+  console.log('\nAvailable commands:');
+  printCommands();
+}
+
 function installAll(dryRun = false, force = false) {
   const targetDir = process.cwd();
   const label = dryRun ? 'Would install' : 'Installing';
@@ -186,13 +263,19 @@ function main() {
     process.exit(0);
   }
 
-  if (args.includes('--dry-run') && !args.includes('--all')) {
-    console.log('--dry-run must be used with --all');
+  if (args.includes('--dry-run') && !args.includes('--all') && !args.includes('--opencode')) {
+    console.log('--dry-run must be used with --all or --opencode');
     console.log('  node scripts/install-antigravity.mjs --all --dry-run');
+    console.log('  node scripts/install-antigravity.mjs --opencode --dry-run');
     process.exit(1);
   }
 
   const force = args.includes('--force');
+
+  if (args.includes('--opencode')) {
+    installOpencode(args.includes('--dry-run'), force);
+    process.exit(0);
+  }
 
   if (args.includes('--all')) {
     installAll(args.includes('--dry-run'), force);
