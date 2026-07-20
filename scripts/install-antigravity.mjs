@@ -129,8 +129,6 @@ function installOpencode(dryRun = false, force = false) {
   // Install skills to .opencode/skills/
   const skillsSource = join(ROOT, 'skills');
   if (existsSync(skillsSource)) {
-    const count = readdirSync(skillsSource).length;
-    const prefix = dryRun ? '→' : '';
     if (!dryRun) {
       mkdirSync(skillsTarget, { recursive: true });
     }
@@ -306,9 +304,10 @@ function main() {
     installPlugin(antigravityPath, force);
   } else {
     console.log('Antigravity configuration not found.');
-    console.log('To install globally:   node scripts/install-antigravity.mjs --global');
-    console.log('To install locally:    node scripts/install-antigravity.mjs --project');
+    console.log('To install globally:    node scripts/install-antigravity.mjs --global');
+    console.log('To install locally:     node scripts/install-antigravity.mjs --project');
     console.log('To install standalone:  node scripts/install-antigravity.mjs --all');
+    console.log('To install for OpenCode: node scripts/install-antigravity.mjs --opencode');
     process.exit(1);
   }
 }
