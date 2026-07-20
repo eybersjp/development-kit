@@ -1,5 +1,8 @@
 # Development Kit
 
+[![CI](https://github.com/eybersjp/development-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/eybersjp/development-kit/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/development-kit.svg)](https://www.npmjs.com/package/development-kit)
+
 > An opinionated AI software-development methodology and skill collection for Antigravity.
 
 Installable senior-engineering discipline. Not a project management tool — a disciplined development team that lives inside your AI agent.
