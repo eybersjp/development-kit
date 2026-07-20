@@ -65,18 +65,18 @@ The simplicity review must never recommend removing:
 
 The following commands are available. Each command activates a specific workflow bundle with primary and supporting skills from the Development Kit skill library.
 
-- `/idea` — Refine a rough idea into a concrete concept with requirements interview, idea challenge, and scope definition
-- `/spec` — Create the minimum required specification artifacts for the approved concept
-- `/design` — Produce technical and visual design including data models, API contracts, user flows, and design direction
-- `/tasks` — Break approved work into small, verifiable tasks with subtask decomposition and dependency ordering
-- `/build` — Implement the next task through every verification gate using fresh sub-agents and TDD
-- `/build-auto` — Process the entire approved task plan automatically, pausing on failures
-- `/test` — Run task-specific verification with browser runtime checks, regression testing, and edge case testing
-- `/review` — Run the full review cycle: specification compliance, code quality, security, accessibility, and design quality
-- `/simplify` — Apply the Ponytail simplicity ladder to remove unnecessary code, abstractions, and dependencies
-- `/debug` — Systematic root-cause analysis: reproduce, localise, identify root cause, fix, protect
-- `/ship` — Final verification and release preparation: task completion gate, branch completion, release readiness assessment
-- `/status` — Show the current workflow state: active lifecycle stage, current task, completed tasks, and blocked items
+- `/dk-idea` — Refine a rough idea into a concrete concept with requirements interview, idea challenge, and scope definition
+- `/dk-spec` — Create the minimum required specification artifacts for the approved concept
+- `/dk-design` — Produce technical and visual design including data models, API contracts, user flows, and design direction
+- `/dk-tasks` — Break approved work into small, verifiable tasks with subtask decomposition and dependency ordering
+- `/dk-build` — Implement the next task through every verification gate using fresh sub-agents and TDD
+- `/dk-build-auto` — Process the entire approved task plan automatically, pausing on failures
+- `/dk-test` — Run task-specific verification with browser runtime checks, regression testing, and edge case testing
+- `/dk-review` — Run the full review cycle: specification compliance, code quality, security, accessibility, and design quality
+- `/dk-simplify` — Apply the Ponytail simplicity ladder to remove unnecessary code, abstractions, and dependencies
+- `/dk-debug` — Systematic root-cause analysis: reproduce, localise, identify root cause, fix, protect
+- `/dk-ship` — Final verification and release preparation: task completion gate, branch completion, release readiness assessment
+- `/dk-status` — Show the current workflow state: active lifecycle stage, current task, completed tasks, and blocked items
 
 ## Agents
 

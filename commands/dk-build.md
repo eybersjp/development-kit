@@ -6,7 +6,7 @@ description: >-
   minimum-diff and dependency-restraint discipline throughout.
 ---
 
-# /build
+# /dk-build
 
 ## Purpose
 
@@ -60,7 +60,7 @@ Spawn the **simplicity-reviewer** to apply the Ponytail ladder. Remove unnecessa
 Run all tests again after simplification.
 
 ### 11. Complete
-Task is done. Proceed to the next `/build` or `/build-auto`.
+Task is done. Proceed to the next `/dk-build` or `/dk-build-auto`.
 
 ## Skills Activated
 

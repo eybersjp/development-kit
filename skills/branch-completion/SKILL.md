@@ -17,7 +17,7 @@ Handles final verification before a branch or task is completed: final test suit
 - When all tasks in a feature or project are complete
 - Before creating a pull request
 - Before merging into the main branch
-- When the `/ship` command is used
+- When the `/dk-ship` command is used
 
 ## Process
 

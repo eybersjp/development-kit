@@ -5,7 +5,7 @@ description: >-
   completed tasks, pending reviews, and any blocked items.
 ---
 
-# /status
+# /dk-status
 
 ## Purpose
 

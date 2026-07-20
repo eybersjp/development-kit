@@ -51,18 +51,18 @@ If no option is provided, you will be prompted to choose.
 `.trim();
 
 function printCommands() {
-  console.log('  /idea       - Refine a rough idea into a concrete concept');
-  console.log('  /spec       - Create the required specification artifacts');
-  console.log('  /design     - Produce technical and visual design');
-  console.log('  /tasks      - Break approved work into small tasks');
-  console.log('  /build      - Implement the next task through every gate');
-  console.log('  /build-auto - Process the entire plan automatically');
-  console.log('  /test       - Run verification');
-  console.log('  /review     - Run the full review cycle');
-  console.log('  /simplify   - Apply the simplicity ladder');
-  console.log('  /debug      - Systematic root-cause analysis');
-  console.log('  /ship       - Final verification and release preparation');
-  console.log('  /status     - Show current workflow state');
+  console.log('  /dk-idea       - Refine a rough idea into a concrete concept');
+  console.log('  /dk-spec       - Create the required specification artifacts');
+  console.log('  /dk-design     - Produce technical and visual design');
+  console.log('  /dk-tasks      - Break approved work into small tasks');
+  console.log('  /dk-build      - Implement the next task through every gate');
+  console.log('  /dk-build-auto - Process the entire plan automatically');
+  console.log('  /dk-test       - Run verification');
+  console.log('  /dk-review     - Run the full review cycle');
+  console.log('  /dk-simplify   - Apply the simplicity ladder');
+  console.log('  /dk-debug      - Systematic root-cause analysis');
+  console.log('  /dk-ship       - Final verification and release preparation');
+  console.log('  /dk-status     - Show current workflow state');
 }
 
 function detectAntigravity() {

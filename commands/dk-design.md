@@ -7,7 +7,7 @@ description: >-
   direction.
 ---
 
-# /design
+# /dk-design
 
 ## Purpose
 

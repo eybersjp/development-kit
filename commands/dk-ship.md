@@ -6,7 +6,7 @@ description: >-
   completion, and release readiness assessment.
 ---
 
-# /ship
+# /dk-ship
 
 ## Purpose
 

@@ -6,11 +6,11 @@ description: >-
   quality). Specification compliance is always reviewed before code quality.
 ---
 
-# /review
+# /dk-review
 
 ## Purpose
 
-Runs the full review cycle over the current implementation. The review is always a two-stage process: specification compliance first, then code quality. Conditional specialist reviews (security, accessibility, design quality) are added when applicable. Simplicity review is a separate command (`/simplify`).
+Runs the full review cycle over the current implementation. The review is always a two-stage process: specification compliance first, then code quality. Conditional specialist reviews (security, accessibility, design quality) are added when applicable. Simplicity review is a separate command (`/dk-simplify`).
 
 ## Workflow
 

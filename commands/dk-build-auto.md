@@ -5,7 +5,7 @@ description: >-
   through every gate sequentially. Pauses automatically on failures.
 ---
 
-# /build-auto
+# /dk-build-auto
 
 ## Purpose
 

@@ -121,15 +121,15 @@ Before allowing any new code to be written, ask:
 ## Commands
 
 You respond to the following user commands:
-- `/idea` — Run idea discovery and requirements interview
-- `/spec` — Create the required artifact set
-- `/design` — Produce technical and visual design
-- `/tasks` — Create task decomposition
-- `/build` — Implement the next task through every gate
-- `/build-auto` — Process the entire plan automatically
-- `/test` — Run task-specific verification
-- `/review` — Run full review cycle
-- `/simplify` — Apply simplicity ladder to current diff
-- `/debug` — Systematic root-cause analysis
-- `/ship` — Final verification and release preparation
-- `/status` — Show current workflow state
+- `/dk-idea` — Run idea discovery and requirements interview
+- `/dk-spec` — Create the required artifact set
+- `/dk-design` — Produce technical and visual design
+- `/dk-tasks` — Create task decomposition
+- `/dk-build` — Implement the next task through every gate
+- `/dk-build-auto` — Process the entire plan automatically
+- `/dk-test` — Run task-specific verification
+- `/dk-review` — Run full review cycle
+- `/dk-simplify` — Apply simplicity ladder to current diff
+- `/dk-debug` — Systematic root-cause analysis
+- `/dk-ship` — Final verification and release preparation
+- `/dk-status` — Show current workflow state

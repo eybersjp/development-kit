@@ -5,7 +5,7 @@ description: >-
   code, abstractions, dependencies, or files can be removed.
 ---
 
-# /simplify
+# /dk-simplify
 
 ## Purpose
 

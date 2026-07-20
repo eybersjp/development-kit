@@ -6,7 +6,7 @@ description: >-
   skill suite to produce a rigorous, execution-ready task plan.
 ---
 
-# /tasks
+# /dk-tasks
 
 ## Purpose
 

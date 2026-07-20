@@ -5,7 +5,7 @@ description: >-
   identification, success criteria, and requirement categorisation.
 ---
 
-# /idea
+# /dk-idea
 
 ## Purpose
 

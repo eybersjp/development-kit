@@ -53,7 +53,7 @@ Load the selected skills into the current context. Skills are loaded from the `s
 ### 4. Route to Workflow
 
 Route the request to the appropriate workflow:
-- Commands (`/idea`, `/spec`, `/design`, etc.) map to specific workflow bundles
+- Commands (`/dk-idea`, `/dk-spec`, `/dk-design`, etc.) map to specific workflow bundles
 - Direct requests map to the most appropriate lifecycle stage
 - The conductor coordinates the workflow, not the individual skills
 
@@ -61,7 +61,7 @@ Route the request to the appropriate workflow:
 
 ```yaml
 commands:
-  /idea:
+  /dk-idea:
     primary: idea-discovery
     supporting:
       - requirements-interview
@@ -69,14 +69,14 @@ commands:
       - scope-definition
     workflow: discovery
 
-  /spec:
+  /dk-spec:
     primary: adaptive-artifact-planning
     supporting:
       - feature-specification
       - acceptance-criteria-writing
     workflow: definition
 
-  /design:
+  /dk-design:
     primary: technical-design
     supporting:
       - data-model-design
@@ -85,7 +85,7 @@ commands:
       - design-direction
     workflow: design
 
-  /tasks:
+  /dk-tasks:
     primary: task-decomposition
     supporting:
       - subtask-decomposition
@@ -94,7 +94,7 @@ commands:
       - task-readiness-check
     workflow: planning
 
-  /build:
+  /dk-build:
     primary: subagent-driven-implementation
     supporting:
       - incremental-implementation
@@ -107,7 +107,7 @@ commands:
       - test-strategy
     workflow: implementation
 
-  /build-auto:
+  /dk-build-auto:
     primary: subagent-driven-implementation
     supporting:
       - incremental-implementation
@@ -124,7 +124,7 @@ commands:
       - regression-testing
     workflow: implementation
 
-  /test:
+  /dk-test:
     primary: verification-before-completion
     supporting:
       - browser-runtime-verification
@@ -132,7 +132,7 @@ commands:
       - edge-case-testing
     workflow: verification
 
-  /review:
+  /dk-review:
     primary: specification-compliance-review
     supporting:
       - code-quality-review
@@ -141,22 +141,22 @@ commands:
       - design-quality-review
     workflow: review
 
-  /simplify:
+  /dk-simplify:
     primary: simplicity-review
     workflow: simplification
 
-  /debug:
+  /dk-debug:
     primary: systematic-debugging
     workflow: debugging
 
-  /ship:
+  /dk-ship:
     primary: branch-completion
     supporting:
       - task-completion-gate
       - release-readiness
     workflow: completion
 
-  /status:
+  /dk-status:
     primary: skill-routing
     note: >-
       Informational command. Shows the active lifecycle stage, current task,

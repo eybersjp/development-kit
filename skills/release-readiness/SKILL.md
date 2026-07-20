@@ -17,7 +17,7 @@ Performs the broader pre-release check. Goes beyond individual task completion t
 - Before a major release or deployment
 - When all features in a release are complete
 - Before merging to the production branch
-- When the `/ship` command indicates a full release
+- When the `/dk-ship` command indicates a full release
 
 ## Process
 

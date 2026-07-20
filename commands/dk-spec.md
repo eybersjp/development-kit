@@ -5,7 +5,7 @@ description: >-
   or idea.
 ---
 
-# /spec
+# /dk-spec
 
 ## Purpose
 

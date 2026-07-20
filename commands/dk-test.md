@@ -5,7 +5,7 @@ description: >-
   linting, and browser tests as applicable.
 ---
 
-# /test
+# /dk-test
 
 ## Purpose
 

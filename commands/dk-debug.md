@@ -5,7 +5,7 @@ description: >-
   → Fix → Protect cycle.
 ---
 
-# /debug
+# /dk-debug
 
 ## Purpose
 

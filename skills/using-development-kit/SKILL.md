@@ -62,18 +62,18 @@ Before writing any new code, traverse this ladder:
 
 | Command | Purpose |
 |---------|---------|
-| `/idea` | Run idea discovery and requirements interview |
-| `/spec` | Create the required artifact set |
-| `/design` | Produce technical and visual design |
-| `/tasks` | Create task decomposition |
-| `/build` | Implement the next task through every gate |
-| `/build-auto` | Process the entire plan automatically |
-| `/test` | Run task-specific verification |
-| `/review` | Run full review cycle |
-| `/simplify` | Apply the simplicity ladder to the current diff |
-| `/debug` | Systematic root-cause analysis |
-| `/ship` | Final verification and release preparation |
-| `/status` | Show current workflow state |
+| `/dk-idea` | Run idea discovery and requirements interview |
+| `/dk-spec` | Create the required artifact set |
+| `/dk-design` | Produce technical and visual design |
+| `/dk-tasks` | Create task decomposition |
+| `/dk-build` | Implement the next task through every gate |
+| `/dk-build-auto` | Process the entire plan automatically |
+| `/dk-test` | Run task-specific verification |
+| `/dk-review` | Run full review cycle |
+| `/dk-simplify` | Apply the simplicity ladder to the current diff |
+| `/dk-debug` | Systematic root-cause analysis |
+| `/dk-ship` | Final verification and release preparation |
+| `/dk-status` | Show current workflow state |
 
 ### 5. Know the Available Agents
 
