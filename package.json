@@ -1,6 +1,6 @@
 {
   "name": "development-kit",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "An opinionated AI software-development methodology and skill collection for Antigravity. Installable senior-engineering discipline: develop ideas, create minimal artifacts, break work into tasks, implement with fresh sub-agents, verify, review, and simplify.",
   "author": "development-kit contributors",
   "license": "MIT",
@@ -26,7 +26,8 @@
     "evals/",
     "scripts/",
     "AGENTS.md",
-    "README.md"
+    "README.md",
+    "opencode.json"
   ],
   "scripts": {
     "validate": "node scripts/validate-skills.mjs",
