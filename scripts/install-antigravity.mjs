@@ -23,7 +23,7 @@
  *   --help     Show help
  */
 
-import { existsSync, mkdirSync, copyFileSync, cpSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, copyFileSync, cpSync, readdirSync, statSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -90,13 +90,41 @@ function installPlugin(targetDir, force = false) {
   // Create plugin directory
   mkdirSync(pluginDir, { recursive: true });
 
-  // Link or copy plugin manifest
+  // Copy plugin directories to make plugin self-contained
+  const dirsToCopy = ['skills', 'agents', 'hooks', 'commands'];
+  for (const dir of dirsToCopy) {
+    const src = join(ROOT, dir);
+    const dst = join(pluginDir, dir);
+    if (existsSync(src)) {
+      cpSync(src, dst, { recursive: true });
+      console.log(`  ✓ ${dir}/ copied`);
+    }
+  }
+
+  // Link or copy plugin manifest and rewrite relative paths
   const sourcePluginJson = join(ROOT, '.agents', 'plugins', 'development-kit', 'plugin.json');
   const targetPluginJson = join(pluginDir, 'plugin.json');
 
   if (existsSync(sourcePluginJson)) {
-    copyFileSync(sourcePluginJson, targetPluginJson);
-    console.log('  ✓ plugin.json installed');
+    try {
+      const raw = readFileSync(sourcePluginJson, 'utf-8');
+      const manifest = JSON.parse(raw);
+      if (Array.isArray(manifest.skills)) {
+        manifest.skills = manifest.skills.map(s => s.replace(/^\.\.\/\.\.\/\.\.\//, './'));
+      }
+      if (Array.isArray(manifest.agents)) {
+        manifest.agents = manifest.agents.map(a => a.replace(/^\.\.\/\.\.\/\.\.\//, './'));
+      }
+      if (Array.isArray(manifest.hooks)) {
+        manifest.hooks = manifest.hooks.map(h => h.replace(/^\.\.\/\.\.\/\.\.\//, './'));
+      }
+      writeFileSync(targetPluginJson, JSON.stringify(manifest, null, 2) + '\n');
+      console.log('  ✓ plugin.json installed and relative paths rewritten');
+    } catch (err) {
+      console.error(`  ✗ Failed to rewrite plugin.json paths: ${err.message}`);
+      copyFileSync(sourcePluginJson, targetPluginJson);
+      console.log('  ✓ plugin.json installed (paths unmodified)');
+    }
   }
 
   // Install AGENTS.md rules
