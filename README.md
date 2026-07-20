@@ -34,6 +34,12 @@ npx development-kit init --all
 
 # Preview what --all would do without copying
 npx development-kit init --all --dry-run
+
+# Install skills and rules for OpenCode
+npx development-kit init --opencode
+
+# Preview what --opencode would install
+npx development-kit init --opencode --dry-run
 ```
 
 ### Installer Flags
