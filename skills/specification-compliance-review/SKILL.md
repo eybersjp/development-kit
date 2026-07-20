@@ -3,6 +3,7 @@ name: specification-compliance-review
 description: >-
   The first gate in the two-stage review process. Verifies that the
   implementation satisfies the specification, before assessing code quality.
+compatibility: opencode
 ---
 
 # Specification Compliance Review

@@ -3,6 +3,7 @@ name: adaptive-artifact-planning
 description: >-
   Selects the minimum set of documents required for the work. Prevents
   over-documentation — small changes should not produce fifteen documents.
+compatibility: opencode
 ---
 
 # Adaptive Artifact Planning

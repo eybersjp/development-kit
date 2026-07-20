@@ -4,6 +4,7 @@ description: >-
   Conditional specialist review for tasks involving authentication,
   authorisation, user input, secrets, file handling, database access,
   external APIs, payments, or PII.
+compatibility: opencode
 ---
 
 # Security Review

@@ -3,6 +3,7 @@ name: simplicity-review
 description: >-
   Ponytail-style minimum-solution inspection. Checks whether code,
   abstractions, dependencies, or files can be removed. Prevents overengineering.
+compatibility: opencode
 ---
 
 # Simplicity Review

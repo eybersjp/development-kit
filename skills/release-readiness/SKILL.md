@@ -3,6 +3,7 @@ name: release-readiness
 description: >-
   Performs the broader pre-release check: full test suite, security scan,
   performance check, documentation review, and deployment preparation.
+compatibility: opencode
 ---
 
 # Release Readiness

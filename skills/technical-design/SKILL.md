@@ -4,6 +4,7 @@ description: >-
   Creates an implementation-oriented design document. Describes the
   architecture, components, data flow, and interfaces needed to implement
   a feature.
+compatibility: opencode
 ---
 
 # Technical Design

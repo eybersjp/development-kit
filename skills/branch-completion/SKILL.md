@@ -3,6 +3,7 @@ name: branch-completion
 description: >-
   Handles final verification before a branch or task is completed: full test
   suite, diff inspection, commit preparation, and PR preparation.
+compatibility: opencode
 ---
 
 # Branch Completion

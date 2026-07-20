@@ -3,6 +3,7 @@ name: subtask-decomposition
 description: >-
   Breaks each task into atomic, ordered steps. Ensures every task has a
   clear, executable sequence of work items.
+compatibility: opencode
 ---
 
 # Subtask Decomposition

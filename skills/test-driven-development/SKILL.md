@@ -3,6 +3,7 @@ name: test-driven-development
 description: >-
   Enforces Red-Green-Refactor discipline. Tests are written before
   implementation code for behaviour changes.
+compatibility: opencode
 ---
 
 # Test-Driven Development

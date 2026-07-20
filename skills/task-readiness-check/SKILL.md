@@ -3,6 +3,7 @@ name: task-readiness-check
 description: >-
   Verifies that a task is clear enough to implement. Prevents starting work
   on tasks that are ambiguous, incomplete, or missing acceptance criteria.
+compatibility: opencode
 ---
 
 # Task Readiness Check

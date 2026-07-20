@@ -3,6 +3,7 @@ name: test-strategy
 description: >-
   Defines how a feature will be proven correct. Specifies the test levels,
   types, coverage targets, and acceptance criteria validation approach.
+compatibility: opencode
 ---
 
 # Test Strategy

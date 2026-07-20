@@ -3,6 +3,7 @@ name: risk-first-planning
 description: >-
   Prioritises implementation of uncertain, technically risky, or novel work
   before safe, cosmetic, or well-understood work.
+compatibility: opencode
 ---
 
 # Risk-First Planning

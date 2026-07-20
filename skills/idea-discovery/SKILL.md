@@ -3,6 +3,7 @@ name: idea-discovery
 description: >-
   Turns a rough idea into a concrete, well-defined concept. Used when the user
   has a vague request, a problem to solve, or an unrefined feature concept.
+compatibility: opencode
 ---
 
 # Idea Discovery

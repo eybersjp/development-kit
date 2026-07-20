@@ -3,6 +3,7 @@ name: systematic-debugging
 description: >-
   Uses a structured reproduce-localise-fix-protect cycle. Does not guess
   at fixes — follows evidence.
+compatibility: opencode
 ---
 
 # Systematic Debugging

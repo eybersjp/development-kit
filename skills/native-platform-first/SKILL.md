@@ -3,6 +3,7 @@ name: native-platform-first
 description: >-
   Prefers browser, runtime, framework, and language-native capabilities over
   external packages and custom implementations.
+compatibility: opencode
 ---
 
 # Native Platform First

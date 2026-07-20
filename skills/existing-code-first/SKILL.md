@@ -3,6 +3,7 @@ name: existing-code-first
 description: >-
   Searches the existing codebase for reusable code before writing new code.
   Prevents duplication and unnecessary new code.
+compatibility: opencode
 ---
 
 # Existing Code First

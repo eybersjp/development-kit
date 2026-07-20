@@ -3,6 +3,7 @@ name: subagent-driven-implementation
 description: >-
   Dispatches a fresh implementation sub-agent for each task. Prevents
   assumption drift by creating new agents rather than reusing long-running ones.
+compatibility: opencode
 ---
 
 # Subagent-Driven Implementation

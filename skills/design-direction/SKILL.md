@@ -3,6 +3,7 @@ name: design-direction
 description: >-
   Creates premium, intentional UI direction rather than generic generated
   layouts. Defines visual language, design principles, and aesthetic choices.
+compatibility: opencode
 ---
 
 # Design Direction

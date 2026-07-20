@@ -3,6 +3,7 @@ name: edge-case-testing
 description: >-
   Actively searches for failure scenarios, boundary conditions, and
   unexpected inputs. Tests are designed to break the implementation.
+compatibility: opencode
 ---
 
 # Edge Case Testing

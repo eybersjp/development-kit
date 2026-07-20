@@ -3,6 +3,7 @@ name: design-quality-review
 description: >-
   Prevents generic AI-generated visual language. Assesses visual hierarchy,
   spacing, typography, interaction design, and overall design quality.
+compatibility: opencode
 ---
 
 # Design Quality Review

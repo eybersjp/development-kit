@@ -4,6 +4,7 @@ description: >-
   Loaded at session start. Teaches the agent how to use the Development Kit
   methodology: how to select skills, when to delegate, when not to code,
   how review gates work, and how to avoid bypassing the workflow.
+compatibility: opencode
 ---
 
 # Using Development Kit

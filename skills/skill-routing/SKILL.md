@@ -3,6 +3,7 @@ name: skill-routing
 description: >-
   Maps user intent to the appropriate skill or workflow. The conductor uses
   this to determine which skills to activate for a given user request.
+compatibility: opencode
 ---
 
 # Skill Routing

@@ -3,6 +3,7 @@ name: requirements-interview
 description: >-
   Asks focused questions to surface requirements, preferences, assumptions,
   and constraints. Separates what is needed from what is merely desired.
+compatibility: opencode
 ---
 
 # Requirements Interview

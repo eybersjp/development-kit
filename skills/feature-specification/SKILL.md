@@ -3,6 +3,7 @@ name: feature-specification
 description: >-
   Creates a concise, precise feature specification. Defines what must be built
   without prescribing how it must be implemented. Includes explicit exclusions.
+compatibility: opencode
 ---
 
 # Feature Specification

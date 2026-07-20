@@ -3,6 +3,7 @@ name: minimal-diff
 description: >-
   Keeps changes tightly scoped to the task. Prevents unrelated refactoring,
   formatting changes, and scope creep in implementation diffs.
+compatibility: opencode
 ---
 
 # Minimal Diff

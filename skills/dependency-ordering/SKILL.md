@@ -3,6 +3,7 @@ name: dependency-ordering
 description: >-
   Determines the correct execution order for tasks and subtasks based on
   their dependencies. Ensures foundation work precedes dependent work.
+compatibility: opencode
 ---
 
 # Dependency Ordering

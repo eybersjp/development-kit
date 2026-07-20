@@ -3,6 +3,7 @@ name: regression-testing
 description: >-
   Checks that existing behaviour remains intact after changes. Runs the
   existing test suite and verifies no previously passing tests fail.
+compatibility: opencode
 ---
 
 # Regression Testing

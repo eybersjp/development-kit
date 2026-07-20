@@ -3,6 +3,7 @@ name: incremental-implementation
 description: >-
   Implements one thin vertical slice at a time. Each slice adds end-to-end
   value and can be tested independently before the next slice begins.
+compatibility: opencode
 ---
 
 # Incremental Implementation

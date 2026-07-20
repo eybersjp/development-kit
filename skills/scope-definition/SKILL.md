@@ -3,6 +3,7 @@ name: scope-definition
 description: >-
   Defines must-have, should-have, could-have, and explicitly excluded items.
   Creates clear boundaries for what the implementation will and will not do.
+compatibility: opencode
 ---
 
 # Scope Definition

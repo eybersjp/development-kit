@@ -3,6 +3,7 @@ name: verification-before-completion
 description: >-
   Requires fresh evidence before claiming success. A task is not complete
   because the implementation agent says it is complete.
+compatibility: opencode
 ---
 
 # Verification Before Completion

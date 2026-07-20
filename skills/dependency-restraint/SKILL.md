@@ -4,6 +4,7 @@ description: >-
   Requires justification before adding any new dependency. Every new
   dependency must provide value that the platform, standard library,
   or existing dependencies cannot.
+compatibility: opencode
 ---
 
 # Dependency Restraint

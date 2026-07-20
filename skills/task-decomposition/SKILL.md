@@ -3,6 +3,7 @@ name: task-decomposition
 description: >-
   Breaks approved specifications into small, independently verifiable tasks
   and subtasks. Orders by dependency and risk. Keeps tasks small.
+compatibility: opencode
 ---
 
 # Task Decomposition

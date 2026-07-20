@@ -3,6 +3,7 @@ name: user-flow-design
 description: >-
   Designs user-facing workflows and journeys. Maps the steps a user takes
   to accomplish a goal, including happy paths, edge cases, and error states.
+compatibility: opencode
 ---
 
 # User Flow Design

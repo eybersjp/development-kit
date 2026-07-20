@@ -3,6 +3,7 @@ name: repository-orientation
 description: >-
   Inspects a new or unfamiliar repository before changes begin. Understands
   project structure, conventions, and architecture before any work starts.
+compatibility: opencode
 ---
 
 # Repository Orientation

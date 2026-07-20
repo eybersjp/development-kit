@@ -3,6 +3,7 @@ name: api-contract-design
 description: >-
   Designs API contracts and module boundaries. Used only when APIs or module
   boundaries are being defined or changed.
+compatibility: opencode
 ---
 
 # API Contract Design

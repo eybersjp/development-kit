@@ -4,6 +4,7 @@ description: >-
   Gathers only the relevant code, documents, conventions, and history for
   the current sub-agent. Prevents context bloat by delivering only what is
   needed for the task.
+compatibility: opencode
 ---
 
 # Context Packing

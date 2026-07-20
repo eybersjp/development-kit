@@ -3,6 +3,7 @@ name: data-model-design
 description: >-
   Designs data models, schemas, and migrations for persistent data changes.
   Used only when persistent data changes are required.
+compatibility: opencode
 ---
 
 # Data Model Design

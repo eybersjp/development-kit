@@ -4,6 +4,7 @@ description: >-
   The second gate in the two-stage review process. Assesses code for
   correctness, readability, maintainability, error handling, conventions,
   unnecessary complexity, and duplication.
+compatibility: opencode
 ---
 
 # Code Quality Review

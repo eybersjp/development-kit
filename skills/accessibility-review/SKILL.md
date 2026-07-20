@@ -3,6 +3,7 @@ name: accessibility-review
 description: >-
   Conditional specialist review for UI tasks. Ensures the implementation is
   accessible to all users, including those using assistive technologies.
+compatibility: opencode
 ---
 
 # Accessibility Review

@@ -3,6 +3,7 @@ name: browser-runtime-verification
 description: >-
   Checks runtime behaviour in the browser: console errors, network failures,
   DOM behaviour, responsive layout, accessibility, and user interactions.
+compatibility: opencode
 ---
 
 # Browser Runtime Verification

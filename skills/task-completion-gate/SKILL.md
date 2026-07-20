@@ -4,6 +4,7 @@ description: >-
   Defines the gate that every task must pass before it is considered complete.
   A task passes only when acceptance criteria pass, tests pass, spec review
   passes, code review passes, and simplification review passes.
+compatibility: opencode
 ---
 
 # Task Completion Gate

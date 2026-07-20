@@ -3,6 +3,7 @@ name: idea-challenge
 description: >-
   Tests whether the proposed solution is solving the real problem. Applies
   critical thinking to prevent building the wrong thing.
+compatibility: opencode
 ---
 
 # Idea Challenge

@@ -3,6 +3,7 @@ name: acceptance-criteria-writing
 description: >-
   Converts requirements into observable, testable conditions that define
   when a feature is complete and correct.
+compatibility: opencode
 ---
 
 # Acceptance Criteria Writing
