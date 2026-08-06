@@ -6,7 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-06
+
+### Added
+- `opencode:validate` release gate to reject obsolete or malformed OpenCode project configuration.
+
 ### Fixed
+- Replaced the obsolete OpenCode `rules` configuration key with the current official schema-based configuration. OpenCode loads the project `AGENTS.md` automatically.
 - The maintainer release command now creates the GitHub Release directly because tag pushes made with GitHub's workflow token do not recursively trigger another workflow.
 
 ## [0.4.1] - 2026-08-06
@@ -43,7 +49,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Production-grade 12-section documentation system.
 - Documentation validation suite and installer synchronization verification.
 
-[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/eybersjp/development-kit/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/eybersjp/development-kit/compare/development-kit-v0.4.0...v0.4.1
 [0.4.0]: https://github.com/eybersjp/development-kit/releases/tag/development-kit-v0.4.0
 [0.3.0]: https://github.com/eybersjp/development-kit/releases/tag/v0.3.0
