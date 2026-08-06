@@ -12,12 +12,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Professional public-project foundation: contribution guide, security policy, support policy, code of conduct, issue forms, pull-request template, and root MIT license.
 - `release:validate` command for the complete release gate suite.
 - GitHub Release creation to the tag-driven publish workflow.
+- Maintainer-only, issue-driven release command that validates the repository before creating an annotated version tag.
+- CODEOWNERS coverage for the repository and release-sensitive paths.
+- Monthly Dependabot monitoring for GitHub Actions.
 
 ### Changed
 - Repositioned the README around user outcomes, trust signals, installation, safety controls, and the Automated Guided Workflow.
 - Expanded npm package metadata, search keywords, repository links, author information, and packaged runtime files.
 - Expanded CI to validate documentation, Autopilot tests, and behavioural evaluations.
 - Hardened the publish workflow with the complete release validation suite and least-privilege permissions.
+- Made npm publication optional so missing npm credentials cannot block the public GitHub Release.
 
 ## [0.4.0] - 2026-08-06
 
