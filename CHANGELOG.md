@@ -1,22 +1,42 @@
 # Changelog
 
-All notable changes to Development Kit will be documented in this file.
+All notable changes to Development Kit are documented here.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+## [0.4.1] - 2026-08-06
+
+### Added
+- Professional public-project foundation: contribution guide, security policy, support policy, code of conduct, issue forms, pull-request template, and root MIT license.
+- `release:validate` command for the complete release gate suite.
+- GitHub Release creation to the tag-driven publish workflow.
+
+### Changed
+- Repositioned the README around user outcomes, trust signals, installation, safety controls, and the Automated Guided Workflow.
+- Expanded npm package metadata, search keywords, repository links, author information, and packaged runtime files.
+- Expanded CI to validate documentation, Autopilot tests, and behavioural evaluations.
+- Hardened the publish workflow with the complete release validation suite and least-privilege permissions.
 
 ## [0.4.0] - 2026-08-06
 
 ### Added
-- **🚀 AUTOMATED GUIDED WORKFLOW (`/dk-autopilot`)**: New lifecycle-wide automated guided workflow mode.
-- **Executable Runtime Subsystem (`scripts/autopilot.mjs`)**: Deterministic Node.js CLI state and policy engine supporting `--init`, `--status`, `--next`, `--begin-action`, `--record-result`, `--approve`, `--reject`, `--cancel`, `--pause`, `--resume`, `--renew-action`.
-- **State Persistence & Locking (`runtime/autopilot/state-store.mjs`, `lock-manager.mjs`)**: Versioned state snapshot persistence with corrupt pointer recovery and short transaction locking (<50ms).
-- **Security Tokens Architecture (`runtime/autopilot/security-tokens.mjs`)**: Replay-safe approval tokens, constant-time buffer equality (`crypto.timingSafeEqual`), and SHA-256 state hashing.
-- **Policy Engine & Staleness Engine (`runtime/autopilot/policy-engine.mjs`, `staleness-engine.mjs`)**: 3 autonomy levels (`guided-autopilot`, `high-autonomy`, `review-every-stage`), 14 mandatory non-bypassable security gates, pre-authorized staging target evaluation, and artifact content fingerprinting.
-- **Conductor–Runtime Handshake Protocol**: Formalized execution protocol between `development-conductor` and the Autopilot runtime CLI.
-- **15 Behavioral Evaluation Scenarios (`evals/autopilot-lifecycle/`)** and validator script (`scripts/validate-evals.mjs`).
+- **Automated Guided Workflow (`/dk-autopilot`)** for lifecycle-wide orchestration.
+- Deterministic Node.js runtime supporting initialization, status, next-action planning, action recording, approval, rejection, cancellation, pause, resume, and lease renewal.
+- Versioned workflow-state persistence, transaction locking, project/workspace identity, and corrupt-pointer recovery.
+- Replay-resistant security tokens with constant-time verification and hashed persistent storage.
+- Three autonomy levels, mandatory approval gates, staging-target policy evaluation, and artifact staleness invalidation.
+- Formal conductor–runtime handshake.
+- Fifteen Autopilot lifecycle evaluation scenarios and automated validation.
 
 ## [0.3.0] - 2026-08-06
 
 ### Added
-- Production-grade 12-section documentation system, validation suite, and installer sync verification.
+- Production-grade 12-section documentation system.
+- Documentation validation suite and installer synchronization verification.
+
+[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/eybersjp/development-kit/compare/development-kit-v0.4.0...v0.4.1
+[0.4.0]: https://github.com/eybersjp/development-kit/releases/tag/development-kit-v0.4.0
+[0.3.0]: https://github.com/eybersjp/development-kit/releases/tag/v0.3.0

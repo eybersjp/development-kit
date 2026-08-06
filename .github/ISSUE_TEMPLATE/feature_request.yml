@@ -1,0 +1,55 @@
+name: Feature request
+description: Propose a focused improvement to the framework, runtime, installer, or documentation.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: Describe the user or maintainer problem before proposing a solution.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: State the observable result that would solve the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Include alternatives and why this is the smallest appropriate change.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary area
+      options:
+        - Automated Guided Workflow
+        - Commands
+        - Agents
+        - Skills
+        - Installer or compatibility
+        - Documentation
+        - Testing or evaluations
+        - Security or safety policy
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Compatibility, safety, or migration considerations
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues and documentation.
+          required: true
+        - label: This request describes one focused outcome.
+          required: true

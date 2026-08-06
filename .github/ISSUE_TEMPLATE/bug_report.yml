@@ -1,0 +1,62 @@
+name: Bug report
+description: Report reproducible incorrect behaviour in Development Kit.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a problem. Remove secrets and private repository content before submitting.
+  - type: input
+    id: version
+    attributes:
+      label: Development Kit version
+      placeholder: v0.4.1
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Host environment
+      options:
+        - Antigravity
+        - OpenCode
+        - Standalone installation
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system and Node.js version
+      placeholder: Windows 11, Node.js 22.12.0
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest repeatable sequence.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour and sanitized logs
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: I removed credentials, private data, and confidential source code.
+          required: true
