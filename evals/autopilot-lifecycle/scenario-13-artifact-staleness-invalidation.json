@@ -1,0 +1,11 @@
+{
+  "skill": "autopilot-lifecycle",
+  "scenario": "Detect upstream artifact modification and invalidate downstream stages",
+  "input": {
+    "modifiedArtifact": "spec.md"
+  },
+  "expected": {
+    "isStale": true,
+    "downstreamInvalidated": true
+  }
+}

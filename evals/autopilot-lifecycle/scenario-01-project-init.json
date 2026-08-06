@@ -1,0 +1,15 @@
+{
+  "skill": "autopilot-lifecycle",
+  "scenario": "Initialize Autopilot project identity and initial state revision",
+  "input": {
+    "command": "/dk-autopilot",
+    "autonomy": "guided-autopilot"
+  },
+  "expected": {
+    "workflowStatus": "executing",
+    "currentStage": "UNDERSTAND",
+    "stateRevision": 1,
+    "hasProjectUuid": true,
+    "hasWorkspaceUuid": true
+  }
+}

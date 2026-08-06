@@ -118,9 +118,19 @@ Before allowing any new code to be written, ask:
 7. Can a small local change do it?
 8. Only then create a new abstraction.
 
+## Autopilot Control Loop & Handshake Protocol
+
+When invoked via `/dk-autopilot` or operating in Automated Guided Workflow mode:
+
+1. **Query Next Action**: Call `node scripts/autopilot.mjs --next` to obtain the current structured next action.
+2. **Execute Action**: Perform the assigned action (invoke specialist agent, execute validation command, or prompt user for approval).
+3. **Submit Action Result**: Save result payload to a temporary file and record via `node scripts/autopilot.mjs --record-result --input-file=<path>`.
+4. **Enforce Approval Gates**: If the action returns `APPROVAL_REQUIRED`, pause execution, present the approval details and cryptographic token prompt to the user, and resume only after explicit approval.
+
 ## Commands
 
 You respond to the following user commands:
+- `/dk-autopilot` — Run the complete Development Kit lifecycle in Automated Guided Workflow mode
 - `/dk-idea` — Run idea discovery and requirements interview
 - `/dk-spec` — Create the required artifact set
 - `/dk-design` — Produce technical and visual design

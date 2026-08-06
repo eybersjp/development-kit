@@ -1,0 +1,11 @@
+{
+  "skill": "autopilot-lifecycle",
+  "scenario": "Execute Stage 9 COMPLETE preparing release and branch completion",
+  "input": {
+    "currentStage": "COMPLETE"
+  },
+  "expected": {
+    "workflowStatus": "completed",
+    "completedStagesCount": 9
+  }
+}

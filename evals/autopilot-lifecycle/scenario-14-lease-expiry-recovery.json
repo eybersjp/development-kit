@@ -1,0 +1,12 @@
+{
+  "skill": "autopilot-lifecycle",
+  "scenario": "Handle action lease expiry and manual review routing for late results",
+  "input": {
+    "leaseExpired": true,
+    "submittedLateResult": true
+  },
+  "expected": {
+    "workflowStatus": "recovering",
+    "routedTo": "manual_review"
+  }
+}

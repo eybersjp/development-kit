@@ -1,0 +1,11 @@
+{
+  "skill": "autopilot-lifecycle",
+  "scenario": "Execute Stage 5 IMPLEMENT by dispatching fresh implementation sub-agent",
+  "input": {
+    "currentStage": "IMPLEMENT"
+  },
+  "expected": {
+    "nextActionType": "IMPLEMENT_TASK",
+    "mustUseFreshSubagent": true
+  }
+}

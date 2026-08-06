@@ -1,0 +1,13 @@
+{
+  "skill": "autopilot-lifecycle",
+  "scenario": "Execute two-step cancellation request and confirmation challenge",
+  "input": {
+    "step1": "/dk-autopilot --cancel",
+    "step2": "/dk-autopilot --cancel --confirm=<token>"
+  },
+  "expected": {
+    "step1ReturnsChallengeToken": true,
+    "step2CancelsWorkflow": true,
+    "finalStatus": "cancelled"
+  }
+}

@@ -65,6 +65,7 @@ The simplicity review must never recommend removing:
 
 The following commands are available. Each command activates a specific workflow bundle with primary and supporting skills from the Development Kit skill library.
 
+- `/dk-autopilot` — Run the complete Development Kit software-development lifecycle in Automated Guided Workflow mode
 - `/dk-idea` — Refine a rough idea into a concrete concept with requirements interview, idea challenge, and scope definition
 - `/dk-spec` — Create the minimum required specification artifacts for the approved concept
 - `/dk-design` — Produce technical and visual design including data models, API contracts, user flows, and design direction
