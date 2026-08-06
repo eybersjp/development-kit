@@ -401,6 +401,76 @@ test('19. Artifact Staleness Fingerprinting & Downstream Invalidation', () => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
+test('20. Full 9-Stage Lifecycle Progression End-to-End', () => {
+  const tmpDir = createTempDir();
+  let state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  const stages = ['UNDERSTAND', 'DEFINE', 'DESIGN', 'PLAN', 'IMPLEMENT', 'VERIFY', 'REVIEW', 'SIMPLIFY', 'COMPLETE'];
+
+  for (let i = 0; i < stages.length; i++) {
+    assert.equal(state.currentStage, stages[i]);
+    const action = calculateNextAction(state);
+    state.activeAction = action;
+
+    const result = {
+      workflowId: state.workflowId,
+      stateRevision: state.stateRevision,
+      actionId: action.actionId,
+      status: 'completed'
+    };
+
+    state = recordResultState(state, result);
+  }
+
+  assert.equal(state.workflowStatus, 'completed');
+  assert.equal(state.completedStages.length, 9);
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('21. Recovery Checkpoints & Manual-Review State Recovery', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  const action = calculateNextAction(state);
+  state.activeAction = action;
+
+  // Simulate failed action result requiring manual review
+  const failedResult = {
+    workflowId: state.workflowId,
+    stateRevision: 1,
+    actionId: action.actionId,
+    status: 'manual_review'
+  };
+
+  const updatedState = recordResultState(state, failedResult);
+  assert.equal(updatedState.workflowStatus, 'recovering');
+
+  // Resume state from recovery checkpoint
+  resumeWorkflow(updatedState);
+  assert.equal(updatedState.workflowStatus, 'executing');
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('22. Cancellation Archive & State Reset', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  saveStateRevision(state, tmpDir);
+
+  const { confirmationToken } = requestCancelState(state);
+  confirmCancelState(state, confirmationToken);
+  saveStateRevision(state, tmpDir);
+
+  assert.equal(state.workflowStatus, 'cancelled');
+
+  // New init creates fresh state revision
+  const newState = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  saveStateRevision(newState, tmpDir);
+  assert.equal(newState.workflowStatus, 'executing');
+  assert.notEqual(newState.workflowId, state.workflowId);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+
 
 
 

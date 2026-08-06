@@ -73,7 +73,7 @@ export function pauseWorkflow(state) {
 export function resumeWorkflow(state) {
   if (!state) throw new Error('No state provided');
   if (state.workflowStatus === 'executing') throw new Error('Workflow is already executing');
-  if (state.workflowStatus !== 'paused') throw new Error(`Cannot resume workflow in ${state.workflowStatus} status`);
+  if (state.workflowStatus !== 'paused' && state.workflowStatus !== 'recovering') throw new Error(`Cannot resume workflow in ${state.workflowStatus} status`);
 
   state.workflowStatus = 'executing';
   state.updatedAt = new Date().toISOString();
