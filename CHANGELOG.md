@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- The maintainer release command now creates the GitHub Release directly because tag pushes made with GitHub's workflow token do not recursively trigger another workflow.
+
 ## [0.4.1] - 2026-08-06
 
 ### Added
