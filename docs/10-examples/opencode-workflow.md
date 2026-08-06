@@ -69,5 +69,5 @@ npm run opencode:validate
 
 - [OpenCode Integration](../04-architecture/opencode-integration.md)
 - [Install OpenCode](../02-user-guide/install-opencode.md)
-- [Automated Guided Workflow](../02-user-guide/automated-guided-workflow.md)
+- [First Development Workflow](../02-user-guide/first-development-workflow.md)
 - [Migration Guide](../08-maintenance-release/migration-guide.md)
