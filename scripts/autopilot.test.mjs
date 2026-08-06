@@ -28,6 +28,8 @@ import {
   confirmCancelState
 } from '../runtime/autopilot/transition-model.mjs';
 import { acquireTransactionLock, releaseTransactionLock } from '../runtime/autopilot/lock-manager.mjs';
+import { isGateMandatory, requiresApproval, isTargetPreAuthorized } from '../runtime/autopilot/policy-engine.mjs';
+import { computeFileFingerprint, updateArtifactFingerprints, checkArtifactStaleness } from '../runtime/autopilot/staleness-engine.mjs';
 
 function createTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'dk-autopilot-test-'));
@@ -335,6 +337,70 @@ test('16. Constant-Time Verification & Invalid Token Rejection', () => {
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+test('17. Policy Engine Autonomy Levels & 14 Mandatory Non-Bypassable Gates', () => {
+  // All 14 mandatory gates require approval in high-autonomy
+  assert.equal(isGateMandatory('gate_scope_acceptance'), true);
+  assert.equal(requiresApproval('gate_scope_acceptance', 'high-autonomy'), true);
+  assert.equal(requiresApproval('gate_git_push', 'high-autonomy'), true);
+  assert.equal(requiresApproval('gate_pull_request_creation', 'high-autonomy'), true);
+
+  // Non-mandatory gate auto-executes under high-autonomy
+  assert.equal(requiresApproval('gate_architecture_design', 'high-autonomy'), false);
+
+  // Non-mandatory gate requires approval under guided-autopilot
+  assert.equal(requiresApproval('gate_architecture_design', 'guided-autopilot'), true);
+});
+
+test('18. Pre-Authorized Staging Target Policy & Exclusion Enforcement', () => {
+  const tmpDir = createTempDir();
+  const policyDir = path.join(tmpDir, '.development-kit', 'autopilot');
+  fs.mkdirSync(policyDir, { recursive: true });
+
+  const policyPayload = {
+    targets: [
+      {
+        targetId: 'staging_dev_cluster',
+        environment: 'staging',
+        scope: 'integration_testing',
+        approvedOperations: ['deploy_staging'],
+        approvedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        approvedBy: 'lead_engineer'
+      }
+    ]
+  };
+  fs.writeFileSync(path.join(policyDir, 'preauthorized-targets.json'), JSON.stringify(policyPayload), 'utf8');
+
+  // Staging deployment with valid pre-authorization passes under high-autonomy
+  const isApproved = isTargetPreAuthorized({ targetId: 'staging_dev_cluster', operation: 'deploy_staging' }, tmpDir);
+  assert.equal(isApproved, true);
+
+  // Prohibited production operation CANNOT be pre-authorized
+  const isProhibitedApproved = isTargetPreAuthorized({ targetId: 'staging_dev_cluster', operation: 'deploy_production' }, tmpDir);
+  assert.equal(isProhibitedApproved, false);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('19. Artifact Staleness Fingerprinting & Downstream Invalidation', () => {
+  const tmpDir = createTempDir();
+  const docFile = path.join(tmpDir, 'spec.md');
+  fs.writeFileSync(docFile, '# Feature Spec v1', 'utf8');
+
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  updateArtifactFingerprints(state, ['spec.md'], tmpDir);
+
+  // Unmodified file is not stale
+  assert.equal(checkArtifactStaleness(state, 'spec.md', tmpDir), false);
+
+  // Modifying file triggers staleness
+  fs.writeFileSync(docFile, '# Feature Spec v2 (Modified)', 'utf8');
+  assert.equal(checkArtifactStaleness(state, 'spec.md', tmpDir), true);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
 
 
 
