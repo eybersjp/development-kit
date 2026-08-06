@@ -1,60 +1,88 @@
 # Verifying Installation
 
-After installing Development Kit, run the following commands to confirm integrity.
+Use the checks below after installing Development Kit v0.4.2.
 
-## Step 1: Validate Skills & Structure
+## Verify the published package
 
 ```bash
-npm run validate
+npm view development-kit version
 ```
 
-Expected output (abbreviated):
+Expected current version:
+
 ```text
-=== Development Kit Validator ===
-
---- Skills ---
-
-Skill: acceptance-criteria-writing
-  ✓ name: acceptance-criteria-writing
-  ✓ description present
-  ✓ Section: Overview
-  ✓ Section: Process
-...
-=== Summary ===
-  277 checks passed
+0.4.2
 ```
 
-## Step 2: Doctor Check (Plugin Sync)
+## Verify framework integrity
+
+From a Development Kit source checkout, run:
+
+```bash
+npm run release:validate
+```
+
+This includes:
+
+1. Framework component validation.
+2. Plugin synchronization verification.
+3. Documentation validation and regression tests.
+4. OpenCode configuration regression tests.
+5. Autopilot unit tests.
+6. Lifecycle evaluation validation.
+
+## Verify an OpenCode installation
+
+Confirm the project contains:
+
+```text
+.opencode/skills/
+opencode.json
+AGENTS.md
+```
+
+The current `opencode.json` must be:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json"
+}
+```
+
+It must not contain a `rules` key. OpenCode loads the root `AGENTS.md` automatically.
+
+Open the project in OpenCode and confirm that:
+
+- The project opens without a configuration warning.
+- Development Kit skills are discoverable.
+- `AGENTS.md` instructions are active.
+
+## Verify an Antigravity installation
+
+Run:
 
 ```bash
 npm run doctor
 ```
 
-Expected output:
-```text
-Plugin manifest check:
-  Skills: 43 defined, 43 available
-  Agents: 18 defined, 18 available
-  Hooks: 4 defined, 4 available
+Confirm that the installed plugin manifest references the expected 43 skills, 18 agents, and 4 hooks and that the plugin is reported as synchronized.
 
-  ✓ Plugin is in sync
-```
+## Verify Autopilot
 
-## Step 3: Validate Documentation
+From the source repository:
 
 ```bash
-npm run docs:validate
+npm run autopilot:validate
 ```
 
-Expected output:
+Then start the workflow in a safe test project with:
+
 ```text
-=== Development Kit Documentation Validator ===
-
---- Documentation Coverage Checks ---
-  ✓ Command reference page exists: dk-build-auto.md
-  ✓ Command reference page exists: dk-build.md
-  ...
-  ✓ All coverage checks passed
+/dk-autopilot
 ```
 
-If any check fails, see [Troubleshooting](troubleshooting.md).
+Confirm that it reports a valid lifecycle state and stops at required approval gates.
+
+## Failure handling
+
+Do not ignore a failed gate. Follow [Troubleshooting](troubleshooting.md), repair the named issue, and rerun the same command before proceeding.

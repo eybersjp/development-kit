@@ -1,49 +1,86 @@
 # Running Validation
 
-## The Three Validators
+## Validation commands
 
-| Command | Script | What It Validates | Fails? |
-| :--- | :--- | :--- | :--- |
-| `npm run validate` | `scripts/validate-skills.mjs` | Skill/agent/command structure, manifest reference resolution | Exit 1 on errors (warnings allowed) |
-| `npm run doctor` | `scripts/sync-plugin.mjs --check` | Manifest counts vs directories, missing entries | Never fails (reports drift) |
-| `npm run docs:validate` | `scripts/validate-docs.mjs` | Doc coverage, links, placeholders, navigation | Exit 1 on errors |
-| `npm run docs:validate:test` | `scripts/validate-docs.test.mjs` | Automated regression suite for documentation validator | Exit 1 on failure |
+| Command | What it validates | Required for release |
+|---|---|---|
+| `npm run validate` | Skills, agents, commands, compatibility metadata, and manifest references | Yes |
+| `npm run doctor` | Plugin manifest synchronization | Yes |
+| `npm run docs:validate` | Documentation coverage, relative links, placeholders, local URLs, and navigation | Yes |
+| `npm run docs:validate:test` | Documentation validator regression behaviour | Yes |
+| `npm run opencode:validate` | Current OpenCode project configuration compatibility | Yes |
+| `npm run autopilot:test` | Autopilot runtime behaviour | Yes |
+| `npm run evals:validate` | Evaluation suite structure and scenarios | Yes |
+| `npm run autopilot:validate` | Autopilot tests plus evaluation validation | Yes |
+| `npm run release:validate` | The complete release gate suite | Yes |
 
-## Standard Workflow
+## Standard developer workflow
+
+For a focused OpenCode configuration change:
 
 ```bash
-npm run validate
-npm run doctor
+npm run opencode:validate
 npm run docs:validate
-npm run docs:validate:test
 ```
 
-## Reading the Output
+For a complete repository verification:
 
-- `✓` — pass
-- `⚠` — warning (non-blocking; fix when practical)
-- `✗` — error (must fix; exit code 1)
+```bash
+npm run release:validate
+git diff --check
+```
 
-## When to Run What
+`release:validate` is the authoritative command before merging release-sensitive changes or creating a version tag.
 
-| Change | validate | doctor | docs:validate |
-| :--- | :--- | :--- | :--- |
-| Skill/agent/command content edit | ✅ | — | ✅ (if docs changed) |
-| Skill/agent/hook added/removed | ✅ | ✅ (after sync) | ✅ |
-| Docs edit | — | — | ✅ |
-| Installer change | — | — | — (see [testing-installer-changes.md](testing-installer-changes.md)) |
-| Pre-release | ✅ | ✅ | ✅ |
+## Reading output
 
-## CI Equivalents
+- `✓` means the check passed.
+- `⚠` means a warning that should be reviewed.
+- `✗` means the gate failed and must be repaired.
 
-- `ci.yml` runs `validate` + `doctor` on push/PR to `main`.
-- `publish.yml` runs `validate` + `doctor` then a tag↔version check before `npm publish`.
-- `docs:validate` is not yet in CI (see [known-limitations.md](../11-appendices/known-limitations.md)).
+## When to run each gate
+
+| Change | Minimum focused gates | Final gate |
+|---|---|---|
+| Skill, agent, or command content | `validate`, relevant tests, `docs:validate` when docs change | `release:validate` |
+| Skill, agent, hook, or command added or removed | `validate`, `doctor`, `docs:validate` | `release:validate` |
+| Documentation only | `docs:validate`, `docs:validate:test` when validator behaviour changes | `release:validate` |
+| OpenCode configuration or installer integration | `opencode:validate`, installer verification, `docs:validate` | `release:validate` |
+| Autopilot runtime | `autopilot:test`, `evals:validate` | `release:validate` |
+| Release workflow or package metadata | Targeted workflow review plus all gates | `release:validate` |
+
+## CI equivalents
+
+The CI workflow runs the same framework, plugin, documentation, OpenCode, Autopilot, and evaluation gates for pull requests and pushes to `main`.
+
+The maintainer release workflow runs `npm run release:validate` before it creates or verifies a release tag and publishes release artifacts.
+
+## OpenCode configuration failure
+
+The v0.4.2 gate rejects the obsolete configuration:
+
+```json
+{
+  "rules": ["AGENTS.md"]
+}
+```
+
+Use:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json"
+}
+```
+
+OpenCode automatically loads the root `AGENTS.md`.
 
 ## Troubleshooting
 
-- `validate` errors → fix frontmatter or structure; the error names the file.
-- `doctor` drift → `node scripts/sync-plugin.mjs` (regenerate).
-- `docs:validate` errors → create the missing reference page or fix the broken link; the error names the file and link.
+- `validate` errors: repair the named frontmatter, structure, or manifest reference.
+- `doctor` reports drift: run `node scripts/sync-plugin.mjs`, review the diff, and rerun `doctor`.
+- `docs:validate` errors: create the missing reference page, register it in `docs/SUMMARY.md`, or fix the named link.
+- `opencode:validate` errors: repair `opencode.json` and remove any obsolete `rules` key.
+- Autopilot failures: isolate the failing state, security, policy, or lifecycle scenario before proceeding.
 
-See [validation-reference.md](../07-testing-quality-security/validation-reference.md).
+See [Validation Reference](../07-testing-quality-security/validation-reference.md) and [Testing Installer Changes](testing-installer-changes.md).
