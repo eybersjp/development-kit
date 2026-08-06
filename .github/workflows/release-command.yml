@@ -1,0 +1,84 @@
+name: Maintainer Release Command
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: maintainer-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.actor == github.repository_owner && startsWith(github.event.issue.title, 'Release v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Parse and validate release command
+        id: release
+        env:
+          COMMAND: ${{ github.event.issue.body }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        shell: bash
+        run: |
+          if [[ ! "$COMMAND" =~ ^/release[[:space:]]+(v[0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*$ ]]; then
+            echo "::error::Issue body must contain only: /release vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+
+          TAG="${BASH_REMATCH[1]}"
+          if [ "$ISSUE_TITLE" != "Release $TAG" ]; then
+            echo "::error::Issue title must be exactly: Release $TAG"
+            exit 1
+          fi
+
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${TAG#v}"
+          if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::package.json version ($PACKAGE_VERSION) does not match requested tag ($TAG_VERSION)"
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists on origin"
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Run complete release validation
+        run: npm run release:validate
+
+      - name: Create and push annotated release tag
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Development Kit $TAG"
+          git push origin "$TAG"
+
+      - name: Confirm release trigger
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Release tag \`$TAG\` was created after the full validation suite passed. The Publish Release workflow is now creating the GitHub Release and will publish to npm when \`NPM_TOKEN\` is configured."
+          gh issue close "$ISSUE_NUMBER" --reason completed

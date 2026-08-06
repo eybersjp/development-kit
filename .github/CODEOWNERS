@@ -1,0 +1,8 @@
+# Default ownership
+* @eybersjp
+
+# Release and security-sensitive automation
+/.github/workflows/ @eybersjp
+/runtime/autopilot/ @eybersjp
+/scripts/autopilot.mjs @eybersjp
+/SECURITY.md @eybersjp
