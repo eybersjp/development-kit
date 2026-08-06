@@ -1,12 +1,13 @@
 # Evaluations Index
 
-Development Kit ships **10 evaluation suites** in `evals/`, one per evaluated skill. Each suite currently contains one scenario (a JSON file) that defines the input and the expected agent behaviour.
+Development Kit ships **11 evaluation suites** in `evals/`, one per evaluated skill/capability area.
 
 ## Suites
 
 | Suite | Evaluated Skill | Scenario | Reference |
 | :--- | :--- | :--- | :--- |
 | **acceptance-criteria-writing** | acceptance-criteria-writing | Convert vague requirements into testable criteria | [acceptance-criteria-writing.md](acceptance-criteria-writing.md) |
+| **autopilot-lifecycle** | dk-autopilot | End-to-end 9-stage lifecycle & security gates | [autopilot-lifecycle.md](autopilot-lifecycle.md) |
 | **code-quality-review** | code-quality-review | Review a PR with common quality issues | [code-quality-review.md](code-quality-review.md) |
 | **dependency-restraint** | dependency-restraint | Reject unnecessary dependencies | [dependency-restraint.md](dependency-restraint.md) |
 | **idea-discovery** | idea-discovery | Clarify a vague feature request | [idea-discovery.md](idea-discovery.md) |

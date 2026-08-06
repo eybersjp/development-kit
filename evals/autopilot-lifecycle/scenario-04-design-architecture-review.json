@@ -1,0 +1,11 @@
+{
+  "skill": "autopilot-lifecycle",
+  "scenario": "Execute Stage 3 DESIGN with technical and visual design verification",
+  "input": {
+    "currentStage": "DESIGN"
+  },
+  "expected": {
+    "nextActionType": "PRODUCE_TECHNICAL_DESIGN",
+    "requiresReview": true
+  }
+}

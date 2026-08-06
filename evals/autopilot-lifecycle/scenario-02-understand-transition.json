@@ -1,0 +1,13 @@
+{
+  "skill": "autopilot-lifecycle",
+  "scenario": "Execute Stage 1 UNDERSTAND and transition to Stage 2 DEFINE",
+  "input": {
+    "actionResult": "completed",
+    "completedStage": "UNDERSTAND"
+  },
+  "expected": {
+    "currentStage": "DEFINE",
+    "completedStagesCount": 1,
+    "nextActionType": "DISCOVER_REQUIREMENTS"
+  }
+}

@@ -156,6 +156,7 @@
 ### Evaluations
 * [Evaluations Index](03-reference/evaluations/README.md)
 * [acceptance-criteria-writing](03-reference/evaluations/acceptance-criteria-writing.md)
+* [autopilot-lifecycle](03-reference/evaluations/autopilot-lifecycle.md)
 * [code-quality-review](03-reference/evaluations/code-quality-review.md)
 * [dependency-restraint](03-reference/evaluations/dependency-restraint.md)
 * [idea-discovery](03-reference/evaluations/idea-discovery.md)
@@ -173,6 +174,7 @@
 * [sync-plugin](03-reference/scripts/sync-plugin.md)
 * [validate-skills](03-reference/scripts/validate-skills.md)
 * [validate-docs](03-reference/scripts/validate-docs.md)
+* [validate-evals](03-reference/scripts/validate-evals.md)
 * [Package & Manifest Configuration](03-reference/configuration/manifests-and-configs.md)
 
 ## 04. Architecture
