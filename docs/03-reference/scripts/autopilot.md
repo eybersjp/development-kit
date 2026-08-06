@@ -14,6 +14,9 @@ node scripts/autopilot.mjs --status
 node scripts/autopilot.mjs --next
 node scripts/autopilot.mjs --begin-action --action=<actionId>
 node scripts/autopilot.mjs --record-result [--input-file=<path> | --input-json=<json>]
+node scripts/autopilot.mjs --renew-action --action=<actionId>
+node scripts/autopilot.mjs --pause
+node scripts/autopilot.mjs --resume
 ```
 
 ## Options
@@ -23,6 +26,9 @@ node scripts/autopilot.mjs --record-result [--input-file=<path> | --input-json=<
 - `--next`: Issue the next structured action for the conductor.
 - `--begin-action`: Mark an action as `in_progress`.
 - `--record-result`: Record an action result and advance lifecycle state.
+- `--renew-action`: Extend the active-action lease timestamp up to the 2-hour maximum limit.
+- `--pause`: Transition workflow state to `paused` and block state-modifying actions.
+- `--resume`: Restore a paused workflow to `executing` status.
 
 ## Output Format
 

@@ -13,7 +13,15 @@ import os from 'node:os';
 import { validateWorkflowState, validateAction, validateActionResult } from '../runtime/autopilot/validators.mjs';
 import { getProjectIdentity } from '../runtime/autopilot/project-identity.mjs';
 import { getCurrentState, saveStateRevision, recoverLatestValidState } from '../runtime/autopilot/state-store.mjs';
-import { createInitialState, calculateNextAction, beginActionState, recordResultState } from '../runtime/autopilot/transition-model.mjs';
+import {
+  createInitialState,
+  calculateNextAction,
+  beginActionState,
+  recordResultState,
+  pauseWorkflow,
+  resumeWorkflow,
+  renewActionLease
+} from '../runtime/autopilot/transition-model.mjs';
 import { acquireTransactionLock, releaseTransactionLock } from '../runtime/autopilot/lock-manager.mjs';
 
 function createTempDir() {
@@ -187,4 +195,82 @@ test('8. /dk-build-auto Isolation', () => {
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+test('9. Workflow Pause & Resume State Transitions & Operation Blocking', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  saveStateRevision(state, tmpDir);
+
+  // Pause workflow
+  const pausedState = pauseWorkflow(state);
+  assert.equal(pausedState.workflowStatus, 'paused');
+
+  // Attempting to begin action while paused must fail
+  assert.throws(() => {
+    beginActionState(pausedState, 'act_test_123');
+  }, /Workflow is paused/);
+
+  // Resume workflow
+  const resumedState = resumeWorkflow(pausedState);
+  assert.equal(resumedState.workflowStatus, 'executing');
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('10. Active-Action Lease Renewal & Hard Cap', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  const action = calculateNextAction(state);
+  state.activeAction = action;
+
+  const originalLease = state.activeAction.leaseExpiresAt;
+  renewActionLease(state, action.actionId, 15 * 60 * 1000);
+  assert.ok(Date.parse(state.activeAction.leaseExpiresAt) > Date.parse(originalLease));
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('11. Late Result Handling & Manual Review Routing', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  const action = calculateNextAction(state);
+  state.activeAction = action;
+
+  // Simulate expired lease
+  state.activeAction.leaseExpiresAt = new Date(Date.now() - 10000).toISOString();
+
+  const lateResult = {
+    workflowId: state.workflowId,
+    stateRevision: 1,
+    actionId: action.actionId,
+    status: 'completed'
+  };
+
+  const updatedState = recordResultState(state, lateResult);
+  assert.equal(updatedState.workflowStatus, 'recovering');
+  assert.equal(updatedState.activeAction.status, 'manual_review');
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('12. Optimistic State Revision Conflict Rejection', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  const action = calculateNextAction(state);
+  state.activeAction = action;
+
+  const staleResult = {
+    workflowId: state.workflowId,
+    stateRevision: 999, // Stale/invalid revision
+    actionId: action.actionId,
+    status: 'completed'
+  };
+
+  assert.throws(() => {
+    recordResultState(state, staleResult);
+  }, /State revision mismatch/);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
 
