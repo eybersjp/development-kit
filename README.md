@@ -68,10 +68,25 @@ npx development-kit init --opencode --dry-run
 
 **Preserving customizations:** The installer never overwrites an existing `AGENTS.md` at the target. If you reinstall, your rules are preserved. Root files (`AGENTS.md`, `README.md`) in `--all` mode follow the same guard — existing files are skipped, only new ones are installed. Library content (skills, agents, commands, hooks, templates, evals, scripts) is updated unconditionally on re-run.
 
+## User-Facing Entry Experience
+
+Whenever starting Development Kit without selecting a specific command, select the recommended automated workflow:
+
+```text
+╔══════════════════════════════════════════════════════════════╗
+║  🚀 AUTOMATED GUIDED WORKFLOW — RECOMMENDED                 ║
+║                                                              ║
+║  Take me through the complete Development Kit lifecycle.     ║
+║  The system will select the correct commands, agents, and   ║
+║  skills for each stage automatically.                        ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
 ## Commands
 
 | Command | Purpose |
 |---------|---------|
+| `/dk-autopilot` | Run the complete Development Kit software-development lifecycle in Automated Guided Workflow mode |
 | `/dk-idea` | Refine a rough idea into a concrete concept with requirements interview, idea challenge, and scope definition |
 | `/dk-spec` | Create the minimum required specification artifacts for the approved concept |
 | `/dk-design` | Produce technical and visual design including data models, API contracts, user flows, and design direction |

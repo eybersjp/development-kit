@@ -62,6 +62,7 @@ Before writing any new code, traverse this ladder:
 
 | Command | Purpose |
 |---------|---------|
+| `/dk-autopilot` | Run the complete Development Kit lifecycle in Automated Guided Workflow mode |
 | `/dk-idea` | Run idea discovery and requirements interview |
 | `/dk-spec` | Create the required artifact set |
 | `/dk-design` | Produce technical and visual design |
