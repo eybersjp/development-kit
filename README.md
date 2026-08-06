@@ -17,6 +17,17 @@ Development Kit merges three proven approaches:
 
 The result: an AI development methodology that produces correct, simple, well-tested code without overengineering.
 
+## Documentation
+
+Development Kit includes a comprehensive, production-grade documentation system covering all 12 framework sections:
+
+* 📚 [Documentation Index](docs/README.md)
+* 📖 [Table of Contents & SUMMARY](docs/SUMMARY.md)
+* ⚡ [Commands Reference](docs/03-reference/commands/README.md)
+* 🤖 [Agents Reference](docs/03-reference/agents/README.md)
+* 🎯 [Skills Reference](docs/03-reference/skills/README.md)
+* 🏗️ [Architecture Deep-Dive](docs/04-architecture/system-context.md)
+
 ## Quick Start
 
 ```bash

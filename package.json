@@ -32,7 +32,9 @@
   "scripts": {
     "validate": "node scripts/validate-skills.mjs",
     "init": "node scripts/install-antigravity.mjs",
-    "doctor": "node scripts/sync-plugin.mjs --check"
+    "doctor": "node scripts/sync-plugin.mjs --check",
+    "docs:validate": "node scripts/validate-docs.mjs",
+    "docs:validate:test": "node --test scripts/validate-docs.test.mjs"
   },
   "engines": {
     "node": ">=18.0.0"
