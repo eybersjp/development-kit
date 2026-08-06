@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Changed
+- Aligned the README and documentation system with the public v0.4.2 package, canonical `v0.4.2` tag, current OpenCode configuration contract, complete release validation suite, and issue-driven publication workflow.
+- Added explicit migration and troubleshooting guidance for v0.4.1 projects affected by `Unrecognized key: rules`.
+- Updated release, npm, compatibility, validation, and post-release verification documentation to match the implemented repository automation.
+
 ## [0.4.2] - 2026-08-06
 
 ### Added
@@ -40,7 +45,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Versioned workflow-state persistence, transaction locking, project/workspace identity, and corrupt-pointer recovery.
 - Replay-resistant security tokens with constant-time verification and hashed persistent storage.
 - Three autonomy levels, mandatory approval gates, staging-target policy evaluation, and artifact staleness invalidation.
-- Formal conductor–runtime handshake.
+- Formal conductor-runtime handshake.
 - Fifteen Autopilot lifecycle evaluation scenarios and automated validation.
 
 ## [0.3.0] - 2026-08-06
