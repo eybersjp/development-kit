@@ -51,6 +51,7 @@
 * [Commands Index](03-reference/commands/README.md)
 * [Command Selection Matrix](03-reference/commands/command-selection-matrix.md)
 * [Workflow Sequences](03-reference/commands/workflow-sequences.md)
+* [dk-autopilot](03-reference/commands/dk-autopilot.md)
 * [dk-build-auto](03-reference/commands/dk-build-auto.md)
 * [dk-build](03-reference/commands/dk-build.md)
 * [dk-debug](03-reference/commands/dk-debug.md)

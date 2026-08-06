@@ -134,3 +134,57 @@ test('6. Next Action Calculation & Transition', () => {
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+test('7. Conductor Handshake & UNDERSTAND -> DEFINE Transition Proof', () => {
+  const tmpDir = createTempDir();
+
+  // Stage 1: Initial state
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  assert.equal(state.currentStage, 'UNDERSTAND');
+  assert.equal(state.stateRevision, 1);
+  saveStateRevision(state, tmpDir);
+
+  // Step 2: Calculate & begin UNDERSTAND action
+  const action1 = calculateNextAction(state);
+  assert.equal(action1.stage, 'UNDERSTAND');
+  assert.equal(action1.command, '/dk-idea');
+  assert.equal(action1.responsibleAgent, 'product-discovery-agent');
+
+  state.activeAction = action1;
+  beginActionState(state, action1.actionId);
+  saveStateRevision(state, tmpDir);
+
+  // Step 3: Record result & transition to DEFINE
+  const result1 = {
+    workflowId: state.workflowId,
+    stateRevision: 1,
+    actionId: action1.actionId,
+    status: 'completed'
+  };
+
+  const state2 = recordResultState(state, result1);
+  assert.equal(state2.currentStage, 'DEFINE');
+  assert.equal(state2.stateRevision, 2);
+  assert.deepEqual(state2.completedStages, ['UNDERSTAND']);
+  saveStateRevision(state2, tmpDir);
+
+  // Step 4: Next action is now DEFINE / /dk-spec
+  const action2 = calculateNextAction(state2);
+  assert.equal(action2.stage, 'DEFINE');
+  assert.equal(action2.command, '/dk-spec');
+  assert.equal(action2.responsibleAgent, 'specification-agent');
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('8. /dk-build-auto Isolation', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ mode: 'autopilot', autonomy: 'guided-autopilot' }, tmpDir);
+
+  // Verify autopilot mode is distinct from build-auto
+  assert.equal(state.workflowMode, 'autopilot');
+  assert.notEqual(state.workflowMode, 'build-auto');
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
