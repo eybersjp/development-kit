@@ -9,8 +9,12 @@
  *   node scripts/autopilot.mjs --begin-action --action=<actionId>
  *   node scripts/autopilot.mjs --record-result [--input-file=<path> | --input-json=<json>]
  *   node scripts/autopilot.mjs --renew-action --action=<actionId>
+ *   node scripts/autopilot.mjs --approve --approval=<approvalId> --token=<token>
+ *   node scripts/autopilot.mjs --reject --approval=<approvalId> --token=<token>
  *   node scripts/autopilot.mjs --pause
  *   node scripts/autopilot.mjs --resume
+ *   node scripts/autopilot.mjs --cancel
+ *   node scripts/autopilot.mjs --cancel --confirm=<confirmationToken>
  */
 
 import fs from 'node:fs';
@@ -24,7 +28,11 @@ import {
   recordResultState,
   pauseWorkflow,
   resumeWorkflow,
-  renewActionLease
+  renewActionLease,
+  approveState,
+  rejectState,
+  requestCancelState,
+  confirmCancelState
 } from '../runtime/autopilot/transition-model.mjs';
 import { validateActionResult } from '../runtime/autopilot/validators.mjs';
 
@@ -72,6 +80,66 @@ function main() {
       return respond(false, { error: 'No active autopilot workflow found', code: 'ERROR_NO_WORKFLOW' }, 1);
     }
     return respond(true, { state: currentState });
+  }
+
+  if (options.cancel) {
+    if (!currentState) {
+      return respond(false, { error: 'No active autopilot workflow found', code: 'ERROR_NO_WORKFLOW' }, 1);
+    }
+
+    if (options.confirm) {
+      try {
+        const updatedState = confirmCancelState(currentState, options.confirm);
+        saveStateRevision(updatedState, rootDir);
+        return respond(true, { message: 'Autopilot workflow cancelled successfully', state: updatedState });
+      } catch (err) {
+        return respond(false, { error: err.message, code: 'ERROR_CANCELLATION_FAILED' }, 1);
+      }
+    } else {
+      const { confirmationToken } = requestCancelState(currentState);
+      saveStateRevision(currentState, rootDir);
+      return respond(true, {
+        status: 'CANCELLATION_CONFIRMATION_REQUIRED',
+        message: 'Cancellation requested. Re-run with --cancel --confirm=<confirmationToken> to proceed.',
+        confirmationToken
+      });
+    }
+  }
+
+  if (options.approve) {
+    if (!currentState) {
+      return respond(false, { error: 'No active autopilot workflow found', code: 'ERROR_NO_WORKFLOW' }, 1);
+    }
+    const approvalId = typeof options.approval === 'string' ? options.approval : options.approve;
+    const token = options.token;
+    if (!approvalId || !token) {
+      return respond(false, { error: 'Missing --approval or --token parameter', code: 'ERROR_INVALID_ARGS' }, 1);
+    }
+    try {
+      const updatedState = approveState(currentState, approvalId, token);
+      saveStateRevision(updatedState, rootDir);
+      return respond(true, { message: `Approval ${approvalId} granted`, state: updatedState });
+    } catch (err) {
+      return respond(false, { error: err.message, code: 'ERROR_APPROVAL_FAILED' }, 1);
+    }
+  }
+
+  if (options.reject) {
+    if (!currentState) {
+      return respond(false, { error: 'No active autopilot workflow found', code: 'ERROR_NO_WORKFLOW' }, 1);
+    }
+    const approvalId = typeof options.approval === 'string' ? options.approval : options.reject;
+    const token = options.token;
+    if (!approvalId || !token) {
+      return respond(false, { error: 'Missing --approval or --token parameter', code: 'ERROR_INVALID_ARGS' }, 1);
+    }
+    try {
+      const updatedState = rejectState(currentState, approvalId, token);
+      saveStateRevision(updatedState, rootDir);
+      return respond(true, { message: `Approval ${approvalId} rejected`, state: updatedState });
+    } catch (err) {
+      return respond(false, { error: err.message, code: 'ERROR_REJECTION_FAILED' }, 1);
+    }
   }
 
   if (options.pause) {
@@ -183,7 +251,7 @@ function main() {
     }
   }
 
-  return respond(false, { error: 'Unknown CLI operation. Supported: --init, --status, --next, --begin-action, --record-result, --renew-action, --pause, --resume', code: 'ERROR_UNKNOWN_OPERATION' }, 1);
+  return respond(false, { error: 'Unknown CLI operation. Supported: --init, --status, --next, --begin-action, --record-result, --renew-action, --approve, --reject, --pause, --resume, --cancel', code: 'ERROR_UNKNOWN_OPERATION' }, 1);
 }
 
 main();

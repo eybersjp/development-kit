@@ -7,6 +7,7 @@
 
 import crypto from 'node:crypto';
 import { getProjectIdentity } from './project-identity.mjs';
+import { generateSecurityToken, verifyTokenHash } from './security-tokens.mjs';
 
 export const CANONICAL_STAGES = [
   'UNDERSTAND',
@@ -75,6 +76,136 @@ export function resumeWorkflow(state) {
   if (state.workflowStatus !== 'paused') throw new Error(`Cannot resume workflow in ${state.workflowStatus} status`);
 
   state.workflowStatus = 'executing';
+  state.updatedAt = new Date().toISOString();
+  return state;
+}
+
+export function requestApprovalState(state, gateId = 'gate_scope_acceptance') {
+  if (!state) throw new Error('No state provided');
+
+  const { plaintextToken, tokenHash } = generateSecurityToken();
+  const approvalId = `app_${crypto.randomUUID()}`;
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+
+  state.workflowStatus = 'awaiting_approval';
+  state.pendingApproval = {
+    approvalId,
+    gateId,
+    actionId: state.activeAction?.actionId || 'none',
+    workflowId: state.workflowId,
+    stateRevision: state.stateRevision,
+    tokenHash,
+    consumed: false,
+    requestedAt: now.toISOString(),
+    expiresAt
+  };
+
+  state.updatedAt = now.toISOString();
+  return { approvalId, token: plaintextToken };
+}
+
+export function approveState(state, approvalId, inputToken) {
+  if (!state || !state.pendingApproval) {
+    throw new Error('No pending approval found');
+  }
+
+  const approval = state.pendingApproval;
+  if (approval.approvalId !== approvalId) {
+    throw new Error(`Approval ID mismatch: expected ${approval.approvalId}, got ${approvalId}`);
+  }
+
+  if (approval.consumed) {
+    throw new Error('Approval token has already been consumed');
+  }
+
+  if (Date.now() > Date.parse(approval.expiresAt)) {
+    throw new Error('Approval token has expired');
+  }
+
+  if (!verifyTokenHash(inputToken, approval.tokenHash)) {
+    throw new Error('Invalid approval token');
+  }
+
+  approval.consumed = true;
+  state.pendingApproval = null;
+  state.workflowStatus = 'executing';
+  state.stateRevision += 1;
+  state.updatedAt = new Date().toISOString();
+  return state;
+}
+
+export function rejectState(state, approvalId, inputToken) {
+  if (!state || !state.pendingApproval) {
+    throw new Error('No pending approval found');
+  }
+
+  const approval = state.pendingApproval;
+  if (approval.approvalId !== approvalId) {
+    throw new Error(`Approval ID mismatch: expected ${approval.approvalId}, got ${approvalId}`);
+  }
+
+  if (approval.consumed) {
+    throw new Error('Approval token has already been consumed');
+  }
+
+  if (Date.now() > Date.parse(approval.expiresAt)) {
+    throw new Error('Approval token has expired');
+  }
+
+  if (!verifyTokenHash(inputToken, approval.tokenHash)) {
+    throw new Error('Invalid approval token');
+  }
+
+  approval.consumed = true;
+  state.pendingApproval = null;
+  state.workflowStatus = 'recovering';
+  state.stateRevision += 1;
+  state.updatedAt = new Date().toISOString();
+  return state;
+}
+
+export function requestCancelState(state) {
+  if (!state) throw new Error('No state provided');
+
+  const { plaintextToken, tokenHash } = generateSecurityToken();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString();
+
+  state.pendingConfirmation = {
+    operation: 'cancellation',
+    tokenHash,
+    consumed: false,
+    requestedAt: now.toISOString(),
+    expiresAt
+  };
+
+  state.updatedAt = now.toISOString();
+  return { confirmationToken: plaintextToken };
+}
+
+export function confirmCancelState(state, confirmationToken) {
+  if (!state || !state.pendingConfirmation) {
+    throw new Error('No pending cancellation confirmation found');
+  }
+
+  const confirmation = state.pendingConfirmation;
+  if (confirmation.consumed) {
+    throw new Error('Cancellation confirmation token has already been consumed');
+  }
+
+  if (Date.now() > Date.parse(confirmation.expiresAt)) {
+    throw new Error('Cancellation confirmation token has expired');
+  }
+
+  if (!verifyTokenHash(confirmationToken, confirmation.tokenHash)) {
+    throw new Error('Invalid cancellation confirmation token');
+  }
+
+  confirmation.consumed = true;
+  state.pendingConfirmation = null;
+  state.workflowStatus = 'cancelled';
+  state.stateRevision += 1;
   state.updatedAt = new Date().toISOString();
   return state;
 }
@@ -184,7 +315,6 @@ export function recordResultState(state, result) {
 
   checkLeaseExpiry(state);
 
-  // Late result handling for expired lease -> route to manual_review
   if (state.activeAction.status === 'lease_expired') {
     result.status = 'manual_review';
     state.workflowStatus = 'recovering';

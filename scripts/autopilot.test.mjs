@@ -20,7 +20,12 @@ import {
   recordResultState,
   pauseWorkflow,
   resumeWorkflow,
-  renewActionLease
+  renewActionLease,
+  requestApprovalState,
+  approveState,
+  rejectState,
+  requestCancelState,
+  confirmCancelState
 } from '../runtime/autopilot/transition-model.mjs';
 import { acquireTransactionLock, releaseTransactionLock } from '../runtime/autopilot/lock-manager.mjs';
 
@@ -272,5 +277,64 @@ test('12. Optimistic State Revision Conflict Rejection', () => {
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+test('13. Cryptographic Token Generation & SHA-256 Hashing', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+
+  const { approvalId, token } = requestApprovalState(state, 'gate_scope_acceptance');
+  assert.ok(approvalId.startsWith('app_'));
+  assert.ok(token.length >= 32);
+
+  // Verify plaintext token is NOT stored in state
+  assert.equal(state.pendingApproval.token, undefined);
+  assert.ok(state.pendingApproval.tokenHash);
+  assert.notEqual(state.pendingApproval.tokenHash, token);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('14. Replay-Safe Approval & Token Consumption', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  const { approvalId, token } = requestApprovalState(state, 'gate_scope_acceptance');
+
+  // Grant approval
+  approveState(state, approvalId, token);
+  assert.equal(state.workflowStatus, 'executing');
+  assert.equal(state.pendingApproval, null);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('15. Two-Step Cancellation Challenge & Confirmation', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+
+  // Step 1: Request cancel -> challenge token
+  const { confirmationToken } = requestCancelState(state);
+  assert.ok(confirmationToken);
+  assert.equal(state.workflowStatus, 'executing');
+
+  // Step 2: Confirm cancel -> workflow cancelled
+  confirmCancelState(state, confirmationToken);
+  assert.equal(state.workflowStatus, 'cancelled');
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('16. Constant-Time Verification & Invalid Token Rejection', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  const { approvalId } = requestApprovalState(state, 'gate_scope_acceptance');
+
+  // Rejection with wrong token
+  assert.throws(() => {
+    approveState(state, approvalId, 'invalid_wrong_token_123');
+  }, /Invalid approval token/);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
 
 
