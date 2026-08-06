@@ -167,6 +167,7 @@
 
 ### Scripts & Configuration
 * [Scripts Index](03-reference/scripts/README.md)
+* [autopilot](03-reference/scripts/autopilot.md)
 * [install-antigravity](03-reference/scripts/install-antigravity.md)
 * [sync-plugin](03-reference/scripts/sync-plugin.md)
 * [validate-skills](03-reference/scripts/validate-skills.md)
@@ -193,6 +194,7 @@
 * [Security & Trust Boundaries](04-architecture/security-trust-boundaries.md)
 * [Architecture Invariants](04-architecture/architecture-invariants.md)
 * [Architecture Decisions](04-architecture/architecture-decisions.md)
+* [Autopilot Implementation Plan](04-architecture/autopilot-implementation-plan.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)

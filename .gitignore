@@ -19,3 +19,8 @@ desktop.ini
 *.swp
 *.swo
 *~
+
+# Development Kit Autopilot
+.development-kit/workspace-id
+.development-kit/autopilot/
+
