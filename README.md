@@ -5,6 +5,7 @@
 ### A disciplined AI software-development team, installed into your coding agent.
 
 [![CI](https://github.com/eybersjp/development-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/eybersjp/development-kit/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/development-kit.svg)](https://www.npmjs.com/package/development-kit)
 [![Release](https://img.shields.io/github/v/release/eybersjp/development-kit?display_name=tag&sort=semver)](https://github.com/eybersjp/development-kit/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?logo=node.js&logoColor=white)](package.json)
@@ -24,6 +25,12 @@ AI coding agents are fast, but speed without engineering discipline creates rewo
 Development Kit installs a repeatable senior-engineering workflow into supported AI coding environments. It gives the agent explicit lifecycle stages, specialist roles, verification gates, reusable skills, and a persistent automated workflow that can pause, resume, recover, and ask for approval before consequential actions.
 
 It is **not** a project-management dashboard and it does not replace engineering judgment. It is an execution discipline for turning an idea or change request into tested, reviewed, release-ready work.
+
+## Current release
+
+The current public release is **v0.4.2**, available from GitHub Releases and npm as `development-kit@0.4.2`.
+
+v0.4.2 fixes OpenCode project configuration compatibility by removing the obsolete `rules` key. OpenCode now uses the official schema declaration and automatically loads the project-level `AGENTS.md` file.
 
 ## What you get
 
@@ -56,7 +63,7 @@ The recommended entry experience is intentionally explicit:
 
 ```text
 ╔══════════════════════════════════════════════════════════════╗
-║  🚀 AUTOMATED GUIDED WORKFLOW — RECOMMENDED                 ║
+║  🚀 AUTOMATED GUIDED WORKFLOW - RECOMMENDED                 ║
 ║                                                              ║
 ║  Take me through the complete Development Kit lifecycle.     ║
 ║  Select the correct commands, agents, and skills, and pause  ║
@@ -91,6 +98,16 @@ npx development-kit init --opencode
 npx development-kit init --opencode --dry-run
 ```
 
+The installed `opencode.json` contains only the official schema declaration:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json"
+}
+```
+
+OpenCode loads root `AGENTS.md` automatically. Existing v0.4.1 projects that report `Unrecognized key: rules` should replace their local `opencode.json` with the configuration above or reinstall with v0.4.2.
+
 ### Available installer modes
 
 | Flag | Purpose |
@@ -99,7 +116,7 @@ npx development-kit init --opencode --dry-run
 | `--global` | Install to the global Antigravity configuration. |
 | `--project` | Install to the current project's `.agents/` directory. |
 | `--all` | Copy the complete standalone framework into the project. |
-| `--opencode` | Install the OpenCode-compatible rules and skill library. |
+| `--opencode` | Install the OpenCode-compatible configuration, rules, and skill library. |
 | `--dry-run` | Preview changes without writing files. |
 | `--force` | Explicitly allow replacement where safety guards normally preserve user files. |
 
@@ -141,7 +158,7 @@ Every non-trivial change follows the same principles:
 | Environment | Integration |
 |---|---|
 | **Antigravity** | Plugin, agents, commands, hooks, skills, templates, evaluations, and runtime utilities. |
-| **OpenCode** | `AGENTS.md`, `opencode.json`, and 43 progressively loaded compatible skills. |
+| **OpenCode** | Official schema-based `opencode.json`, automatically loaded `AGENTS.md`, and 43 progressively loaded compatible skills. |
 | **Standalone repositories** | Full framework copy through `--all`. |
 
 ## Quality and safety
@@ -152,17 +169,15 @@ Development Kit includes:
 - Replay-resistant approval and cancellation tokens.
 - Artifact fingerprints and downstream staleness invalidation.
 - Mandatory approval gates for Git pushes, pull requests, merges, releases, production deployments, package publication, destructive changes, and security-risk acceptance.
-- Unit tests, behavioural evaluation scenarios, documentation validation, and plugin-manifest synchronization.
+- Unit tests, behavioural evaluation scenarios, documentation validation, OpenCode configuration regression tests, and plugin-manifest synchronization.
 
 Run the complete local verification suite:
 
 ```bash
-npm run validate
-npm run doctor
-npm run docs:validate
-npm run docs:validate:test
-npm run autopilot:validate
+npm run release:validate
 ```
+
+The release gate runs framework validation, plugin synchronization checks, documentation validation and tests, OpenCode configuration regression tests, Autopilot unit tests, and lifecycle evaluation validation.
 
 ## Documentation
 
@@ -172,12 +187,13 @@ npm run autopilot:validate
 - [Agent reference](docs/03-reference/agents/README.md)
 - [Skill reference](docs/03-reference/skills/README.md)
 - [Architecture](docs/04-architecture/system-context.md)
+- [OpenCode installation](docs/02-user-guide/install-opencode.md)
 - [Automated Guided Workflow](docs/02-user-guide/automated-guided-workflow.md)
 - [Changelog](CHANGELOG.md)
 
 ## Project status
 
-Development Kit is actively developed. The current release includes the production Autopilot foundation and complete framework documentation. Public feedback, integration reports, focused improvements, and well-scoped contributions are welcome.
+Development Kit is actively developed. The current release includes the production Autopilot foundation, current OpenCode compatibility, a validated public npm package, and complete framework documentation. Public feedback, integration reports, focused improvements, and well-scoped contributions are welcome.
 
 See [SUPPORT.md](SUPPORT.md) for help, [SECURITY.md](SECURITY.md) for vulnerability reporting, and [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes.
 
