@@ -48,7 +48,7 @@
     "doctor": "node scripts/sync-plugin.mjs --check",
     "docs:validate": "node scripts/validate-docs.mjs",
     "docs:validate:test": "node --test scripts/validate-docs.test.mjs",
-    "opencode:validate": "node scripts/validate-opencode-config.mjs",
+    "opencode:validate": "node --test scripts/validate-opencode-config.test.mjs",
     "autopilot:test": "node --test scripts/autopilot.test.mjs",
     "evals:validate": "node scripts/validate-evals.mjs",
     "autopilot:validate": "npm run autopilot:test && npm run evals:validate",
