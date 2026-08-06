@@ -33,5 +33,6 @@ Projects installed with v0.4.1 that report `Unrecognized key: rules` should foll
 * [Contributing Guidelines](09-contributing/contribution-overview.md)
 * [Real-World Examples and Tutorials](10-examples/README.md)
 * [Appendices and Traceability](11-appendices/glossary.md)
+* [Product Evidence and Public Demonstration](12-marketing-evidence/README.md)
 
 For the complete page tree, see [SUMMARY.md](SUMMARY.md).
