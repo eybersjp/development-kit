@@ -1,16 +1,27 @@
 {
   "name": "development-kit",
-  "version": "0.4.0",
-  "description": "An opinionated AI software-development methodology and skill collection for Antigravity. Installable senior-engineering discipline: develop ideas, create minimal artifacts, break work into tasks, implement with fresh sub-agents, verify, review, and simplify.",
-  "author": "development-kit contributors",
+  "version": "0.4.1",
+  "description": "A disciplined AI software-development workflow for Antigravity and OpenCode, with lifecycle commands, specialist agents, verification gates, and persistent guided automation.",
+  "author": "Juan-Pierre Eybers",
   "license": "MIT",
+  "homepage": "https://github.com/eybersjp/development-kit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eybersjp/development-kit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/eybersjp/development-kit/issues"
+  },
   "keywords": [
+    "ai-coding-agent",
+    "agentic-development",
     "antigravity",
-    "ai-coding",
-    "development-workflow",
+    "opencode",
+    "software-development-lifecycle",
+    "developer-tools",
     "agent-skills",
-    "software-engineering",
-    "tdd",
+    "workflow-automation",
+    "test-driven-development",
     "code-review"
   ],
   "bin": {
@@ -24,9 +35,11 @@
     "hooks/",
     "templates/",
     "evals/",
+    "runtime/",
     "scripts/",
     "AGENTS.md",
     "README.md",
+    "LICENSE",
     "opencode.json"
   ],
   "scripts": {
@@ -37,7 +50,8 @@
     "docs:validate:test": "node --test scripts/validate-docs.test.mjs",
     "autopilot:test": "node --test scripts/autopilot.test.mjs",
     "evals:validate": "node scripts/validate-evals.mjs",
-    "autopilot:validate": "npm run autopilot:test && npm run evals:validate"
+    "autopilot:validate": "npm run autopilot:test && npm run evals:validate",
+    "release:validate": "npm run validate && npm run doctor && npm run docs:validate && npm run docs:validate:test && npm run autopilot:validate"
   },
   "engines": {
     "node": ">=18.0.0"

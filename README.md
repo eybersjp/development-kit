@@ -1,315 +1,186 @@
+<div align="center">
+
 # Development Kit
 
+### A disciplined AI software-development team, installed into your coding agent.
+
 [![CI](https://github.com/eybersjp/development-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/eybersjp/development-kit/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/development-kit.svg)](https://www.npmjs.com/package/development-kit)
+[![Release](https://img.shields.io/github/v/release/eybersjp/development-kit?display_name=tag&sort=semver)](https://github.com/eybersjp/development-kit/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?logo=node.js&logoColor=white)](package.json)
 
-> An opinionated AI software-development methodology and skill collection for Antigravity.
+**Plan deliberately. Build in small verified steps. Review against the specification. Simplify before shipping.**
 
-Installable senior-engineering discipline. Not a project management tool — a disciplined development team that lives inside your AI agent.
+[Get started](#quick-start) · [Automated workflow](#automated-guided-workflow) · [Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Releases](https://github.com/eybersjp/development-kit/releases)
 
-## Philosophy
+</div>
 
-Development Kit merges three proven approaches:
+---
 
-- **Superpowers' workflow discipline** — brainstorm, design, plan, fresh sub-agents, TDD, two-stage review
-- **Agent Skills' lifecycle library** — production engineering skills, specialist personas, verification gates
-- **Ponytail's aggressive simplicity** — reuse existing code, prefer native capabilities, write minimal code
+## Why Development Kit?
 
-The result: an AI development methodology that produces correct, simple, well-tested code without overengineering.
+AI coding agents are fast, but speed without engineering discipline creates rework: unclear requirements, oversized diffs, unverified claims, fragile abstractions, and skipped reviews.
 
-## Documentation
+Development Kit installs a repeatable senior-engineering workflow into supported AI coding environments. It gives the agent explicit lifecycle stages, specialist roles, verification gates, reusable skills, and a persistent automated workflow that can pause, resume, recover, and ask for approval before consequential actions.
 
-Development Kit includes a comprehensive, production-grade documentation system covering all 12 framework sections:
+It is **not** a project-management dashboard and it does not replace engineering judgment. It is an execution discipline for turning an idea or change request into tested, reviewed, release-ready work.
 
-* 📚 [Documentation Index](docs/README.md)
-* 📖 [Table of Contents & SUMMARY](docs/SUMMARY.md)
-* ⚡ [Commands Reference](docs/03-reference/commands/README.md)
-* 🤖 [Agents Reference](docs/03-reference/agents/README.md)
-* 🎯 [Skills Reference](docs/03-reference/skills/README.md)
-* 🏗️ [Architecture Deep-Dive](docs/04-architecture/system-context.md)
+## What you get
 
-## Quick Start
+| Capability | What it provides |
+|---|---|
+| **Automated Guided Workflow** | `/dk-autopilot` coordinates the complete lifecycle and persists progress between sessions. |
+| **13 workflow commands** | Discovery, specification, design, planning, implementation, testing, review, debugging, simplification, status, and shipping. |
+| **18 specialist agents** | Focused personas for discovery, architecture, implementation, testing, security, accessibility, design, and review. |
+| **43 engineering skills** | Reusable instructions covering the full software-development lifecycle. |
+| **Verification-first execution** | Tests, runtime checks, specification review, quality review, and simplification gates before completion. |
+| **Safety controls** | Human approval gates for remote, destructive, security-sensitive, deployment, and release operations. |
+| **Antigravity and OpenCode support** | Plugin installation for Antigravity and auto-discoverable skill installation for OpenCode. |
 
-```bash
-# Install in your Antigravity project
-npx development-kit init
+## Automated Guided Workflow
 
-# Or install globally
-npx development-kit init --global
-
-# Or install project-local
-npx development-kit init --project
-
-# Or copy everything to project root for standalone use
-npx development-kit init --all
-
-# Preview what --all would do without copying
-npx development-kit init --all --dry-run
-
-# Install skills and rules for OpenCode
-npx development-kit init --opencode
-
-# Preview what --opencode would install
-npx development-kit init --opencode --dry-run
+```text
+UNDERSTAND → DEFINE → DESIGN → PLAN → IMPLEMENT
+     → VERIFY → REVIEW → SIMPLIFY → COMPLETE
 ```
 
-### Installer Flags
+Start with:
 
-| Flag | Behavior |
-|------|----------|
-| *(none)* | Auto-detect Antigravity and install the plugin |
-| `--global` | Install plugin to global Antigravity config (`~/.gemini/config/`) |
-| `--project` | Install plugin to project-local `.agents/` |
-| `--all` | **Standalone mode** — copy all 7 directories (agents, skills, commands, hooks, templates, evals, scripts), root files (AGENTS.md, README.md), and the plugin manifest to the project root |
-| `--all --dry-run` | Preview what `--all` would copy without writing any files |
-| `--opencode` | Install skills and rules for **OpenCode** (copies 43 skills to `.opencode/skills/`, plus `opencode.json` and `AGENTS.md`) |
-| `--opencode --dry-run` | Preview what `--opencode` would install without copying any files |
-| `--force` | Override safety guards — overwrite existing `AGENTS.md` and `README.md` even if they already exist |
+```text
+/dk-autopilot
+```
 
-**Preserving customizations:** The installer never overwrites an existing `AGENTS.md` at the target. If you reinstall, your rules are preserved. Root files (`AGENTS.md`, `README.md`) in `--all` mode follow the same guard — existing files are skipped, only new ones are installed. Library content (skills, agents, commands, hooks, templates, evals, scripts) is updated unconditionally on re-run.
+Development Kit selects the next lifecycle action, routes the appropriate command, agent, and skills, records progress, and stops when it needs a decision or approval.
 
-## User-Facing Entry Experience
-
-Whenever starting Development Kit without selecting a specific command, select the recommended automated workflow:
+The recommended entry experience is intentionally explicit:
 
 ```text
 ╔══════════════════════════════════════════════════════════════╗
 ║  🚀 AUTOMATED GUIDED WORKFLOW — RECOMMENDED                 ║
 ║                                                              ║
 ║  Take me through the complete Development Kit lifecycle.     ║
-║  The system will select the correct commands, agents, and   ║
-║  skills for each stage automatically.                        ║
+║  Select the correct commands, agents, and skills, and pause  ║
+║  for important decisions and approval gates.                 ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
-## Commands
+Manual commands remain available at every stage.
 
-| Command | Purpose |
-|---------|---------|
-| `/dk-autopilot` | Run the complete Development Kit software-development lifecycle in Automated Guided Workflow mode |
-| `/dk-idea` | Refine a rough idea into a concrete concept with requirements interview, idea challenge, and scope definition |
-| `/dk-spec` | Create the minimum required specification artifacts for the approved concept |
-| `/dk-design` | Produce technical and visual design including data models, API contracts, user flows, and design direction |
-| `/dk-tasks` | Break approved work into small, verifiable tasks with subtask decomposition and dependency ordering |
-| `/dk-build` | Implement the next task through every verification gate using fresh sub-agents and TDD |
-| `/dk-build-auto` | Process the entire approved task plan automatically, pausing on failures |
-| `/dk-test` | Run task-specific verification with browser runtime checks, regression testing, and edge case testing |
-| `/dk-review` | Run the full review cycle: specification compliance, code quality, security, accessibility, and design quality |
-| `/dk-simplify` | Apply the Ponytail simplicity ladder to remove unnecessary code, abstractions, and dependencies |
-| `/dk-debug` | Systematic root-cause analysis: reproduce, localise, identify root cause, fix, protect |
-| `/dk-ship` | Final verification and release preparation: task completion gate, branch completion, release readiness assessment |
-| `/dk-status` | Show the current workflow state: active lifecycle stage, current task, completed tasks, and blocked items |
+## Quick start
 
-## The Development Lifecycle
-
-```
-UNDERSTAND → DEFINE → DESIGN → PLAN → IMPLEMENT → VERIFY → REVIEW → SIMPLIFY → COMPLETE
-```
-
-Each stage activates one or more skills. The **development-conductor** agent coordinates the entire workflow.
-
-### Stage 1: Understand
-Inspect the repository. Understand the architecture. Identify the actual user need. Ask focused questions. Determine whether the requested feature needs to exist.
-
-### Stage 2: Define
-Create a concise specification defining problem, users, behaviour, scope, exclusions, acceptance criteria, constraints, and risks.
-
-### Stage 3: Design
-Determine the smallest appropriate design. Reuse existing architecture, components, utilities, and dependencies.
-
-### Stage 4: Plan
-Break implementation into small, independently verifiable tasks.
-
-### Stage 5: Implement
-A fresh sub-agent implements one task at a time.
-
-### Stage 6: Verify
-Tests and runtime checks prove the task works.
-
-### Stage 7: Review
-Specification compliance review first, then code quality review.
-
-### Stage 8: Simplify
-Check whether any code, abstraction, dependency, or file can be removed.
-
-### Stage 9: Complete
-Only after all gates pass may the next task begin.
-
-## The Mandatory Task Loop
-
-```
-1. Conductor selects next task
-2. Repository scout gathers task context
-3. Task-readiness agent validates task
-4. Fresh implementation sub-agent starts
-5. Test is written first where behaviour changes
-6. Minimal implementation is produced
-7. Local tests are run
-8. Spec reviewer checks compliance
-9. Code reviewer checks quality
-10. Test engineer performs bug and regression testing
-11. Simplicity reviewer removes overengineering
-12. Tests run again
-13. Task is committed
-14. Only then does the next task begin
-```
-
-**Critical rule:** A task is not complete because the implementation agent says it is complete.
-
-## Always-On Rules
-
-1. Inspect before editing.
-2. Clarify before assuming.
-3. Specify before implementing non-trivial work.
-4. Reuse before creating.
-5. Prefer native capability before adding dependencies.
-6. Break work into small, testable tasks.
-7. Use a fresh sub-agent for each implementation task.
-8. Write or identify verification before implementation.
-9. Review specification compliance before code style.
-10. Test before declaring completion.
-11. Simplify after correctness.
-12. Do not start the next task while the current task has unresolved failures.
-
-## Repository Structure
-
-```
-development-kit/
-├── .agents/plugins/development-kit/   # Plugin manifest
-├── agents/                             # Agent personas
-├── skills/                             # Lifecycle skills
-├── commands/                           # Slash commands
-├── hooks/                              # Lifecycle hooks
-├── opencode.json                       # OpenCode configuration
-├── templates/                          # Reusable templates
-├── evals/                              # Skill evaluations
-└── scripts/                            # CLI and utilities
-```
-
-## Agent Personas
-
-| Agent | Role |
-|-------|------|
-| **development-conductor** | Coordinates the entire workflow |
-| **repository-scout-agent** | Inspects codebase, finds reusable code |
-| **product-discovery-agent** | Clarifies ideas and requirements |
-| **specification-agent** | Writes concise specifications |
-| **artifact-selector-agent** | Chooses minimum required documents |
-| **solution-architect-agent** | Designs smallest compatible solution |
-| **task-planner-agent** | Breaks work into small tasks |
-| **implementation-agent** | Fresh sub-agent per task implementation |
-| **test-engineer** | Writes and runs verification |
-| **spec-reviewer** | Checks specification compliance |
-| **code-reviewer** | Assesses code quality |
-| **security-reviewer** | Security-focused review |
-| **simplicity-reviewer** | Ponytail-style simplicity inspection |
-| **accessibility-reviewer** | Accessibility audit and WCAG compliance review |
-| **design-reviewer** | Visual design quality review |
-| **frontend-implementer** | Frontend implementation specialist |
-| **backend-implementer** | Backend implementation specialist |
-| **database-implementer** | Database implementation specialist |
-
-## Full Skill Library
-
-The Development Kit ships with 43 skills covering the complete software-development lifecycle from idea discovery through release readiness.
-
-### A. Meta Skills
-| Skill | Purpose |
-|-------|---------|
-| **using-development-kit** | How to use this methodology, loaded at session start |
-| **skill-routing** | Maps user intent to the appropriate skill or workflow |
-| **repository-orientation** | Inspects unfamiliar repos before changes begin |
-| **context-packing** | Gathers only relevant context for sub-agents |
-
-### B. Idea & Definition Skills
-| Skill | Purpose |
-|-------|---------|
-| **idea-discovery** | Turn rough ideas into concrete concepts |
-| **requirements-interview** | Focused questions to surface requirements |
-| **idea-challenge** | Tests whether the solution solves the real problem |
-| **scope-definition** | Defines must-have/should-have/could-have/excluded |
-| **acceptance-criteria-writing** | Converts requirements into testable conditions |
-
-### C. Artifact Skills
-| Skill | Purpose |
-|-------|---------|
-| **adaptive-artifact-planning** | Selects minimum required documents |
-| **feature-specification** | Writes concise feature specs |
-| **technical-design** | Creates implementation-oriented design docs |
-| **data-model-design** | Designs schemas and migrations |
-| **api-contract-design** | Designs API contracts and module boundaries |
-| **user-flow-design** | Designs user-facing workflows |
-| **design-direction** | Premium UI direction and visual language |
-| **test-strategy** | Defines how features are proven correct |
-
-### D. Planning Skills
-| Skill | Purpose |
-|-------|---------|
-| **task-decomposition** | Breaks work into small, verifiable tasks |
-| **subtask-decomposition** | Breaks tasks into atomic ordered steps |
-| **dependency-ordering** | Determines correct execution order |
-| **task-readiness-check** | Verifies tasks are clear enough to implement |
-| **risk-first-planning** | Prioritises risky work before cosmetic work |
-
-### E. Implementation Skills
-| Skill | Purpose |
-|-------|---------|
-| **subagent-driven-implementation** | Dispatches fresh sub-agents per task |
-| **incremental-implementation** | Implements one thin vertical slice at a time |
-| **test-driven-development** | Red-green-refactor discipline |
-| **existing-code-first** | Searches for reusable code before writing new code |
-| **native-platform-first** | Prefers built-in capabilities over packages |
-| **dependency-restraint** | Justifies every new dependency |
-| **minimal-diff** | Keeps changes tightly scoped to the task |
-
-### F. Verification Skills
-| Skill | Purpose |
-|-------|---------|
-| **verification-before-completion** | Proves it works before claiming done |
-| **systematic-debugging** | Reproduce → Locate → Fix → Protect |
-| **browser-runtime-verification** | Checks console, network, DOM, responsive, a11y |
-| **regression-testing** | Ensures existing behaviour remains intact |
-| **edge-case-testing** | Actively searches for failure scenarios |
-
-### G. Review Skills
-| Skill | Purpose |
-|-------|---------|
-| **specification-compliance-review** | Did we build the right thing? |
-| **code-quality-review** | Did we build it well? |
-| **security-review** | Vulnerability assessment for sensitive work |
-| **accessibility-review** | WCAG compliance for UI work |
-| **design-quality-review** | Prevents generic AI-generated visual language |
-| **simplicity-review** | Can we remove anything? |
-
-### H. Completion Skills
-| Skill | Purpose |
-|-------|---------|
-| **task-completion-gate** | Every task passes all gates before completion |
-| **branch-completion** | Final test suite, diff inspection, commit prep |
-| **release-readiness** | Broader pre-release check (security, perf, docs) |
-
-## OpenCode Compatibility
-
-The Development Kit works with **OpenCode** — the open-source AI coding agent. All 43 skills include `compatibility: opencode` in their `SKILL.md` frontmatter, making them auto-discoverable by OpenCode when installed to `.opencode/skills/`.
+### Antigravity
 
 ```bash
-# Install skills and rules for OpenCode
-npx development-kit init --opencode
+# Automatic environment detection
+npx development-kit init
 
-# Preview what would be installed
-npx development-kit init --opencode --dry-run
+# Install project-locally
+npx development-kit init --project
 
-# Force overwrite existing skills
-npx development-kit init --opencode --force
+# Preview a standalone installation
+npx development-kit init --all --dry-run
 ```
 
-This installs:
-- **43 skills** → `.opencode/skills/` (OpenCode's auto-discovery path)
-- **`opencode.json`** → project root (OpenCode configuration referencing `AGENTS.md`)
-- **`AGENTS.md`** → project root (always-on rules)
+### OpenCode
 
-OpenCode discovers `SKILL.md` files automatically in `.opencode/skills/`, `.claude/skills/`, and `.agents/skills/`. The skills are loaded progressively — only their `name` and `description` are loaded at session start, and the full content is loaded when the agent calls the skill.
+```bash
+# Install AGENTS.md, opencode.json, and all compatible skills
+npx development-kit init --opencode
+
+# Preview first
+npx development-kit init --opencode --dry-run
+```
+
+### Available installer modes
+
+| Flag | Purpose |
+|---|---|
+| *(none)* | Detect Antigravity and install the plugin. |
+| `--global` | Install to the global Antigravity configuration. |
+| `--project` | Install to the current project's `.agents/` directory. |
+| `--all` | Copy the complete standalone framework into the project. |
+| `--opencode` | Install the OpenCode-compatible rules and skill library. |
+| `--dry-run` | Preview changes without writing files. |
+| `--force` | Explicitly allow replacement where safety guards normally preserve user files. |
+
+The installer preserves an existing `AGENTS.md` by default.
+
+## Core commands
+
+| Command | Outcome |
+|---|---|
+| `/dk-autopilot` | Run the complete lifecycle through the automated guided workflow. |
+| `/dk-idea` | Turn a rough idea into a clear, challenged, scoped concept. |
+| `/dk-spec` | Produce the minimum sufficient specification and acceptance criteria. |
+| `/dk-design` | Define the smallest compatible technical and user-experience design. |
+| `/dk-tasks` | Create ordered, independently verifiable implementation tasks. |
+| `/dk-build` | Implement the next task through the required verification gates. |
+| `/dk-build-auto` | Process an approved task plan automatically, stopping on failures. |
+| `/dk-test` | Run targeted functional, regression, runtime, and edge-case verification. |
+| `/dk-review` | Review specification compliance, code quality, security, accessibility, and design. |
+| `/dk-debug` | Reproduce, localise, identify root cause, fix, and protect. |
+| `/dk-simplify` | Remove unnecessary code, files, abstractions, and dependencies. |
+| `/dk-ship` | Perform final release-readiness and branch-completion checks. |
+| `/dk-status` | Inspect the current lifecycle stage, task, blockers, and recommended action. |
+
+## How the discipline works
+
+Every non-trivial change follows the same principles:
+
+1. **Inspect before editing.** Understand the repository and reuse what already exists.
+2. **Clarify before assuming.** Make material product decisions explicit.
+3. **Specify before implementing.** Define observable acceptance criteria.
+4. **Work in small slices.** Keep tasks and diffs independently verifiable.
+5. **Prove behaviour.** Test before claiming completion.
+6. **Review the right thing first.** Specification compliance precedes style opinions.
+7. **Simplify after correctness.** Remove unnecessary complexity before shipping.
+8. **Stop on unresolved failure.** Do not advance the lifecycle by hiding broken gates.
+
+## Supported environments
+
+| Environment | Integration |
+|---|---|
+| **Antigravity** | Plugin, agents, commands, hooks, skills, templates, evaluations, and runtime utilities. |
+| **OpenCode** | `AGENTS.md`, `opencode.json`, and 43 progressively loaded compatible skills. |
+| **Standalone repositories** | Full framework copy through `--all`. |
+
+## Quality and safety
+
+Development Kit includes:
+
+- Persistent, versioned Autopilot state with transaction locking.
+- Replay-resistant approval and cancellation tokens.
+- Artifact fingerprints and downstream staleness invalidation.
+- Mandatory approval gates for Git pushes, pull requests, merges, releases, production deployments, package publication, destructive changes, and security-risk acceptance.
+- Unit tests, behavioural evaluation scenarios, documentation validation, and plugin-manifest synchronization.
+
+Run the complete local verification suite:
+
+```bash
+npm run validate
+npm run doctor
+npm run docs:validate
+npm run docs:validate:test
+npm run autopilot:validate
+```
+
+## Documentation
+
+- [Documentation home](docs/README.md)
+- [Full table of contents](docs/SUMMARY.md)
+- [Command reference](docs/03-reference/commands/README.md)
+- [Agent reference](docs/03-reference/agents/README.md)
+- [Skill reference](docs/03-reference/skills/README.md)
+- [Architecture](docs/04-architecture/system-context.md)
+- [Automated Guided Workflow](docs/02-user-guide/automated-guided-workflow.md)
+- [Changelog](CHANGELOG.md)
+
+## Project status
+
+Development Kit is actively developed. The current release includes the production Autopilot foundation and complete framework documentation. Public feedback, integration reports, focused improvements, and well-scoped contributions are welcome.
+
+See [SUPPORT.md](SUPPORT.md) for help, [SECURITY.md](SECURITY.md) for vulnerability reporting, and [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes.
 
 ## License
 
-MIT
+Development Kit is available under the [MIT License](LICENSE).
