@@ -28,9 +28,11 @@ It is **not** a project-management dashboard and it does not replace engineering
 
 ## Current release
 
-The current release line is **v0.5.0**.
+The current release line is **v0.5.1**.
 
-v0.5.0 introduces provider-neutral External Capability Providers and `/dk-research`. Development Kit can now gather current source-backed evidence when it materially affects a lifecycle decision while preserving provenance, explicit trust boundaries, and existing approval controls. Agent-Reach is documented as the first optional provider adapter and is not a hard dependency of Development Kit.
+v0.5.0 introduced provider-neutral External Capability Providers and `/dk-research`. Development Kit can gather current source-backed evidence when it materially affects a lifecycle decision while preserving provenance, explicit trust boundaries, and existing approval controls. Agent-Reach is documented as the first optional provider adapter and is not a hard dependency of Development Kit.
+
+v0.5.1 is the immediate packaging-integrity patch. It synchronizes the committed Antigravity plugin mirror with canonical v0.5 content and strengthens `npm run doctor` so missing, extra, or byte-different mirror files block CI and release validation.
 
 ## What you get
 
@@ -208,7 +210,7 @@ Development Kit includes:
 - Artifact fingerprints and downstream staleness invalidation.
 - Mandatory approval gates for authenticated provider access, provider writes, provider/system installation, Git pushes, pull requests, merges, releases, production deployments, package publication, destructive changes, and security-risk acceptance.
 - Explicit indirect prompt-injection protection for external research content.
-- Unit tests, behavioural evaluation scenarios, documentation validation, OpenCode configuration regression tests, research contract tests, and plugin-manifest synchronization.
+- Unit tests, behavioural evaluation scenarios, documentation validation, OpenCode configuration regression tests, research contract tests, and byte-level canonical plugin-mirror synchronization checks.
 
 Run the complete local verification suite:
 
@@ -216,7 +218,7 @@ Run the complete local verification suite:
 npm run release:validate
 ```
 
-The release gate runs framework validation, plugin synchronization checks, documentation validation and tests, OpenCode configuration regression tests, the external research contract test, Autopilot unit tests, and lifecycle evaluation validation.
+The release gate runs framework validation, plugin manifest and mirror synchronization checks, documentation validation and tests, OpenCode configuration regression tests, the external research contract test, Autopilot unit tests, and lifecycle evaluation validation.
 
 ## Documentation
 
@@ -232,7 +234,7 @@ The release gate runs framework validation, plugin synchronization checks, docum
 
 ## Project status
 
-Development Kit is actively developed. The v0.5.0 release line includes the production Autopilot foundation, current OpenCode compatibility, provider-neutral external research, optional Agent-Reach integration guidance, a validated public npm package workflow, and complete framework documentation. Public feedback, integration reports, focused improvements, and well-scoped contributions are welcome.
+Development Kit is actively developed. The v0.5.1 release line includes the production Autopilot foundation, current OpenCode compatibility, provider-neutral external research, optional Agent-Reach integration guidance, enforced canonical plugin-mirror integrity, a validated public npm package workflow, and complete framework documentation. Public feedback, integration reports, focused improvements, and well-scoped contributions are welcome.
 
 See [SUPPORT.md](SUPPORT.md) for help, [SECURITY.md](SECURITY.md) for vulnerability reporting, and [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes.
 

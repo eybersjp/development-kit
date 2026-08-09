@@ -2,52 +2,65 @@
 
 ## When to Sync
 
-Run the sync after **any change** to the inventory of:
+Run the sync after **any canonical change** inside:
 
-- `skills/` (added/removed/renamed skill dirs)
-- `agents/` (added/removed/renamed agent files)
-- `hooks/` (added/removed/renamed hook files)
+- `skills/`
+- `agents/`
+- `commands/`
+- `hooks/`
 
-Command, template, eval, and script changes do **not** affect `plugin.json` (commands/templates/evals are not manifest entries; scripts are referenced from `package.json`).
+This includes content edits, not only additions/removals/renames. The committed mirror is required to match canonical inventory and file bytes.
 
 ## Commands
 
 ```bash
-# Regenerate plugin.json from canonical dirs (writes)
+# Synchronise mirror directories and regenerate plugin.json
 node scripts/sync-plugin.mjs
 
-# Check for drift (read-only, reports missing entries)
+# Read-only release-gate check
 npm run doctor
 # equivalent: node scripts/sync-plugin.mjs --check
 
-# Fix mode (writes) — same output as no-flag mode
+# Explicit fix mode
 node scripts/sync-plugin.mjs --fix
 ```
 
-## What Sync Does & Does Not Do
+## What Sync Does
 
 | Operation | Done by sync? |
 | :--- | :--- |
-| Regenerate `plugin.json` references | ✅ yes |
-| Copy content files into the mirror dirs | ❌ no — done by the installer |
-| Rewrite manifest paths for installed copies | ❌ no — done by the installer at install time |
-
-The mirror **content** directories (`.agents/plugins/development-kit/{skills,agents,commands,hooks}`) are refreshed when the installer runs (e.g. `--project` into the repo's own `.agents/`); they are not maintained by the sync script itself.
+| Copy canonical `skills/` into mirror | Yes |
+| Copy canonical `agents/` into mirror | Yes |
+| Copy canonical `commands/` into mirror | Yes |
+| Copy canonical `hooks/` into mirror | Yes |
+| Remove stale/extra files in those controlled mirror directories | Yes |
+| Regenerate `plugin.json` references | Yes |
+| Rewrite manifest paths for installed target copies | No, the installer does this at install time |
+| Edit canonical root content | No |
 
 ## Verification
 
 ```bash
-npm run doctor          # expect "✓ Plugin is in sync"
-npm run validate        # manifest references resolve
+npm run doctor
+npm run validate
 ```
 
-## Known Drift Issue
+A clean doctor run reports that the plugin manifest and committed mirror are in sync. Any missing, extra, or byte-different file or manifest mismatch causes a nonzero exit code.
 
-If `npm run doctor` prints all skills/agents as "missing", the committed manifest has `./` path prefixes instead of the generated `../../../` form. Regenerate with `node scripts/sync-plugin.mjs` to restore canonical form. See [sync-plugin.md](../03-reference/scripts/sync-plugin.md).
+Because `npm run doctor` is part of `npm run release:validate`, mirror drift blocks CI and release publication.
+
+## Contributor Workflow
+
+1. Edit canonical root files only.
+2. Run `node scripts/sync-plugin.mjs` after canonical skills/agents/commands/hooks change.
+3. Review both canonical and derived mirror diffs.
+4. Run `npm run doctor` and the complete applicable validation suite.
+5. Commit canonical and synchronized mirror changes together.
 
 ## Never Do
 
-- Hand-edit `plugin.json` paths or entries.
-- Edit mirror content files directly.
+- Make a feature change only in `.agents/plugins/development-kit/`.
+- Hand-edit `plugin.json` entries or path forms to bypass generation.
+- Ignore a doctor failure as informational.
 
-See [canonical-source-and-plugin-mirror.md](../04-architecture/canonical-source-and-plugin-mirror.md) and [plugin-sync-internals.md](../06-internals/plugin-sync-internals.md).
+See [canonical-source-and-plugin-mirror.md](../04-architecture/canonical-source-and-plugin-mirror.md), [plugin-sync-internals.md](../06-internals/plugin-sync-internals.md), and [sync-plugin.md](../03-reference/scripts/sync-plugin.md).

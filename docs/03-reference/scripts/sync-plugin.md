@@ -4,47 +4,68 @@
 
 ## Purpose
 
-Synchronises the Development Kit plugin manifest (`.agents/plugins/development-kit/plugin.json`) with the actual skills, agents, and hooks directories. Updates references, checks for missing files, and reports status.
+Synchronises the committed Antigravity plugin mirror with canonical root content and keeps `.agents/plugins/development-kit/plugin.json` aligned with canonical skills, agents, and hooks.
+
+The mirror contract covers:
+
+- `skills/`
+- `agents/`
+- `commands/`
+- `hooks/`
+- `plugin.json`
 
 ## Syntax
 
 ```bash
-node scripts/sync-plugin.mjs          # Sync and report (writes plugin.json)
-node scripts/sync-plugin.mjs --check  # Check only, no changes
-node scripts/sync-plugin.mjs --fix    # Fix issues automatically (writes plugin.json)
+node scripts/sync-plugin.mjs          # Synchronise mirror + manifest
+node scripts/sync-plugin.mjs --check  # Verify only, no changes
+node scripts/sync-plugin.mjs --fix    # Synchronise mirror + manifest
 ```
 
 ## Behavior
 
 | Mode | Writes? | Output |
 | :--- | :--- | :--- |
-| *(none)* | Yes | Regenerates `plugin.json` from `skills/`, `agents/`, `hooks/`; prints counts |
-| `--check` | No | Compares the committed manifest against the generated one; prints "Skills: N defined, M available", missing lists, and "✓ Plugin is in sync" when they match |
-| `--fix` | Yes | Regenerates and prints counts |
+| *(none)* | Yes | Replaces mirrored content from canonical directories, regenerates `plugin.json`, then verifies the result |
+| `--check` | No | Compares canonical and mirror inventories/content plus the generated manifest; exits nonzero on drift |
+| `--fix` | Yes | Same synchronization behavior as the no-flag mode |
 
-## Generated Paths
+## Manifest Generation
 
-References are computed **relative to the plugin directory** (`.agents/plugins/development-kit/`), e.g. `../../../skills/<name>`. The installer rewrites this prefix to `./` for installed copies.
+References are computed relative to `.agents/plugins/development-kit/`, for example `../../../skills/<name>`. The installer rewrites this prefix to `./` for self-contained installed plugin copies.
+
+The manifest remains intentionally separate from npm package versioning and currently retains the plugin-manifest version contract `0.1.0`.
+
+## Mirror Verification
+
+For each canonical mirror directory, `--check` verifies:
+
+- the mirror directory exists
+- every canonical file exists in the mirror
+- no unexpected extra mirror files exist
+- corresponding files are byte-identical
+
+The check also compares the entire committed `plugin.json` object with the deterministically generated canonical manifest.
 
 ## Exit Codes
 
-- `--check` **always exits 0** — it reports drift but is not a failing gate (see [known-limitations.md](../../11-appendices/known-limitations.md)).
+- `0`: manifest and committed mirror are synchronized.
+- `1`: any manifest, inventory, missing-file, extra-file, or content mismatch is detected.
 
-## Known Drift Issue
-
-The committed `plugin.json` currently uses `./` prefixed paths, so `--check` reports all 43 skills and 18 agents as "missing" (path-prefix mismatch) even though the files exist. Run `node scripts/sync-plugin.mjs` (no flag) to regenerate the manifest in the canonical `../../../` form and restore a clean doctor report.
+Because `npm run doctor` is part of `npm run release:validate`, plugin mirror drift is release-blocking.
 
 ## Error Handling
 
-- Missing `plugin.json` in `--check` mode prints "Plugin manifest not found" (does not fail).
-- No other error paths.
+Invalid or missing `plugin.json` is reported as synchronization drift and causes `--check` to fail. Missing mirror directories, missing files, extra files, and byte differences also fail the check.
 
 ## Idempotency
 
-Regeneration is deterministic — repeated runs produce identical output.
+Synchronization is deterministic. Repeated runs with unchanged canonical content produce the same mirror and manifest.
 
 ## Security & Path Safety
 
-- Only reads directories and writes the manifest; no other files touched.
+- Synchronization is restricted to the repository's `.agents/plugins/development-kit/` mirror and its four controlled content directories.
+- `--check` is read-only.
+- Write modes replace only the controlled mirror directories and `plugin.json`.
 
-See [plugin-sync-internals.md](../../06-internals/plugin-sync-internals.md) and [canonical-source-and-plugin-mirror.md](../../04-architecture/canonical-source-and-plugin-mirror.md).
+See [plugin-sync-internals.md](../../06-internals/plugin-sync-internals.md), [synchronising-the-plugin-mirror.md](../../05-developer-guide/synchronising-the-plugin-mirror.md), and [canonical-source-and-plugin-mirror.md](../../04-architecture/canonical-source-and-plugin-mirror.md).
