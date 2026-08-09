@@ -1,7 +1,7 @@
 {
   "name": "development-kit",
-  "version": "0.4.2",
-  "description": "A disciplined AI software-development workflow for Antigravity and OpenCode, with lifecycle commands, specialist agents, verification gates, and persistent guided automation.",
+  "version": "0.5.0",
+  "description": "A disciplined AI software-development workflow for Antigravity and OpenCode, with lifecycle commands, specialist agents, verification gates, persistent guided automation, and optional external capability providers.",
   "author": "Juan-Pierre Eybers",
   "license": "MIT",
   "homepage": "https://github.com/eybersjp/development-kit#readme",
@@ -22,7 +22,9 @@
     "agent-skills",
     "workflow-automation",
     "test-driven-development",
-    "code-review"
+    "code-review",
+    "external-research",
+    "agent-reach"
   ],
   "bin": {
     "development-kit": "scripts/install-antigravity.mjs"
@@ -50,9 +52,10 @@
     "docs:validate:test": "node --test scripts/validate-docs.test.mjs",
     "opencode:validate": "node --test scripts/validate-opencode-config.test.mjs",
     "autopilot:test": "node --test scripts/autopilot.test.mjs",
+    "research:validate": "node --test scripts/research-contract.test.mjs",
     "evals:validate": "node scripts/validate-evals.mjs",
     "autopilot:validate": "npm run autopilot:test && npm run evals:validate",
-    "release:validate": "npm run validate && npm run doctor && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run autopilot:validate"
+    "release:validate": "npm run validate && npm run doctor && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run research:validate && npm run autopilot:validate"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -51,7 +51,9 @@ If no option is provided, you will be prompted to choose.
 `.trim();
 
 function printCommands() {
+  console.log('  /dk-autopilot  - Run the complete guided Development Kit lifecycle');
   console.log('  /dk-idea       - Refine a rough idea into a concrete concept');
+  console.log('  /dk-research   - Gather source-backed external evidence safely');
   console.log('  /dk-spec       - Create the required specification artifacts');
   console.log('  /dk-design     - Produce technical and visual design');
   console.log('  /dk-tasks      - Break approved work into small tasks');
