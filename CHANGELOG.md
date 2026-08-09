@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-09
+
+### Fixed
+- Synchronized the committed Antigravity plugin mirror with canonical v0.5 research content, including `/dk-autopilot`, `/dk-research`, `external-research`, `agent-reach-integration`, and the updated development conductor.
+- Strengthened `npm run doctor` so manifest drift, missing mirror files, extra mirror files, and byte-level content mismatches now fail the release gate instead of being reported only.
+- Corrected plugin-mirror architecture and maintainer documentation to match the enforced synchronization contract.
+
+### Changed
+- `scripts/sync-plugin.mjs` now synchronizes canonical `skills/`, `agents/`, `commands/`, and `hooks/` into the committed mirror before regenerating `plugin.json` in write/fix mode.
+- The v0.5 research contract is patch-version tolerant so patch releases do not require weakening or rewriting the feature contract.
+
 ## [0.5.0] - 2026-08-09
 
 ### Added
@@ -71,7 +82,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Production-grade 12-section documentation system.
 - Documentation validation suite and installer synchronization verification.
 
-[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/eybersjp/development-kit/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/eybersjp/development-kit/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/eybersjp/development-kit/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/eybersjp/development-kit/compare/development-kit-v0.4.0...v0.4.1
