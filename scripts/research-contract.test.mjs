@@ -37,10 +37,13 @@ test('/dk-research command and provider-neutral skill exist', () => {
 test('Agent-Reach remains optional and approval-gated', () => {
   const skill = read('skills/agent-reach-integration/SKILL.md');
   assert.match(skill, /optional/i);
-  assert.match(skill, /Never auto-install/i);
+  assert.match(skill, /(must not silently install|never auto-install)/i);
   assert.match(skill, /approval/i);
   assert.match(skill, /main\.zip/i);
   assert.match(skill, /cookie/i);
+  assert.match(skill, /(pinned tagged release|pinned releases|immutable commit)/i);
+  assert.match(skill, /authenticated read/i);
+  assert.match(skill, /untrusted data/i);
 });
 
 test('global rules and conductor expose research trust boundary', () => {
