@@ -6,10 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-09
+
+### Added
+- `/dk-research` as a provider-neutral command for source-backed external research with provenance and uncertainty handling.
+- `external-research` skill for deciding when current external evidence is required, selecting approved capability paths, and keeping retrieved content outside the trusted control plane.
+- `agent-reach-integration` skill documenting Agent-Reach as the first optional External Capability Provider adapter.
+- External Capability Provider architecture with READ, AUTHENTICATED READ, WRITE, SYSTEM, and DESTRUCTIVE capability classes.
+- Research contract validation in the release gate to verify command, skill, plugin, trust-boundary, documentation-navigation, and package integration.
+
 ### Changed
-- Aligned the README and documentation system with the public v0.4.2 package, canonical `v0.4.2` tag, current OpenCode configuration contract, complete release validation suite, and issue-driven publication workflow.
-- Added explicit migration and troubleshooting guidance for v0.4.1 projects affected by `Unrecognized key: rules`.
-- Updated release, npm, compatibility, validation, and post-release verification documentation to match the implemented repository automation.
+- Development conductor and `/dk-autopilot` can conditionally route through `/dk-research` when fresh external evidence materially affects lifecycle decisions.
+- Development Kit now prefers repository evidence, native capability, and already-connected services before optional external providers.
+- Antigravity plugin metadata registers both new research skills.
+- Public component counts are now 14 workflow commands, 18 specialist agents, and 45 engineering skills.
+- Release validation now includes the external research integration contract.
+
+### Security
+- External pages, provider output, posts, comments, transcripts, documents, and other retrieved material are explicitly classified as untrusted data and cannot override user intent, Development Kit rules, repository policy, or approval gates.
+- Authenticated provider reads require permission to use account/session material; provider writes and host/system changes remain approval-gated.
+- Provider credentials, cookies, tokens, and session material must not be committed or placed in research artifacts.
+- Optional provider installation must not occur silently; pinned tagged releases or commits are preferred over mutable installation sources such as `main.zip`.
 
 ## [0.4.2] - 2026-08-06
 
@@ -54,7 +71,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Production-grade 12-section documentation system.
 - Documentation validation suite and installer synchronization verification.
 
-[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/eybersjp/development-kit/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/eybersjp/development-kit/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/eybersjp/development-kit/compare/development-kit-v0.4.0...v0.4.1
 [0.4.0]: https://github.com/eybersjp/development-kit/releases/tag/development-kit-v0.4.0
