@@ -1,6 +1,6 @@
 {
   "name": "development-kit",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "A disciplined AI software-development workflow for Antigravity and OpenCode, with lifecycle commands, specialist agents, verification gates, persistent guided automation, and optional external capability providers.",
   "author": "Juan-Pierre Eybers",
   "license": "MIT",
@@ -46,10 +46,10 @@
   ],
   "scripts": {
     "validate": "node scripts/validate-skills.mjs",
-    "skills:validate:test": "node --test --test-isolation=none scripts/validate-skills.test.mjs",
+    "skills:validate:test": "node --test scripts/validate-skills.test.mjs",
     "init": "node scripts/install-antigravity.mjs",
     "doctor": "node scripts/sync-plugin.mjs --check",
-    "sync:validate:test": "node --test --test-isolation=none scripts/sync-plugin.test.mjs",
+    "sync:validate:test": "node --test scripts/sync-plugin.test.mjs",
     "docs:validate": "node scripts/validate-docs.mjs",
     "docs:validate:test": "node --test scripts/validate-docs.test.mjs",
     "opencode:validate": "node --test scripts/validate-opencode-config.test.mjs",

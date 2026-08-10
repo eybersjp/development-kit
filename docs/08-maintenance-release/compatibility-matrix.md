@@ -4,6 +4,9 @@ This matrix records Development Kit package, runtime, and host compatibility.
 
 | Development Kit version | Node.js | Platforms | Antigravity | OpenCode | Standalone |
 |---|---|---|---|---|---|
+| `v0.5.2` | `>=18.0.0` | Windows, macOS, Linux | Supported; canonical plugin mirror checks normalize CRLF/LF differences | Supported with 45 progressively discovered skills | Supported |
+| `v0.5.1` | `>=18.0.0` | Windows, macOS, Linux | Supported with synchronized external-research components | Supported with provider-neutral external research | Supported |
+| `v0.5.0` | `>=18.0.0` | Windows, macOS, Linux | Supported with optional External Capability Providers | Supported with `/dk-research` and 45 skills | Supported |
 | `v0.4.2` | `>=18.0.0` | Windows, macOS, Linux | Supported | Supported with official schema-based `opencode.json` | Supported |
 | `v0.4.1` | `>=18.0.0` | Windows, macOS, Linux | Supported | Upgrade required when the generated `opencode.json` contains obsolete `rules` | Supported |
 | `v0.4.0` | `>=18.0.0` | Windows, macOS, Linux | Supported | Use v0.4.2 for current compatibility | Supported |
@@ -11,7 +14,7 @@ This matrix records Development Kit package, runtime, and host compatibility.
 
 ## Current OpenCode contract
 
-Development Kit v0.4.2 installs:
+Development Kit v0.5.2 installs:
 
 ```json
 {
@@ -19,9 +22,9 @@ Development Kit v0.4.2 installs:
 }
 ```
 
-OpenCode automatically loads root `AGENTS.md` and progressively discovers the 43 compatible skills under `.opencode/skills/`.
+OpenCode automatically loads root `AGENTS.md` and progressively discovers the 45 compatible skills under `.opencode/skills/`.
 
-The top-level `rules` key is not supported by current OpenCode and is rejected by the v0.4.2 regression suite.
+The top-level `rules` key is not supported by current OpenCode and is rejected by the current v0.5.2 release validation suite.
 
 ## Runtime policy
 

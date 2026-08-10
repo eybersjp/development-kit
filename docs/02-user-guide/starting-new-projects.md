@@ -38,7 +38,7 @@ This copies `agents/`, `skills/`, `commands/`, `hooks/`, `templates/`, `evals/`,
 npx development-kit init --opencode
 ```
 
-Installs the 43 skills to `.opencode/skills/`, plus `opencode.json` and `AGENTS.md`, so OpenCode auto-discovers the skills.
+Installs the 45 skills to `.opencode/skills/`, plus `opencode.json` and `AGENTS.md`, so OpenCode auto-discovers the skills.
 
 ## What the Methodology Does on a New Project
 

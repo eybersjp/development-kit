@@ -31,7 +31,7 @@ For each directory it checks:
 2. Mirror directory exists.
 3. Every canonical file exists in the mirror.
 4. No extra mirror file exists.
-5. Matching files are byte-identical.
+5. Matching files are content-equivalent after CRLF and LF line endings are normalized; material differences remain drift.
 
 The check separately parses `plugin.json` and compares the complete object with the generated canonical manifest.
 
@@ -41,7 +41,7 @@ The check separately parses `plugin.json` and compares the complete object with 
 | :--- | :--- | :--- |
 | *(none)* | Yes | Replaces controlled mirror directories from canonical, regenerates manifest, then verifies |
 | `--fix` | Yes | Same synchronization behavior as no-flag mode |
-| `--check` | No | Verifies manifest, inventory, and byte identity; exits 1 on any drift |
+| `--check` | No | Verifies manifest, inventory, and normalized content equivalence; exits 1 on any material drift |
 
 ## Synchronization Mechanics
 

@@ -43,7 +43,7 @@ For each canonical mirror directory, `--check` verifies:
 - the mirror directory exists
 - every canonical file exists in the mirror
 - no unexpected extra mirror files exist
-- corresponding files are byte-identical
+- corresponding files are content-equivalent after normalizing CRLF and LF line endings
 
 The check also compares the entire committed `plugin.json` object with the deterministically generated canonical manifest.
 
@@ -56,7 +56,7 @@ Because `npm run doctor` is part of `npm run release:validate`, plugin mirror dr
 
 ## Error Handling
 
-Invalid or missing `plugin.json` is reported as synchronization drift and causes `--check` to fail. Missing mirror directories, missing files, extra files, and byte differences also fail the check.
+Invalid or missing `plugin.json` is reported as synchronization drift and causes `--check` to fail. Missing mirror directories, missing files, extra files, and material content differences also fail the check; CRLF/LF-only differences do not.
 
 ## Idempotency
 

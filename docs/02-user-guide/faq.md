@@ -20,7 +20,7 @@ Antigravity (global, project, or standalone install) and OpenCode (skills instal
 Copies all 7 component directories plus root files and the plugin manifest to the project root for standalone use. Preview with `--all --dry-run`.
 
 **How do I install for OpenCode?**
-`npx development-kit init --opencode` installs the 43 skills to `.opencode/skills/` plus `opencode.json` and `AGENTS.md`.
+`npx development-kit init --opencode` installs the 45 skills to `.opencode/skills/` plus `opencode.json` and `AGENTS.md`.
 
 **How do I uninstall?**
 See [uninstalling.md](uninstalling.md). Remove the installed directories/files per your install mode.
@@ -53,7 +53,7 @@ Restore the removed item — the simplicity reviewer must never remove tests, va
 ## Compatibility
 
 **Does it work with OpenCode?**
-Yes. All 43 skills declare `compatibility: opencode` and OpenCode auto-discovers them from `.opencode/skills/`.
+Yes. All 45 skills declare `compatibility: opencode` and OpenCode auto-discovers them from `.opencode/skills/`.
 
 **Which Node versions?**
 `>=18.0.0` per `package.json`; CI validates on Node 22.

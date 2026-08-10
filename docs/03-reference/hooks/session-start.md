@@ -61,4 +61,4 @@ Frames the entire lifecycle by orienting the agent at session start (see [using-
 
 ## Maintenance Notes
 
-The hard-coded `version: '0.1.0'` does not track `package.json` (`0.3.0`) — a known inconsistency recorded in [known-limitations.md](../../11-appendices/known-limitations.md).
+The hard-coded `version: '0.1.0'` does not track `package.json` (`0.5.2`) — a known inconsistency recorded in [known-limitations.md](../../11-appendices/known-limitations.md).

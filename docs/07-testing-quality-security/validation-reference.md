@@ -5,7 +5,7 @@
 | Command | Implementation | Checks | Failure behaviour |
 |---|---|---|---|
 | `npm run validate` | `scripts/validate-skills.mjs` | Skills, agents, commands, compatibility metadata, and manifest references | Exits 1 on errors |
-| `npm run doctor` | `scripts/sync-plugin.mjs --check` | Plugin manifest plus canonical/mirror inventory and byte-level synchronization for skills, agents, commands, and hooks | Exits 1 on any drift |
+| `npm run doctor` | `scripts/sync-plugin.mjs --check` | Plugin manifest plus canonical/mirror inventory and line-ending-normalized content synchronization for skills, agents, commands, and hooks | Exits 1 on any material drift |
 | `npm run docs:validate` | `scripts/validate-docs.mjs` | Reference coverage, links, placeholders, local paths, and `SUMMARY.md` registration | Exits 1 on errors |
 | `npm run docs:validate:test` | `scripts/validate-docs.test.mjs` | Documentation validator regression suite | Exits 1 on failure |
 | `npm run opencode:validate` | `scripts/validate-opencode-config.test.mjs` | OpenCode JSON schema declaration, obsolete-key rejection, and optional instructions shape | Exits 1 on failure |
@@ -15,7 +15,7 @@
 | `npm run autopilot:validate` | Chained npm script | Autopilot tests and evaluation validation | Exits 1 when either gate fails |
 | `npm run release:validate` | Chained npm script | Complete release gate suite | Exits 1 when any required gate fails |
 
-## Current v0.5.1 release gate
+## Current v0.5.2 release gate
 
 Run the authoritative pre-release suite with:
 
@@ -58,7 +58,7 @@ The authoritative requirement is that every current gate completes successfully 
 - the generated `plugin.json` exactly matches the committed manifest
 - each canonical `skills/`, `agents/`, `commands/`, and `hooks/` file exists in the mirror
 - no extra mirror file exists
-- matching canonical and mirror files are byte-identical
+- matching canonical and mirror files are content-equivalent after normalizing CRLF and LF line endings; material differences still fail
 
 Repair drift with `node scripts/sync-plugin.mjs` or `node scripts/sync-plugin.mjs --fix`, review the derived mirror diff, then rerun `npm run doctor`.
 

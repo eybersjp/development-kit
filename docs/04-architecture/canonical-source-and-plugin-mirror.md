@@ -11,7 +11,7 @@ The repository maintains **canonical source** at the root and a committed **mirr
 | `commands/` | `commands/<name>.md` | `.agents/plugins/development-kit/commands/<name>.md` |
 | `hooks/` | `hooks/<name>.js` | `.agents/plugins/development-kit/hooks/<name>.js` |
 
-The committed mirror is required to have the same inventory and byte-identical file content as canonical for these four directories.
+The committed mirror is required to have the same inventory and content-equivalent files as canonical for these four directories. CRLF/LF-only differences are normalized during verification; material content differences still fail the check.
 
 ## Synchronisation Mechanism
 
@@ -20,7 +20,7 @@ graph TD
     C["canonical skills / agents / commands / hooks"] -->|"copy controlled dirs"| S["sync-plugin.mjs"]
     C -->|"generate refs"| S
     S -->|"write"| M["plugin mirror + plugin.json"]
-    D["npm run doctor"] -->|"read-only --check"| V["compare manifest + inventory + bytes"]
+    D["npm run doctor"] -->|"read-only --check"| V["compare manifest + inventory + normalized content"]
     V -->|"drift"| F["exit 1 / release blocked"]
     V -->|"clean"| P["pass"]
     I["install-antigravity.mjs"] -->|"copy canonical content"| T["installed target plugin"]
@@ -28,7 +28,7 @@ graph TD
 
 - `sync-plugin.mjs` synchronizes the four controlled mirror directories from canonical and regenerates `plugin.json`.
 - `npm run doctor` runs `sync-plugin.mjs --check` and performs no writes.
-- `--check` validates missing files, extra files, byte differences, and the complete generated manifest contract.
+- `--check` validates missing files, extra files, material content differences after CRLF/LF normalization, and the complete generated manifest contract.
 - The installer independently builds target plugin copies from canonical root directories and rewrites manifest paths for the installed layout.
 
 ## Source-of-Truth Rule

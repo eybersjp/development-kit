@@ -9,7 +9,7 @@ Run the sync after **any canonical change** inside:
 - `commands/`
 - `hooks/`
 
-This includes content edits, not only additions/removals/renames. The committed mirror is required to match canonical inventory and file bytes.
+This includes content edits, not only additions/removals/renames. The committed mirror is required to match canonical inventory and file content after CRLF/LF normalization.
 
 ## Commands
 
@@ -45,7 +45,7 @@ npm run doctor
 npm run validate
 ```
 
-A clean doctor run reports that the plugin manifest and committed mirror are in sync. Any missing, extra, or byte-different file or manifest mismatch causes a nonzero exit code.
+A clean doctor run reports that the plugin manifest and committed mirror are in sync. CRLF/LF-only differences are content-equivalent; any missing or extra file, material content difference, or manifest mismatch causes a nonzero exit code.
 
 Because `npm run doctor` is part of `npm run release:validate`, mirror drift blocks CI and release publication.
 

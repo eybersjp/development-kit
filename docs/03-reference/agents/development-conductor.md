@@ -25,7 +25,7 @@ Coordinates the entire software development workflow from idea through completio
 
 ## Inputs
 
-- User request or command (`/dk-idea`, `/dk-spec`, `/dk-design`, `/dk-tasks`, `/dk-build`, `/dk-build-auto`, `/dk-test`, `/dk-review`, `/dk-simplify`, `/dk-debug`, `/dk-ship`, `/dk-status`)
+- User request or command (`/dk-autopilot`, `/dk-idea`, `/dk-research`, `/dk-spec`, `/dk-design`, `/dk-tasks`, `/dk-build`, `/dk-build-auto`, `/dk-test`, `/dk-review`, `/dk-simplify`, `/dk-debug`, `/dk-ship`, `/dk-status`)
 - Approved specifications, designs, and task plans
 - Agent reports (scout findings, test reports, review verdicts)
 
@@ -41,7 +41,7 @@ Coordinates the entire software development workflow from idea through completio
 
 ## Commands That Invoke It
 
-All 12 commands (`/dk-idea` through `/dk-status`). The conductor is the entry point for every command.
+All 14 commands (`/dk-autopilot`, `/dk-idea`, `/dk-research`, `/dk-spec`, `/dk-design`, `/dk-tasks`, `/dk-build`, `/dk-build-auto`, `/dk-test`, `/dk-review`, `/dk-simplify`, `/dk-debug`, `/dk-ship`, and `/dk-status`). The conductor is the entry point for every command.
 
 ## Upstream & Downstream Agents
 

@@ -21,7 +21,7 @@ npx development-kit init [options]
 | `--global` | Install plugin to `~/.gemini/config/plugins/development-kit/` (creates the dir if missing) |
 | `--project` | Install plugin to `./.agents/plugins/development-kit/` (creates `./.agents/` if missing) |
 | `--all` | Standalone: copy `agents, skills, commands, hooks, templates, evals, scripts` dirs + `AGENTS.md` + `README.md` + plugin manifest to the project root |
-| `--opencode` | Install 43 skills to `.opencode/skills/`, plus `opencode.json` and `AGENTS.md` at the project root |
+| `--opencode` | Install 45 skills to `.opencode/skills/`, plus `opencode.json` and `AGENTS.md` at the project root |
 | `--force` | Override existsSync guards — overwrite existing `AGENTS.md` / `README.md` |
 | `--dry-run` | Preview without copying; **only valid with `--all` or `--opencode`** (else exits 1 with usage) |
 | `--help` | Print help and exit 0 |
@@ -32,7 +32,7 @@ npx development-kit init [options]
 | :--- | :--- | :--- |
 | `--global` / `--project` | `<target>/plugins/development-kit/` | `skills/`, `agents/`, `hooks/`, `commands/` copies; `plugin.json` with `../../../` paths rewritten to `./`; `AGENTS.md` (guarded) |
 | `--all` | project root | all 7 directories; `AGENTS.md` and `README.md` (guarded); `.agents/plugins/development-kit/plugin.json` (copied unmodified) |
-| `--opencode` | `.opencode/skills/` + root | 43 skill dirs (guarded); `opencode.json` (guarded); `AGENTS.md` (guarded) |
+| `--opencode` | `.opencode/skills/` + root | 45 skill dirs (guarded); `opencode.json` (guarded); `AGENTS.md` (guarded) |
 
 ## Overwrite Rules
 

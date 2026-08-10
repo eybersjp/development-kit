@@ -33,7 +33,9 @@ Evaluations are **behavioural test cases** stored as JSON scenarios under `evals
 
 ## Execution
 
-There is **no runner** in the repository. Execution is manual or semi-automated: an evaluator presents the scenario input to an agent applying the skill and scores the output against `expected`.
+The repository automates structural scenario validation with `scripts/validate-evals.mjs`. The validator parses every scenario JSON file and requires the top-level `skill`, `scenario`, and `expected` keys. It runs through `npm run evals:validate`, is included in `npm run autopilot:validate`, and therefore runs as part of `npm run release:validate`.
+
+There is no automated live-agent evaluation runner. Behavioural execution remains manual or semi-automated: an evaluator presents the scenario input to an agent applying the skill and scores the output against `expected`.
 
 ## Scoring Semantics
 
@@ -43,8 +45,9 @@ Pass = every positive expectation met AND no `must_not` violated. Any `must_not`
 
 1. Create `evals/<skill>/scenario-0N-<topic>.json` per the contract.
 2. Update `docs/03-reference/evaluations/<skill>.md`.
-3. No structural validation exists for these files (documented gap).
+3. Run `npm run evals:validate` to validate JSON parsing and required top-level keys.
+4. Execute the scenario against a live agent and score its behaviour manually or semi-automatically.
 
 ## Coverage
 
-10 suites × 1 scenario. Not all 43 skills are evaluated — the evaluated set covers the most behaviour-heavy lifecycle stages. See [evaluation-strategy.md](../07-testing-quality-security/evaluation-strategy.md).
+11 suites with 25 scenarios. Ten skill suites contain one scenario each, while `autopilot-lifecycle` contains 15 lifecycle scenarios. Not all 45 skills are evaluated — the evaluated set covers the most behaviour-heavy lifecycle stages. See [evaluation-strategy.md](../07-testing-quality-security/evaluation-strategy.md).

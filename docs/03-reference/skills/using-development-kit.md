@@ -68,7 +68,7 @@ All commands (it frames their execution).
 ## Antigravity & OpenCode Behavior
 
 - Loaded automatically by `hooks/session-start.js` at Antigravity session start.
-- Under OpenCode, it is one of the 43 skills installed to `.opencode/skills/` and auto-discoverable via its frontmatter `name`/`description`.
+- Under OpenCode, it is one of the 45 skills installed to `.opencode/skills/` and auto-discoverable via its frontmatter `name`/`description`.
 
 ## Practical Example
 

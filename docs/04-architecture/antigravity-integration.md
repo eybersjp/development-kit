@@ -8,10 +8,10 @@ Development Kit is an Antigravity **plugin**: a self-contained directory with a 
 ~/.gemini/config/                    # global install target
 └── plugins/development-kit/
     ├── plugin.json                  # manifest (./ paths after rewrite)
-    ├── skills/  (43)
+    ├── skills/  (45)
     ├── agents/  (18)
     ├── hooks/   (4)
-    └── commands/ (12)
+    └── commands/ (14)
 ```
 
 ## Install Modes
@@ -32,7 +32,7 @@ Four lifecycle hooks run at session/task/completion boundaries (`session-start`,
 
 ## Commands
 
-The 12 `/dk-*` commands are installed as command definitions; each routes through the conductor.
+The 14 `/dk-*` commands are installed as command definitions; each routes through the conductor.
 
 ## Flow
 

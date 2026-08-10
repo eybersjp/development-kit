@@ -1,7 +1,9 @@
 # Documentation Specification
 
+> **Frozen historical baseline (v0.3.0):** This document records the documentation specification and repository inventory as they existed for `development-kit@0.3.0`. Its component counts are intentionally preserved for historical reference and do not describe the current repository inventory.
+
 ## Purpose
-This document specifies the requirements, scope, target audiences, and quality criteria for the complete **Development Kit** framework documentation system (`development-kit@0.3.0`).
+This document specifies the requirements, scope, target audiences, and quality criteria for the complete **Development Kit** framework documentation system at the frozen `development-kit@0.3.0` baseline.
 
 ## Target Audiences & Needs
 

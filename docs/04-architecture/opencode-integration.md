@@ -6,7 +6,7 @@
 
 ```text
 project/
-├── .opencode/skills/        # 43 skill directories
+├── .opencode/skills/        # 45 skill directories
 ├── opencode.json            # official schema declaration
 └── AGENTS.md                # automatically loaded project rules
 ```
@@ -57,7 +57,7 @@ sequenceDiagram
 
 ## Compatibility metadata
 
-All 43 skills declare OpenCode compatibility in frontmatter. `npm run validate` verifies framework structure and compatibility metadata.
+All 45 skills declare OpenCode compatibility in frontmatter. `npm run validate` verifies framework structure and compatibility metadata.
 
 ## Configuration validation
 

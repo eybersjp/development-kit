@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-08-10
+
+### Fixed
+- Made skill frontmatter validation OS-agnostic by normalizing CRLF and LF line endings before parsing.
+- Made canonical plugin mirror comparisons ignore line-ending-only differences while continuing to detect material content drift.
+
+### Added
+- Added focused regression tests covering LF, CRLF, and mixed line-ending behavior in skill validation and plugin mirror comparison.
+
 ## [0.5.1] - 2026-08-09
 
 ### Fixed
@@ -82,7 +91,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Production-grade 12-section documentation system.
 - Documentation validation suite and installer synchronization verification.
 
-[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/eybersjp/development-kit/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/eybersjp/development-kit/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/eybersjp/development-kit/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/eybersjp/development-kit/compare/v0.4.1...v0.4.2

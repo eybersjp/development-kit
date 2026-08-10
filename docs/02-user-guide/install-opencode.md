@@ -30,7 +30,7 @@ node scripts/install-antigravity.mjs --opencode
 
 ## Installed content and destinations
 
-- `./.opencode/skills/`: all 43 compatible skills, copied to `.opencode/skills/<skill-name>/SKILL.md`.
+- `./.opencode/skills/`: all 45 compatible skills, copied to `.opencode/skills/<skill-name>/SKILL.md`.
 - `./opencode.json`: the OpenCode project configuration.
 - `./AGENTS.md`: the Development Kit rules loaded automatically by OpenCode.
 
@@ -83,7 +83,7 @@ Then restart or reload OpenCode.
 
 ## Skill compatibility metadata
 
-All 43 skills contain OpenCode compatibility metadata in their `SKILL.md` frontmatter:
+All 45 skills contain OpenCode compatibility metadata in their `SKILL.md` frontmatter:
 
 ```yaml
 compatibility:

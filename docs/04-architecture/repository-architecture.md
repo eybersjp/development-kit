@@ -7,11 +7,11 @@ development-kit/
 ├── .agents/plugins/development-kit/   # Plugin mirror + manifest (generated/synced)
 ├── .github/workflows/                 # CI + publish workflows
 ├── agents/                            # 18 agent personas (canonical)
-├── commands/                          # 12 slash commands (canonical)
-├── skills/                            # 43 skills, each a dir with SKILL.md (canonical)
+├── commands/                          # 14 slash commands (canonical)
+├── skills/                            # 45 skills, each a dir with SKILL.md (canonical)
 ├── hooks/                             # 4 lifecycle hooks (canonical)
 ├── templates/                         # 6 artifact templates (canonical)
-├── evals/                             # 10 evaluation suites (canonical)
+├── evals/                             # 11 evaluation suites (canonical)
 ├── scripts/                           # 4 tooling scripts (canonical)
 ├── docs/                              # This documentation system
 ├── AGENTS.md                          # Always-on rules
@@ -24,10 +24,10 @@ development-kit/
 | Location | Nature | Edit Rule |
 | :--- | :--- | :--- |
 | `agents/`, `skills/`, `commands/`, `hooks/`, `templates/`, `evals/`, `scripts/` | **Canonical source** | Edit here only |
-| `.agents/plugins/development-kit/{agents,skills,commands,hooks}/` | **Mirror copies** (identical files) | Never edit directly |
+| `.agents/plugins/development-kit/{agents,skills,commands,hooks}/` | **Mirror copies** (content-equivalent files) | Never edit directly |
 | `.agents/plugins/development-kit/plugin.json` | Generated manifest | Regenerate via `sync-plugin.mjs` |
 
-The mirror content is currently byte-identical to canonical (verified with `diff -rq`). It is maintained by copying at install/sync time, not by junctions.
+The mirror content is required to be content-equivalent to canonical. The synchronization check normalizes CRLF and LF line endings before comparison, while material content differences and inventory drift remain release-blocking. The mirror is maintained by copying at install/sync time, not by junctions.
 
 ```mermaid
 graph LR

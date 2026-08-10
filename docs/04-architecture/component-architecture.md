@@ -5,9 +5,9 @@
 ```mermaid
 graph TD
     subgraph Content
-        C1["commands/ (12)"]
+        C1["commands/ (14)"]
         C2["agents/ (18)"]
-        C3["skills/ (43)"]
+        C3["skills/ (45)"]
         C4["hooks/ (4)"]
         C5["templates/ (6)"]
         C6["evals/ (10)"]
@@ -35,9 +35,9 @@ graph TD
 
 | Component | Count | Role |
 | :--- | :--- | :--- |
-| `commands/` | 12 | Slash-command definitions; each maps to a workflow bundle |
+| `commands/` | 14 | Slash-command definitions; each maps to a workflow bundle |
 | `agents/` | 18 | Agent personas; the conductor orchestrates the other 17 |
-| `skills/` | 43 | Lifecycle skills; routed per command via `skill-routing` |
+| `skills/` | 45 | Lifecycle and conditional research skills; routed per command via `skill-routing` |
 | `hooks/` | 4 | Antigravity lifecycle hooks (session, task boundaries, completion) |
 | `templates/` | 6 | Artifact templates produced by agents |
 | `evals/` | 10 | Behavioural evaluation scenarios for skills |

@@ -4,7 +4,7 @@ How to report bugs, request features, or propose enhancements for Development Ki
 
 ## Filing a Bug Report
 
-1. Include operating system, Node.js version, and framework version (`v0.3.0`).
+1. Include operating system, Node.js version, and the exact framework version (for example, `v0.5.2`).
 2. Provide exact command output or validation log.
 3. Steps to reproduce the issue cleanly.
 

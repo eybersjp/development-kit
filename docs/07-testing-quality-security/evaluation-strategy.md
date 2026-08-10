@@ -6,15 +6,17 @@ Evaluations measure whether an agent applying a skill produces the **expected be
 
 ## What Is Evaluated
 
-10 suites, one per evaluated skill:
+11 suites:
 
-- acceptance-criteria-writing, code-quality-review, dependency-restraint, idea-discovery, scope-definition, simplicity-review, specification-compliance-review, subagent-driven-implementation, task-decomposition, test-driven-development
+- acceptance-criteria-writing, autopilot-lifecycle, code-quality-review, dependency-restraint, idea-discovery, scope-definition, simplicity-review, specification-compliance-review, subagent-driven-implementation, task-decomposition, test-driven-development
 
-The set covers the most behaviour-heavy lifecycle stages (discovery, definition, planning, implementation, verification, review).
+Ten skill suites contain one scenario each. `autopilot-lifecycle` contains 15 scenarios covering lifecycle transitions, approvals, task dispatch, verification, review, simplification, completion, recovery, cancellation, and related state controls. The set covers the most behaviour-heavy lifecycle stages (discovery, definition, planning, implementation, verification, review, and lifecycle orchestration).
 
 ## How Evaluations Are Run
 
-There is no automated runner in the repository. Procedure:
+Structural validation is automated. `npm run evals:validate` runs `scripts/validate-evals.mjs`, which parses every scenario JSON file and checks for the required `skill`, `scenario`, and `expected` keys. The command is included in `npm run autopilot:validate` and `npm run release:validate`.
+
+There is no automated live-agent evaluation runner. Behavioural procedure:
 
 1. Load the scenario JSON (`evals/<skill>/scenario-*.json`).
 2. Present the `input`/`implementation` to an agent applying the skill.
@@ -41,8 +43,8 @@ Follow [adding-an-evaluation.md](../05-developer-guide/adding-an-evaluation.md).
 
 ## Limitations
 
-- 1 scenario per suite; no multi-domain coverage.
-- No automated execution or CI wiring (see [known-limitations.md](../11-appendices/known-limitations.md)).
+- Ten suites have only one scenario and therefore limited domain coverage; `autopilot-lifecycle` has 15 scenarios.
+- Structural scenario validation is automated, but live-agent execution and behavioural scoring are not.
 - Behaviour is model-dependent — results are indicative, not guarantees.
 
 See [evaluation-architecture.md](../04-architecture/evaluation-architecture.md) and [evaluation-internals.md](../06-internals/evaluation-internals.md).

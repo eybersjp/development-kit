@@ -1,6 +1,6 @@
 # Verifying Installation
 
-Use the checks below after installing Development Kit v0.4.2.
+Use the checks below after installing Development Kit v0.5.2.
 
 ## Verify the published package
 
@@ -11,7 +11,7 @@ npm view development-kit version
 Expected current version:
 
 ```text
-0.4.2
+0.5.2
 ```
 
 ## Verify framework integrity
@@ -65,7 +65,7 @@ Run:
 npm run doctor
 ```
 
-Confirm that the installed plugin manifest references the expected 43 skills, 18 agents, and 4 hooks and that the plugin is reported as synchronized.
+Confirm that the installed plugin manifest references the expected 45 skills, 18 agents, and 4 hooks and that the plugin is reported as synchronized.
 
 ## Verify Autopilot
 

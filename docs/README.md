@@ -1,16 +1,20 @@
 # Development Kit Documentation System
 
-Welcome to the official documentation for **Development Kit v0.4.2** (`development-kit@0.4.2`).
+Welcome to the official documentation for **Development Kit v0.5.2** (`development-kit@0.5.2`).
 
 Development Kit is a disciplined AI software-development workflow for Antigravity and OpenCode. It installs lifecycle commands, specialist agents, reusable skills, verification gates, and the persistent `/dk-autopilot` guided workflow into supported coding-agent environments.
 
 ## Current release highlights
 
-- Public GitHub release: `v0.4.2`.
-- Public npm package: `development-kit@0.4.2`.
+- Public GitHub release: `v0.5.2`.
+- Public npm package: `development-kit@0.5.2`.
+- The framework includes 14 workflow commands, 18 specialist agents, 45 engineering skills, and 4 hooks.
+- `/dk-research` provides provider-neutral, source-backed external research with provenance, uncertainty handling, and explicit trust boundaries.
+- Agent-Reach is the first documented optional research provider adapter and is not a core dependency.
+- Skill frontmatter parsing and canonical plugin-mirror checks treat equivalent CRLF and LF content consistently across operating systems.
 - Current OpenCode configuration uses the official schema declaration.
 - OpenCode automatically loads the root `AGENTS.md` file.
-- The release validation suite includes a regression test that rejects the obsolete OpenCode `rules` key.
+- The release validation suite covers OpenCode configuration, external research integration, and line-ending normalization regressions.
 
 Projects installed with v0.4.1 that report `Unrecognized key: rules` should follow the [OpenCode migration instructions](08-maintenance-release/migration-guide.md#upgrading-from-v041-to-v042).
 

@@ -1,6 +1,6 @@
 # Known Limitations
 
-This document records current technical and operational limitations in Development Kit v0.5.1.
+This document records current technical and operational limitations in Development Kit v0.5.2.
 
 ## Current limitations
 

@@ -31,14 +31,14 @@ The mirror content under `.agents/plugins/development-kit/` is refreshed by inst
 node scripts/install-antigravity.mjs --project
 ```
 
-(Verifies the copies stay byte-identical with `diff -rq agents .agents/plugins/development-kit/agents`.)
+Run `npm run doctor` afterward to verify inventory and content equivalence. The check normalizes CRLF/LF-only differences while still rejecting missing, extra, or materially different files.
 
 ## Weekly / Pre-Release
 
 1. `npm run validate`, `npm run doctor`, `npm run docs:validate` — all green.
 2. Bump `package.json` version; ensure tag matches (see [release-process.md](../08-maintenance-release/release-process.md)).
 3. Update `CHANGELOG.md` from the git log (see [changelog-policy.md](../08-maintenance-release/changelog-policy.md)).
-4. Verify docs version references (`0.3.0` → new version) across landing pages.
+4. Verify docs version references (`previous release` -> `new release`) across landing pages.
 
 ## Incident Response
 

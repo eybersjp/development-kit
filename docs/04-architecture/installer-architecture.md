@@ -27,7 +27,7 @@ flowchart TD
 | :--- | :--- | :--- | :--- |
 | global/project | skills, agents, hooks, commands → plugin dir; AGENTS.md | manifest `../../../` → `./` | AGENTS.md skipped unless `--force` |
 | all | 7 dirs + AGENTS.md + README.md + plugin.json | — (plugin.json copied unmodified) | AGENTS.md/README.md skipped unless `--force`; package.json never touched |
-| opencode | 43 skills → `.opencode/skills/`; opencode.json; AGENTS.md | — | existing items skipped unless `--force` |
+| opencode | 45 skills → `.opencode/skills/`; opencode.json; AGENTS.md | — | existing items skipped unless `--force` |
 
 ## Safety & Dry-Run
 

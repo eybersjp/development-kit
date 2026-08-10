@@ -19,14 +19,14 @@ A release is blocked unless the complete command succeeds.
 3. **Documentation Gate**: `npm run docs:validate` passes with zero errors and complete reference/SUMMARY coverage.
 4. **Documentation Validator Regression Gate**: `npm run docs:validate:test` passes.
 5. **OpenCode Compatibility Gate**: `npm run opencode:validate` passes.
-6. **External Research Contract Gate**: `npm run research:validate` confirms `/dk-research`, research skills, provider trust boundaries, plugin registration, documentation navigation, and v0.5.0 package wiring remain integrated.
+6. **External Research Contract Gate**: `npm run research:validate` confirms `/dk-research`, research skills, provider trust boundaries, plugin registration, documentation navigation, and package wiring remain integrated.
 7. **Autopilot Runtime Gate**: `npm run autopilot:test` passes.
 8. **Evaluation Gate**: `npm run evals:validate` passes all behavioural evaluation structure/scenario checks.
 9. **Pull Request CI Gate**: GitHub CI passes on the final PR head SHA before merge.
 10. **Release Workflow Gate**: the maintainer release workflow reruns `npm run release:validate` on `main` before creating/verifying the version tag and GitHub Release.
 11. **Clean Release State**: no unexpected temporary files, local paths, secrets, credentials, provider session material, or scratch artifacts are included.
 
-## v0.5.0 Security-Specific Gate
+## External Capability Provider Security Gate
 
 For changes involving External Capability Providers:
 

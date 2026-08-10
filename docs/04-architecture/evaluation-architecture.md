@@ -8,8 +8,8 @@ Evaluations measure whether agents applying the skills produce the **expected be
 
 ```text
 evals/
-├── <skill-name>/              # 10 suites, one per evaluated skill
-│   └── scenario-01-<topic>.json
+├── <skill-name>/              # 11 suites
+│   └── scenario-<nn>-<topic>.json
 ```
 
 Each scenario JSON declares:
@@ -32,16 +32,19 @@ flowchart TD
     D -->|no| F["fail: inspect which expectation was missed"]
 ```
 
-There is **no automated runner** in the repository — scenarios are executed manually or semi-automatically against a live agent/model. See [evaluation-strategy.md](../07-testing-quality-security/evaluation-strategy.md).
+`scripts/validate-evals.mjs` provides automated structural validation: it parses every scenario JSON file and requires the top-level `skill`, `scenario`, and `expected` keys. It runs through `npm run evals:validate`, which is included in `npm run autopilot:validate` and `npm run release:validate`.
+
+There is no automated live-agent evaluation runner. Scenarios are executed manually or semi-automatically against a live agent/model, then scored against their behavioural expectations. See [evaluation-strategy.md](../07-testing-quality-security/evaluation-strategy.md).
 
 ## Coverage
 
-10 suites · 1 scenario each. Evaluated skills: acceptance-criteria-writing, code-quality-review, dependency-restraint, idea-discovery, scope-definition, simplicity-review, specification-compliance-review, subagent-driven-implementation, task-decomposition, test-driven-development.
+11 suites with 25 scenarios. Ten skill suites contain one scenario each; `autopilot-lifecycle` contains 15 scenarios. Evaluated suites: acceptance-criteria-writing, autopilot-lifecycle, code-quality-review, dependency-restraint, idea-discovery, scope-definition, simplicity-review, specification-compliance-review, subagent-driven-implementation, task-decomposition, test-driven-development.
 
 ## Relationship to Validation
 
-- `npm run validate` = structure only (files exist, frontmatter valid).
-- Evaluations = behaviour (does the agent produce the right output?).
+- `npm run validate` validates skills and repository structure.
+- `npm run evals:validate` validates evaluation JSON structure and required top-level keys.
+- Live-agent evaluation measures behaviour (does the agent produce the right output?).
 - Both are required for confidence; neither replaces the other.
 
 See [evaluation-internals.md](../06-internals/evaluation-internals.md) and [adding-an-evaluation.md](../05-developer-guide/adding-an-evaluation.md).

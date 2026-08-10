@@ -19,11 +19,13 @@ flowchart TD
 4. Stage gates are enforced (approvals, tests, reviews).
 5. The outcome is reported and the workflow advances.
 
-## Command Inventory (12)
+## Command Inventory (14)
 
 | Command | Primary Skill | Stage | Agents Spawned |
 | :--- | :--- | :--- | :--- |
+| `/dk-autopilot` | using-development-kit | lifecycle-wide | specialist agents selected for each stage |
 | `/dk-idea` | idea-discovery | UNDERSTAND | product-discovery-agent, repository-scout-agent |
+| `/dk-research` | external-research | conditional / any stage | repository-scout-agent; security-reviewer when provider risk requires review |
 | `/dk-spec` | adaptive-artifact-planning | DEFINE | artifact-selector-agent, specification-agent |
 | `/dk-design` | technical-design | DESIGN | solution-architect-agent, repository-scout-agent |
 | `/dk-tasks` | task-decomposition | PLAN | task-planner-agent |

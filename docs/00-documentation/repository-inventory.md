@@ -1,14 +1,14 @@
 # Repository Inventory
 
-## Summary Counts (`development-kit@0.3.0`)
+## Summary Counts (`development-kit@0.5.2`)
 
-* **Commands**: 12
+* **Commands**: 14
 * **Agents**: 18
-* **Skills**: 43
+* **Skills**: 45
 * **Hooks**: 4
 * **Templates**: 6
-* **Evaluation Suites**: 10
-* **Scripts**: 4
+* **Evaluation Suites**: 11
+* **Scripts**: 12
 * **Configuration Files**: 3 (`package.json`, `opencode.json`, `.agents/plugins/development-kit/plugin.json`)
 
 ---
@@ -16,18 +16,20 @@
 ## Detailed Directory Inventory
 
 ### 1. Commands (`commands/`)
-1. `dk-build-auto.md`
-2. `dk-build.md`
-3. `dk-debug.md`
-4. `dk-design.md`
-5. `dk-idea.md`
-6. `dk-review.md`
-7. `dk-ship.md`
-8. `dk-simplify.md`
-9. `dk-spec.md`
-10. `dk-status.md`
-11. `dk-tasks.md`
-12. `dk-test.md`
+1. `dk-autopilot.md`
+2. `dk-build-auto.md`
+3. `dk-build.md`
+4. `dk-debug.md`
+5. `dk-design.md`
+6. `dk-idea.md`
+7. `dk-research.md`
+8. `dk-review.md`
+9. `dk-ship.md`
+10. `dk-simplify.md`
+11. `dk-spec.md`
+12. `dk-status.md`
+13. `dk-tasks.md`
+14. `dk-test.md`
 
 ### 2. Agents (`agents/`)
 1. `accessibility-reviewer.md`
@@ -53,46 +55,48 @@
 1. `acceptance-criteria-writing`
 2. `accessibility-review`
 3. `adaptive-artifact-planning`
-4. `api-contract-design`
-5. `branch-completion`
-6. `browser-runtime-verification`
-7. `code-quality-review`
-8. `context-packing`
-9. `data-model-design`
-10. `dependency-ordering`
-11. `dependency-restraint`
-12. `design-direction`
-13. `design-quality-review`
-14. `edge-case-testing`
-15. `existing-code-first`
-16. `feature-specification`
-17. `idea-challenge`
-18. `idea-discovery`
-19. `incremental-implementation`
-20. `minimal-diff`
-21. `native-platform-first`
-22. `regression-testing`
-23. `release-readiness`
-24. `repository-orientation`
-25. `requirements-interview`
-26. `risk-first-planning`
-27. `scope-definition`
-28. `security-review`
-29. `simplicity-review`
-30. `skill-routing`
-31. `specification-compliance-review`
-32. `subagent-driven-implementation`
-33. `subtask-decomposition`
-34. `systematic-debugging`
-35. `task-completion-gate`
-36. `task-decomposition`
-37. `task-readiness-check`
-38. `technical-design`
-39. `test-driven-development`
-40. `test-strategy`
-41. `user-flow-design`
-42. `using-development-kit`
-43. `verification-before-completion`
+4. `agent-reach-integration`
+5. `api-contract-design`
+6. `branch-completion`
+7. `browser-runtime-verification`
+8. `code-quality-review`
+9. `context-packing`
+10. `data-model-design`
+11. `dependency-ordering`
+12. `dependency-restraint`
+13. `design-direction`
+14. `design-quality-review`
+15. `edge-case-testing`
+16. `existing-code-first`
+17. `external-research`
+18. `feature-specification`
+19. `idea-challenge`
+20. `idea-discovery`
+21. `incremental-implementation`
+22. `minimal-diff`
+23. `native-platform-first`
+24. `regression-testing`
+25. `release-readiness`
+26. `repository-orientation`
+27. `requirements-interview`
+28. `risk-first-planning`
+29. `scope-definition`
+30. `security-review`
+31. `simplicity-review`
+32. `skill-routing`
+33. `specification-compliance-review`
+34. `subagent-driven-implementation`
+35. `subtask-decomposition`
+36. `systematic-debugging`
+37. `task-completion-gate`
+38. `task-decomposition`
+39. `task-readiness-check`
+40. `technical-design`
+41. `test-driven-development`
+42. `test-strategy`
+43. `user-flow-design`
+44. `using-development-kit`
+45. `verification-before-completion`
 
 ### 4. Hooks (`hooks/`)
 1. `session-start.js`
@@ -110,18 +114,27 @@
 
 ### 6. Evaluations (`evals/`)
 1. `acceptance-criteria-writing`
-2. `code-quality-review`
-3. `dependency-restraint`
-4. `idea-discovery`
-5. `scope-definition`
-6. `simplicity-review`
-7. `specification-compliance-review`
-8. `subagent-driven-implementation`
-9. `task-decomposition`
-10. `test-driven-development`
+2. `autopilot-lifecycle`
+3. `code-quality-review`
+4. `dependency-restraint`
+5. `idea-discovery`
+6. `scope-definition`
+7. `simplicity-review`
+8. `specification-compliance-review`
+9. `subagent-driven-implementation`
+10. `task-decomposition`
+11. `test-driven-development`
 
 ### 7. Scripts (`scripts/`)
-1. `install-antigravity.mjs`
-2. `sync-plugin.mjs`
-3. `validate-skills.mjs`
-4. `validate-docs.mjs`
+1. `autopilot.mjs`
+2. `autopilot.test.mjs`
+3. `install-antigravity.mjs`
+4. `research-contract.test.mjs`
+5. `sync-plugin.mjs`
+6. `sync-plugin.test.mjs`
+7. `validate-docs.mjs`
+8. `validate-docs.test.mjs`
+9. `validate-evals.mjs`
+10. `validate-opencode-config.test.mjs`
+11. `validate-skills.mjs`
+12. `validate-skills.test.mjs`
