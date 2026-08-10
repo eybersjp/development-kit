@@ -46,8 +46,10 @@
   ],
   "scripts": {
     "validate": "node scripts/validate-skills.mjs",
+    "skills:validate:test": "node --test --test-isolation=none scripts/validate-skills.test.mjs",
     "init": "node scripts/install-antigravity.mjs",
     "doctor": "node scripts/sync-plugin.mjs --check",
+    "sync:validate:test": "node --test --test-isolation=none scripts/sync-plugin.test.mjs",
     "docs:validate": "node scripts/validate-docs.mjs",
     "docs:validate:test": "node --test scripts/validate-docs.test.mjs",
     "opencode:validate": "node --test scripts/validate-opencode-config.test.mjs",
@@ -55,7 +57,7 @@
     "research:validate": "node --test scripts/research-contract.test.mjs",
     "evals:validate": "node scripts/validate-evals.mjs",
     "autopilot:validate": "npm run autopilot:test && npm run evals:validate",
-    "release:validate": "npm run validate && npm run doctor && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run research:validate && npm run autopilot:validate"
+    "release:validate": "npm run validate && npm run skills:validate:test && npm run doctor && npm run sync:validate:test && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run research:validate && npm run autopilot:validate"
   },
   "engines": {
     "node": ">=18.0.0"

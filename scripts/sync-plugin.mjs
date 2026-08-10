@@ -111,6 +111,17 @@ function compareManifest() {
   return { generated, current, issues };
 }
 
+export function normalizeLineEndings(content) {
+  return typeof content === 'string' ? content.replace(/\r\n/g, '\n') : content;
+}
+
+export function contentsMatchIgnoringLineEndings(canonical, mirrored) {
+  if (typeof canonical !== 'string' || typeof mirrored !== 'string') {
+    return canonical === mirrored;
+  }
+  return normalizeLineEndings(canonical) === normalizeLineEndings(mirrored);
+}
+
 function compareMirrorDirectory(name) {
   const canonicalDir = join(ROOT, name);
   const mirrorDir = join(PLUGIN_DIR, name);
@@ -137,9 +148,9 @@ function compareMirrorDirectory(name) {
       continue;
     }
 
-    const canonical = readFileSync(join(canonicalDir, file));
-    const mirrored = readFileSync(join(mirrorDir, file));
-    if (!canonical.equals(mirrored)) {
+    const canonical = readFileSync(join(canonicalDir, file), 'utf-8');
+    const mirrored = readFileSync(join(mirrorDir, file), 'utf-8');
+    if (!contentsMatchIgnoringLineEndings(canonical, mirrored)) {
       issues.push(`${name}: content differs for ${file}`);
     }
   }
@@ -204,4 +215,7 @@ function main() {
   if (!verifyState()) process.exit(1);
 }
 
-main();
+const isMainModule = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMainModule) {
+  main();
+}

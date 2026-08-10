@@ -38,8 +38,14 @@ function pass(msg) {
   console.log(`  ✓ ${msg}`);
 }
 
-function parseYamlFrontmatter(content) {
-  const match = content.match(/^---\n([\s\S]*?)\n---\n/);
+export function normalizeLineEndings(content) {
+  return typeof content === 'string' ? content.replace(/\r\n/g, '\n') : content;
+}
+
+export function parseYamlFrontmatter(content) {
+  if (typeof content !== 'string') return null;
+  const normalized = normalizeLineEndings(content);
+  const match = normalized.match(/^---\n([\s\S]*?)\n---\n/);
   if (!match) return null;
 
   const yaml = match[1];
@@ -217,4 +223,7 @@ function main() {
   process.exit(errors.length > 0 ? 1 : 0);
 }
 
-main();
+const isMainModule = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMainModule) {
+  main();
+}
