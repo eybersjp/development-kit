@@ -38,6 +38,9 @@ jobs:
       - name: Validate OpenCode configuration
         run: npm run opencode:validate
 
+      - name: Validate platform template adapters
+        run: npm run platform:validate
+
       - name: Validate external research contract
         run: npm run research:validate
 
