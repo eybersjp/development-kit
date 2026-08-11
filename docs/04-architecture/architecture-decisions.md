@@ -38,7 +38,7 @@ Recorded decisions derived from repository evidence (git history, source, manife
 
 ## AD-07: Independent validators composed into one release gate
 
-- **Decision**: Structural, manifest, documentation, OpenCode, external research contract, Autopilot, and evaluation validation remain independently runnable but are composed by `npm run release:validate`.
+- **Decision**: Structural, manifest, documentation, OpenCode, platform adapter, external research contract, Autopilot, and evaluation validation remain independently runnable but are composed by `npm run release:validate`.
 - **Evidence**: `package.json` scripts and `.github/workflows/ci.yml`.
 
 ## AD-08: Fresh sub-agents as the isolation mechanism

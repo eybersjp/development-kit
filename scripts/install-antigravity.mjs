@@ -26,9 +26,31 @@
 import { existsSync, mkdirSync, copyFileSync, cpSync, readdirSync, statSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  installPlatformAdapters,
+  resolvePlatformSelection,
+} from './install-platform-adapters.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
+const PLATFORM_FLAGS = Object.freeze([
+  '--claude',
+  '--cursor',
+  '--vscode',
+  '--cline',
+  '--windsurf',
+  '--all-platforms',
+]);
+const KNOWN_FLAGS = new Set([
+  '--global',
+  '--project',
+  '--all',
+  '--opencode',
+  '--force',
+  '--dry-run',
+  '--help',
+  ...PLATFORM_FLAGS,
+]);
 
 const HELP = `
 Development Kit — Antigravity Installer
@@ -36,13 +58,19 @@ Development Kit — Antigravity Installer
 Installs the Development Kit plugin into Antigravity.
 
 Usage:
-  node scripts/install-antigravity.mjs [options]
+  node scripts/install-antigravity.mjs [init] [options]
 
 Options:
   --global   Install globally (~/.gemini/config/ or similar)
   --project  Install project-local (./.agents/)
   --all      Install everything to project root for standalone use
   --opencode Install skills and rules for OpenCode (.opencode/skills/)
+  --claude   Install the Claude adapter
+  --cursor   Install the Cursor adapter
+  --vscode   Install the VS Code adapter
+  --cline    Install the Cline adapter
+  --windsurf Install the Windsurf adapter
+  --all-platforms Install all five platform adapters
   --force    Override safety guards and overwrite existing files
   --dry-run  Show what would be installed without copying
   --help     Show this help message
@@ -284,21 +312,89 @@ function installAll(dryRun = false, force = false) {
 }
 
 function main() {
-  const args = process.argv.slice(2);
+  const rawArgs = process.argv.slice(2);
+  const args = rawArgs[0] === 'init' ? rawArgs.slice(1) : rawArgs;
+
+  const unsupported = args.find((arg) => !arg.startsWith('--') || !KNOWN_FLAGS.has(arg));
+  if (unsupported) {
+    console.error(`Unknown or unsupported argument: ${unsupported}`);
+    process.exit(1);
+  }
 
   if (args.includes('--help')) {
     console.log(HELP);
     process.exit(0);
   }
 
-  if (args.includes('--dry-run') && !args.includes('--all') && !args.includes('--opencode')) {
-    console.log('--dry-run must be used with --all or --opencode');
+  const platforms = resolvePlatformSelection(args);
+  const selectedPlatformFlags = PLATFORM_FLAGS.filter((flag) => args.includes(flag));
+  const selectedLegacyFlags = ['--opencode', '--all', '--global', '--project']
+    .filter((flag) => args.includes(flag));
+
+  if (selectedPlatformFlags.length > 0 && selectedLegacyFlags.length > 0) {
+    console.error(
+      `Platform adapter flags ${selectedPlatformFlags.join(', ')} cannot be combined with legacy target flags ${selectedLegacyFlags.join(', ')}.`,
+    );
+    process.exit(1);
+  }
+
+  if (args.includes('--dry-run') && !args.includes('--all') && !args.includes('--opencode') && platforms.length === 0) {
+    console.log('--dry-run must be used with --all, --opencode, or a platform adapter');
     console.log('  node scripts/install-antigravity.mjs --all --dry-run');
     console.log('  node scripts/install-antigravity.mjs --opencode --dry-run');
+    console.log('  node scripts/install-antigravity.mjs --all-platforms --dry-run');
     process.exit(1);
   }
 
   const force = args.includes('--force');
+
+  if (platforms.length > 0) {
+    const dryRun = args.includes('--dry-run');
+    const results = installPlatformAdapters({
+      targetDir: process.cwd(),
+      platforms,
+      dryRun,
+      force,
+    });
+    const action = dryRun ? 'Would install' : 'Installing';
+    console.log(`${action} Development Kit platform adapters: ${platforms.join(', ')}`);
+    for (const result of results) {
+      console.log(`  ${result.status}: ${result.targetPath}`);
+    }
+    if (dryRun) {
+      console.log('\nDry run complete. No files were copied.');
+    }
+    process.exit(0);
+  }
+
+  if (args.includes('--opencode')) {
+    installOpencode(args.includes('--dry-run'), force);
+    process.exit(0);
+  }
+
+  if (args.includes('--all')) {
+    installAll(args.includes('--dry-run'), force);
+    process.exit(0);
+  }
+
+  if (args.includes('--global')) {
+    const globalDir = join(process.env.HOME || process.env.USERPROFILE || '~', '.gemini', 'config');
+    if (!existsSync(globalDir)) {
+      mkdirSync(globalDir, { recursive: true });
+    }
+    installPlugin(globalDir, force);
+    process.exit(0);
+  }
+
+  if (args.includes('--project')) {
+    const projectDir = join(process.cwd(), '.agents');
+    if (!existsSync(projectDir)) {
+      mkdirSync(projectDir, { recursive: true });
+    }
+    installPlugin(projectDir, force);
+    process.exit(0);
+  }
+
 
   if (args.includes('--opencode')) {
     installOpencode(args.includes('--dry-run'), force);
@@ -334,10 +430,11 @@ function main() {
     installPlugin(antigravityPath, force);
   } else {
     console.log('Antigravity configuration not found.');
-    console.log('To install globally:    node scripts/install-antigravity.mjs --global');
-    console.log('To install locally:     node scripts/install-antigravity.mjs --project');
-    console.log('To install standalone:  node scripts/install-antigravity.mjs --all');
-    console.log('To install for OpenCode: node scripts/install-antigravity.mjs --opencode');
+    console.log('To install globally:      node scripts/install-antigravity.mjs --global');
+    console.log('To install locally:       node scripts/install-antigravity.mjs --project');
+    console.log('To install standalone:    node scripts/install-antigravity.mjs --all');
+    console.log('To install for OpenCode:  node scripts/install-antigravity.mjs --opencode');
+    console.log('To install platform rules: node scripts/install-antigravity.mjs [--claude|--cursor|--vscode|--cline|--windsurf|--all-platforms]');
     process.exit(1);
   }
 }

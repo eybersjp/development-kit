@@ -1,6 +1,6 @@
 {
   "name": "development-kit",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "A disciplined AI software-development workflow for Antigravity and OpenCode, with lifecycle commands, specialist agents, verification gates, persistent guided automation, and optional external capability providers.",
   "author": "Juan-Pierre Eybers",
   "license": "MIT",
@@ -53,11 +53,12 @@
     "docs:validate": "node scripts/validate-docs.mjs",
     "docs:validate:test": "node --test scripts/validate-docs.test.mjs",
     "opencode:validate": "node --test scripts/validate-opencode-config.test.mjs",
+    "platform:validate": "node --test scripts/validate-platform-templates.test.mjs scripts/install-platform-adapters-cli.test.mjs",
     "autopilot:test": "node --test scripts/autopilot.test.mjs",
     "research:validate": "node --test scripts/research-contract.test.mjs",
     "evals:validate": "node scripts/validate-evals.mjs",
     "autopilot:validate": "npm run autopilot:test && npm run evals:validate",
-    "release:validate": "npm run validate && npm run skills:validate:test && npm run doctor && npm run sync:validate:test && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run research:validate && npm run autopilot:validate"
+    "release:validate": "npm run validate && npm run skills:validate:test && npm run doctor && npm run sync:validate:test && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run platform:validate && npm run research:validate && npm run autopilot:validate"
   },
   "engines": {
     "node": ">=18.0.0"

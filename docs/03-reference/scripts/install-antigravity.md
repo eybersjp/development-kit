@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Installs or links the Development Kit plugin into Antigravity, copies everything to a project root for standalone use, or installs skills/rules for OpenCode.
+Installs or links the Development Kit plugin into Antigravity, copies everything to a project root for standalone use, installs skills/rules for OpenCode, or dispatches project-local platform adapters.
 
 ## Syntax
 
@@ -22,9 +22,13 @@ npx development-kit init [options]
 | `--project` | Install plugin to `./.agents/plugins/development-kit/` (creates `./.agents/` if missing) |
 | `--all` | Standalone: copy `agents, skills, commands, hooks, templates, evals, scripts` dirs + `AGENTS.md` + `README.md` + plugin manifest to the project root |
 | `--opencode` | Install 45 skills to `.opencode/skills/`, plus `opencode.json` and `AGENTS.md` at the project root |
+| `--claude`, `--cursor`, `--vscode`, `--cline`, `--windsurf` | Install the selected platform adapter(s) at their native project paths |
+| `--all-platforms` | Install all five platform adapters only; Antigravity and OpenCode remain explicit modes |
 | `--force` | Override existsSync guards — overwrite existing `AGENTS.md` / `README.md` |
-| `--dry-run` | Preview without copying; **only valid with `--all` or `--opencode`** (else exits 1 with usage) |
+| `--dry-run` | Preview without copying; valid with `--all`, `--opencode`, or platform adapter flags |
 | `--help` | Print help and exit 0 |
+
+Platform adapter flags may be combined with one another, but they are mutually exclusive with the legacy target flags `--global`, `--project`, `--all`, and `--opencode`. A mixed platform-and-legacy invocation is rejected before any files are written.
 
 ## What Gets Copied
 
@@ -33,16 +37,18 @@ npx development-kit init [options]
 | `--global` / `--project` | `<target>/plugins/development-kit/` | `skills/`, `agents/`, `hooks/`, `commands/` copies; `plugin.json` with `../../../` paths rewritten to `./`; `AGENTS.md` (guarded) |
 | `--all` | project root | all 7 directories; `AGENTS.md` and `README.md` (guarded); `.agents/plugins/development-kit/plugin.json` (copied unmodified) |
 | `--opencode` | `.opencode/skills/` + root | 45 skill dirs (guarded); `opencode.json` (guarded); `AGENTS.md` (guarded) |
+| platform adapters | project root | `CLAUDE.md` plus Claude command skills, or the selected native rule files; see [install-platform-adapters.md](install-platform-adapters.md) |
 
 ## Overwrite Rules
 
 - Existing `AGENTS.md` / `README.md` at target are **skipped unless `--force`**.
+- Existing platform adapter destinations are **preserved unless `--force`**; forced writes replace rather than merge.
 - Library content (skills, agents, commands, hooks, templates, evals, scripts) is **copied unconditionally** (overwrites on re-run).
 - `--dry-run` performs no writes.
 
 ## Guard Conditions
 
-- `--dry-run` requires `--all` or `--opencode`.
+- `--dry-run` requires `--all`, `--opencode`, or at least one platform adapter.
 - Auto-detect mode exits 1 when nothing is detected.
 
 ## Exit Codes

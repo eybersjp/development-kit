@@ -9,6 +9,7 @@
 | `npm run docs:validate` | `scripts/validate-docs.mjs` | Reference coverage, links, placeholders, local paths, and `SUMMARY.md` registration | Exits 1 on errors |
 | `npm run docs:validate:test` | `scripts/validate-docs.test.mjs` | Documentation validator regression suite | Exits 1 on failure |
 | `npm run opencode:validate` | `scripts/validate-opencode-config.test.mjs` | OpenCode JSON schema declaration, obsolete-key rejection, and optional instructions shape | Exits 1 on failure |
+| `npm run platform:validate` | Two platform adapter test files | Adapter selection, CLI behavior, official paths, preservation/force, dry-run safety, and packaged templates | Exits 1 on failure |
 | `npm run research:validate` | `scripts/research-contract.test.mjs` | External research command/skill integration, trust boundaries, plugin registration, documentation navigation, and package wiring | Exits 1 on failure |
 | `npm run autopilot:test` | `scripts/autopilot.test.mjs` | Autopilot runtime, persistence, policy, security, and lifecycle behaviour | Exits 1 on failure |
 | `npm run evals:validate` | `scripts/validate-evals.mjs` | Evaluation suite structure and scenario validity | Exits 1 on errors |
@@ -31,6 +32,7 @@ validate
 -> docs:validate
 -> docs:validate:test
 -> opencode:validate
+-> platform:validate
 -> research:validate
 -> autopilot:test
 -> evals:validate
@@ -50,6 +52,7 @@ The authoritative requirement is that every current gate completes successfully 
 | Evaluation suites | 11 | `docs/03-reference/evaluations/` | `docs:validate` and `evals:validate` |
 | Framework scripts | 6 non-test scripts plus test suites | `docs/03-reference/scripts/` | `docs:validate` and targeted test scripts |
 | OpenCode configuration | 1 project configuration | `docs/03-reference/configuration/` | `opencode:validate` |
+| Platform adapters | 5 project integrations | `docs/03-reference/scripts/install-platform-adapters.md` | `platform:validate` |
 
 ## Plugin mirror gate
 
@@ -98,6 +101,7 @@ The OpenCode regression suite verifies that `opencode.json`:
 - `doctor` drift: synchronize canonical content into the committed plugin mirror and regenerate the manifest with `node scripts/sync-plugin.mjs`.
 - `docs:validate` failure: create the missing reference page, register it in `docs/SUMMARY.md`, or repair the named link or placeholder.
 - `opencode:validate` failure: repair `opencode.json`; never restore the obsolete `rules` key.
+- `platform:validate` failure: repair the official adapter paths, template contents, CLI selection, or safe write behavior.
 - `research:validate` failure: restore provider-neutral routing, trust boundaries, approval behavior, plugin registration, or documentation navigation.
 - `autopilot:test` failure: repair runtime behaviour before advancing the release.
 - `evals:validate` failure: repair the named scenario or evaluation structure.

@@ -16,6 +16,7 @@ flowchart TD
     B -->|--project| F["./.agents/plugins/development-kit/"]
     B -->|--all| G["project root (standalone)"]
     B -->|--opencode| H[".opencode/skills/ + opencode.json + AGENTS.md"]
+    B -->|platform flags| K["native project instruction paths"]
     B -->|--help| I["print help"]
     D -->|found| E
     D -->|not found| J["exit 1 with usage"]
@@ -29,11 +30,14 @@ flowchart TD
 | all | 7 dirs + AGENTS.md + README.md + plugin.json | — (plugin.json copied unmodified) | AGENTS.md/README.md skipped unless `--force`; package.json never touched |
 | opencode | 45 skills → `.opencode/skills/`; opencode.json; AGENTS.md | — | existing items skipped unless `--force` |
 
+Adapter mode installs packaged templates at the current project's official native paths. Claude receives `CLAUDE.md` and 14 command skills under `.claude/skills/`; Cursor receives `.cursor/rules/dkf.mdc`; VS Code with GitHub Copilot receives `.github/copilot-instructions.md`; Cline receives `.clinerules/dkf.md`; and Windsurf receives `.windsurf/rules/dkf.md`. The installer does not create `.vscode/settings.json` or legacy root rule files.
+
 ## Safety & Dry-Run
 
-- `--dry-run` prints what would be copied **without writing**; it is only valid with `--all` or `--opencode` (else exit 1).
+- `--dry-run` prints what would be copied **without writing**; it is valid with `--all`, `--opencode`, or platform adapter flags (else exit 1).
 - `--force` overrides the exists-guards for `AGENTS.md`/`README.md`/skills — the only way to overwrite user files.
 - Library content is updated unconditionally on re-run; root files are preserved.
+- Every existing adapter destination is preserved unless `--force` is supplied; forced adapter writes replace rather than merge.
 
 ## Failure & Recovery
 

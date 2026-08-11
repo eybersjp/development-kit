@@ -28,11 +28,9 @@ It is **not** a project-management dashboard and it does not replace engineering
 
 ## Current release
 
-The current release line is **v0.5.2**.
+The current release line is **v0.6.0**.
 
-v0.5.0 introduced provider-neutral External Capability Providers and `/dk-research`. Development Kit can gather current source-backed evidence when it materially affects a lifecycle decision while preserving provenance, explicit trust boundaries, and existing approval controls. Agent-Reach is documented as the first optional provider adapter and is not a hard dependency of Development Kit.
-
-v0.5.2 makes validation reliable across operating systems by treating equivalent CRLF and LF content consistently in skill frontmatter parsing and canonical plugin mirror checks. It also adds focused regression coverage for those line-ending behaviors.
+v0.6.0 introduces multi-platform integration across Claude Code (`CLAUDE.md`, `.claude/skills/`), Cursor (`.cursor/rules/dkf.mdc`), VS Code with GitHub Copilot (`.github/copilot-instructions.md`), Cline (`.clinerules/dkf.md`), and Windsurf (`.windsurf/rules/dkf.md`). The CLI installer includes new target flags `--claude`, `--cursor`, `--vscode`, `--cline`, `--windsurf`, and `--all-platforms`.
 
 ## What you get
 
@@ -46,6 +44,7 @@ v0.5.2 makes validation reliable across operating systems by treating equivalent
 | **Verification-first execution** | Tests, runtime checks, specification review, quality review, and simplification gates before completion. |
 | **Safety controls** | Human approval gates for authenticated provider access, external writes, system changes, remote/destructive actions, deployment, and release operations. |
 | **Antigravity and OpenCode support** | Plugin installation for Antigravity and auto-discoverable skill installation for OpenCode. |
+| **Cross-platform integrations** | Native project instructions and skills for Claude Code, Cursor, VS Code with GitHub Copilot, Cline, and Windsurf. |
 
 ## Automated Guided Workflow
 
@@ -145,6 +144,22 @@ The installed `opencode.json` contains only the official schema declaration:
 
 OpenCode loads root `AGENTS.md` automatically. Existing v0.4.1 projects that report `Unrecognized key: rules` should replace their local `opencode.json` with the configuration above or reinstall with v0.4.2 or later.
 
+### Claude Code, Cursor, VS Code with GitHub Copilot, Cline, and Windsurf
+
+```bash
+# Preview all five project-local platform adapters
+npx development-kit init --all-platforms --dry-run
+
+# Install individual adapters
+npx development-kit init --claude
+npx development-kit init --cursor
+npx development-kit init --vscode
+npx development-kit init --cline
+npx development-kit init --windsurf
+```
+
+`--all-platforms` installs all five adapters. Antigravity and OpenCode retain their explicit installer modes. Existing adapter files are preserved by default unless `--force` is supplied.
+
 ### Available installer modes
 
 | Flag | Purpose |
@@ -154,10 +169,16 @@ OpenCode loads root `AGENTS.md` automatically. Existing v0.4.1 projects that rep
 | `--project` | Install to the current project's `.agents/` directory. |
 | `--all` | Copy the complete standalone framework into the project. |
 | `--opencode` | Install the OpenCode-compatible configuration, rules, and skill library. |
+| `--claude` | Install `CLAUDE.md` and native `.claude/skills/<dk-command>/SKILL.md` packages. |
+| `--cursor` | Install `.cursor/rules/dkf.mdc`. |
+| `--vscode` | Install `.github/copilot-instructions.md` for VS Code with GitHub Copilot. |
+| `--cline` | Install `.clinerules/dkf.md`. |
+| `--windsurf` | Install `.windsurf/rules/dkf.md`. |
+| `--all-platforms` | Install all five adapters above (does not include Antigravity or OpenCode). |
 | `--dry-run` | Preview changes without writing files. |
 | `--force` | Explicitly allow replacement where safety guards normally preserve user files. |
 
-The installer preserves an existing `AGENTS.md` by default.
+The installer preserves existing guarded files by default, including `AGENTS.md` and platform-adapter destinations. Platform dry runs perform no writes. Rule-based adapters expose DK workflow names as instructions where native slash commands are unavailable; Claude skills are natively invokable.
 
 ## Core commands
 
@@ -198,6 +219,11 @@ Every non-trivial change follows the same principles:
 |---|---|
 | **Antigravity** | Plugin, agents, commands, hooks, 45 skills, templates, evaluations, and runtime utilities. |
 | **OpenCode** | Official schema-based `opencode.json`, automatically loaded `AGENTS.md`, and 45 progressively loaded compatible skills. |
+| **Claude Code** | `CLAUDE.md` plus native, invokable skills for all 14 DK commands under `.claude/skills/`. |
+| **Cursor** | Project rule at `.cursor/rules/dkf.mdc`. |
+| **VS Code with GitHub Copilot** | Repository instructions at `.github/copilot-instructions.md`; no `.vscode/settings.json` modification. |
+| **Cline** | Project rule at `.clinerules/dkf.md`. |
+| **Windsurf** | Project rule at `.windsurf/rules/dkf.md`. |
 | **Standalone repositories** | Full framework copy through `--all`. |
 | **Optional external providers** | Provider-neutral research contract; Agent-Reach is the first documented adapter and remains optional. |
 
@@ -230,6 +256,7 @@ The release gate runs framework validation, plugin manifest and mirror synchroni
 - [External Capability Providers](docs/04-architecture/external-capability-providers.md)
 - [Security and trust boundaries](docs/04-architecture/security-trust-boundaries.md)
 - [OpenCode installation](docs/02-user-guide/install-opencode.md)
+- [Platform integrations](docs/02-user-guide/platform-integrations.md)
 - [Changelog](CHANGELOG.md)
 
 ## Project status

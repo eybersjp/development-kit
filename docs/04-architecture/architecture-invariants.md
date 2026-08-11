@@ -47,7 +47,7 @@ These invariants must hold for the framework to function as designed. Any change
 
 ## Validation Invariants
 
-26. **The complete release gate must pass before release**: `npm run release:validate` includes skill/agent validation, plugin synchronization, documentation validation and tests, OpenCode validation, research contract validation, Autopilot tests, and evaluation validation.
+26. **The complete release gate must pass before release**: `npm run release:validate` includes skill/agent validation, plugin synchronization, documentation validation and tests, OpenCode validation, platform adapter validation, research contract validation, Autopilot tests, and evaluation validation.
 27. **CI must exercise the release-critical validation components on pull requests to `main`.**
 28. **Version tags must match `package.json` version** (enforced by the release/publish automation).
 

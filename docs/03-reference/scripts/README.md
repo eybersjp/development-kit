@@ -1,11 +1,12 @@
 # Scripts Index
 
-Development Kit ships **6 Node.js scripts** in `scripts/`, exposed through `package.json`:
+Development Kit ships **7 non-test Node.js scripts** in `scripts/`, exposed through the installer or `package.json`:
 
 | Script | Package Entry | Purpose | Reference |
 | :--- | :--- | :--- | :--- |
 | **autopilot.mjs** | `npm run autopilot:test` | Executable runtime CLI engine for `/dk-autopilot` | [autopilot.md](autopilot.md) |
 | **install-antigravity.mjs** | `npx development-kit init` / `npm run init` / `bin` | Installs the plugin into Antigravity, standalone, or OpenCode | [install-antigravity.md](install-antigravity.md) |
+| **install-platform-adapters.mjs** | Platform flags on `npx development-kit init` | Installs project-local Claude Code, Cursor, VS Code with GitHub Copilot, Cline, and Windsurf adapters | [install-platform-adapters.md](install-platform-adapters.md) |
 | **sync-plugin.mjs** | `npm run doctor` (`--check`) | Regenerates / checks the plugin manifest | [sync-plugin.md](sync-plugin.md) |
 | **validate-skills.mjs** | `npm run validate` | Validates skills, agents, commands, and manifest references | [validate-skills.md](validate-skills.md) |
 | **validate-docs.mjs** | `npm run docs:validate` | Validates documentation coverage, links, and placeholders | [validate-docs.md](validate-docs.md) |

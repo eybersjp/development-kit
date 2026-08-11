@@ -15,6 +15,7 @@ mkdir -p /tmp/dk-install-test && cd /tmp/dk-install-test
 # 2. Preview every mode (no writes)
 node /path/to/development-kit/scripts/install-antigravity.mjs --all --dry-run
 node /path/to/development-kit/scripts/install-antigravity.mjs --opencode --dry-run
+node /path/to/development-kit/scripts/install-antigravity.mjs --all-platforms --dry-run
 
 # 3. Install project-local plugin
 node /path/to/development-kit/scripts/install-antigravity.mjs --project
@@ -43,6 +44,9 @@ cat AGENTS.md    # overwritten (force worked)
 | Auto-detect fallback | Run with no flags in a dir without `.agents`/`.gemini` — expect "not found" + exit 1 |
 | `--all` skips `package.json` | Pre-create `package.json` in scratch; confirm untouched |
 | Windows path handling | Test on Windows: `~` must resolve via `USERPROFILE` |
+| Platform destination contract | Run `npm run platform:validate`; confirm only official native paths are produced |
+| Adapter preservation and force | Pre-create each destination; confirm preservation by default and replacement with `--force` |
+| Adapter dry-run | Confirm all missing destinations remain absent after `--all-platforms --dry-run` |
 
 ## Regression Guard
 
