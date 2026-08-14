@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="520" viewBox="0 0 1400 520" role="img" aria-labelledby="title desc">
+  <title id="title">Development Kit workflow</title>
+  <desc id="desc">A visual lifecycle from Understand through Complete with Development Kit Autopilot coordinating each verified stage.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#0b1020"/><stop offset="1" stop-color="#11182b"/></linearGradient>
+    <linearGradient id="accent" x1="0" x2="1"><stop stop-color="#6ee7ff"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity=".28"/></filter>
+  </defs>
+  <rect width="1400" height="520" rx="28" fill="url(#bg)"/>
+  <rect x="1" y="1" width="1398" height="518" rx="27" fill="none" stroke="#24304a"/>
+  <text x="70" y="78" fill="#f8fafc" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="34" font-weight="700">How Development Kit works</text>
+  <text x="70" y="116" fill="#94a3b8" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="18">A verified engineering lifecycle coordinated by Autopilot, with approval gates where consequences matter.</text>
+  <g font-family="Inter,Segoe UI,Arial,sans-serif" filter="url(#shadow)">
+    <g transform="translate(70 180)"><rect width="150" height="86" rx="18" fill="#121b31" stroke="#2d3b5a"/><circle cx="24" cy="25" r="8" fill="#6ee7ff"/><text x="24" y="58" fill="#e2e8f0" font-size="18" font-weight="700">UNDERSTAND</text></g>
+    <g transform="translate(242 180)"><rect width="150" height="86" rx="18" fill="#121b31" stroke="#2d3b5a"/><circle cx="24" cy="25" r="8" fill="#7dd3fc"/><text x="24" y="58" fill="#e2e8f0" font-size="18" font-weight="700">DEFINE</text></g>
+    <g transform="translate(414 180)"><rect width="150" height="86" rx="18" fill="#121b31" stroke="#2d3b5a"/><circle cx="24" cy="25" r="8" fill="#818cf8"/><text x="24" y="58" fill="#e2e8f0" font-size="18" font-weight="700">DESIGN</text></g>
+    <g transform="translate(586 180)"><rect width="150" height="86" rx="18" fill="#121b31" stroke="#2d3b5a"/><circle cx="24" cy="25" r="8" fill="#8b5cf6"/><text x="24" y="58" fill="#e2e8f0" font-size="18" font-weight="700">PLAN</text></g>
+    <g transform="translate(758 180)"><rect width="150" height="86" rx="18" fill="#121b31" stroke="#2d3b5a"/><circle cx="24" cy="25" r="8" fill="#a78bfa"/><text x="24" y="58" fill="#e2e8f0" font-size="18" font-weight="700">IMPLEMENT</text></g>
+    <g transform="translate(930 180)"><rect width="150" height="86" rx="18" fill="#121b31" stroke="#2d3b5a"/><circle cx="24" cy="25" r="8" fill="#c084fc"/><text x="24" y="58" fill="#e2e8f0" font-size="18" font-weight="700">VERIFY</text></g>
+    <g transform="translate(1102 180)"><rect width="150" height="86" rx="18" fill="#121b31" stroke="#2d3b5a"/><circle cx="24" cy="25" r="8" fill="#e879f9"/><text x="24" y="58" fill="#e2e8f0" font-size="18" font-weight="700">REVIEW</text></g>
+  </g>
+  <g stroke="url(#accent)" stroke-width="3" fill="none" opacity=".9"><path d="M220 223h22"/><path d="M392 223h22"/><path d="M564 223h22"/><path d="M736 223h22"/><path d="M908 223h22"/><path d="M1080 223h22"/></g>
+  <g transform="translate(300 320)" font-family="Inter,Segoe UI,Arial,sans-serif">
+    <rect width="800" height="122" rx="22" fill="#0e172a" stroke="#334155"/>
+    <rect x="24" y="24" width="210" height="74" rx="16" fill="#16213a" stroke="#405276"/>
+    <text x="50" y="57" fill="#f8fafc" font-size="20" font-weight="700">AUTOPILOT</text>
+    <text x="50" y="81" fill="#94a3b8" font-size="14">selects the next safe action</text>
+    <path d="M264 61h80" stroke="#6ee7ff" stroke-width="3"/>
+    <text x="372" y="50" fill="#e2e8f0" font-size="17" font-weight="700">REVIEW</text>
+    <text x="372" y="76" fill="#94a3b8" font-size="14">→ SIMPLIFY → COMPLETE</text>
+    <rect x="612" y="30" width="158" height="62" rx="14" fill="#13241e" stroke="#2f6f54"/>
+    <text x="640" y="57" fill="#86efac" font-size="15" font-weight="700">APPROVAL GATES</text>
+    <text x="640" y="78" fill="#a7f3d0" font-size="12">before consequential actions</text>
+  </g>
+</svg>
