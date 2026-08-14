@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="500" viewBox="0 0 1400 500" role="img" aria-labelledby="title desc">
+  <title id="title">Development Kit supported platforms</title>
+  <desc id="desc">Supported coding environments including Antigravity, OpenCode, Claude Code, Cursor, VS Code with GitHub Copilot, Cline, and Windsurf.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#0b1020"/><stop offset="1" stop-color="#10182a"/></linearGradient>
+    <linearGradient id="line" x1="0" x2="1"><stop stop-color="#6ee7ff"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient>
+  </defs>
+  <rect width="1400" height="500" rx="28" fill="url(#bg)"/>
+  <rect x="1" y="1" width="1398" height="498" rx="27" fill="none" stroke="#24304a"/>
+  <text x="70" y="78" fill="#f8fafc" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="34" font-weight="700">Works where you already code</text>
+  <text x="70" y="116" fill="#94a3b8" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="18">Development Kit brings the same disciplined workflow across leading AI coding environments.</text>
+  <path d="M130 236H1270" stroke="url(#line)" stroke-width="3" opacity=".55"/>
+  <g font-family="Inter,Segoe UI,Arial,sans-serif">
+    <g transform="translate(70 165)"><rect width="170" height="142" rx="20" fill="#121b31" stroke="#32415f"/><circle cx="34" cy="34" r="14" fill="#6ee7ff"/><text x="24" y="78" fill="#f8fafc" font-size="20" font-weight="700">Antigravity</text><text x="24" y="106" fill="#94a3b8" font-size="13">Plugin + agents</text></g>
+    <g transform="translate(255 165)"><rect width="170" height="142" rx="20" fill="#121b31" stroke="#32415f"/><circle cx="34" cy="34" r="14" fill="#7dd3fc"/><text x="24" y="78" fill="#f8fafc" font-size="20" font-weight="700">OpenCode</text><text x="24" y="106" fill="#94a3b8" font-size="13">Native config + skills</text></g>
+    <g transform="translate(440 165)"><rect width="170" height="142" rx="20" fill="#121b31" stroke="#32415f"/><circle cx="34" cy="34" r="14" fill="#818cf8"/><text x="24" y="78" fill="#f8fafc" font-size="20" font-weight="700">Claude Code</text><text x="24" y="106" fill="#94a3b8" font-size="13">Instructions + skills</text></g>
+    <g transform="translate(625 165)"><rect width="170" height="142" rx="20" fill="#121b31" stroke="#32415f"/><circle cx="34" cy="34" r="14" fill="#8b5cf6"/><text x="24" y="78" fill="#f8fafc" font-size="20" font-weight="700">Cursor</text><text x="24" y="106" fill="#94a3b8" font-size="13">Project rules</text></g>
+    <g transform="translate(810 165)"><rect width="210" height="142" rx="20" fill="#121b31" stroke="#32415f"/><circle cx="34" cy="34" r="14" fill="#a78bfa"/><text x="24" y="78" fill="#f8fafc" font-size="20" font-weight="700">VS Code + Copilot</text><text x="24" y="106" fill="#94a3b8" font-size="13">Repository instructions</text></g>
+    <g transform="translate(1035 165)"><rect width="140" height="142" rx="20" fill="#121b31" stroke="#32415f"/><circle cx="34" cy="34" r="14" fill="#c084fc"/><text x="24" y="78" fill="#f8fafc" font-size="20" font-weight="700">Cline</text><text x="24" y="106" fill="#94a3b8" font-size="13">Project rules</text></g>
+    <g transform="translate(1190 165)"><rect width="140" height="142" rx="20" fill="#121b31" stroke="#32415f"/><circle cx="34" cy="34" r="14" fill="#e879f9"/><text x="24" y="78" fill="#f8fafc" font-size="20" font-weight="700">Windsurf</text><text x="24" y="106" fill="#94a3b8" font-size="13">Project rules</text></g>
+  </g>
+  <g transform="translate(70 350)" font-family="Inter,Segoe UI,Arial,sans-serif">
+    <rect width="1260" height="92" rx="20" fill="#0f172a" stroke="#2d3b5a"/>
+    <text x="34" y="38" fill="#e2e8f0" font-size="18" font-weight="700">One engineering discipline. Multiple coding agents.</text>
+    <text x="34" y="66" fill="#94a3b8" font-size="14">Install only the adapters you need, or use the complete standalone framework where supported.</text>
+    <rect x="1010" y="23" width="214" height="46" rx="13" fill="#13241e" stroke="#2f6f54"/>
+    <text x="1046" y="52" fill="#86efac" font-size="14" font-weight="700">CROSS-PLATFORM BY DESIGN</text>
+  </g>
+</svg>
