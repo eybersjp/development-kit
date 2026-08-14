@@ -63,6 +63,7 @@ Do not overload the root README with every asset. The README should create under
 
 ## Required deliverables
 
+- [Capture and publish checklist](capture-and-publish-checklist.md)
 - [Capture plan](capture-plan.md)
 - [Repeatable demo project](demo-project-brief.md)
 - [Video storyboard and narration](video-storyboard.md)
