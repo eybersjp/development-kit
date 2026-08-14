@@ -1,6 +1,6 @@
 # Skill Catalogue
 
-Complete catalogue of all 45 skills with purpose and lifecycle stage.
+Complete catalogue of all 46 skills with purpose and lifecycle stage.
 
 ## A. Meta Skills
 
@@ -8,6 +8,7 @@ Complete catalogue of all 45 skills with purpose and lifecycle stage.
 | :--- | :--- | :--- |
 | [using-development-kit](using-development-kit.md) | How to use the methodology; loaded at session start | Always |
 | [skill-routing](skill-routing.md) | Maps user intent to the appropriate skill/workflow | Always |
+| [next-step-guidance](next-step-guidance.md) | Context-aware next `/dk-*` command recommendation | Always |
 | [repository-orientation](repository-orientation.md) | Inspects unfamiliar repositories before changes | UNDERSTAND |
 | [context-packing](context-packing.md) | Gathers only relevant context for sub-agents | IMPLEMENT |
 

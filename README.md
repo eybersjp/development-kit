@@ -39,7 +39,7 @@ v0.6.0 introduces multi-platform integration across Claude Code (`CLAUDE.md`, `.
 | **Automated Guided Workflow** | `/dk-autopilot` coordinates the complete lifecycle and persists progress between sessions. |
 | **14 workflow commands** | Discovery, external research, specification, design, planning, implementation, testing, review, debugging, simplification, status, and shipping. |
 | **18 specialist agents** | Focused personas for discovery, architecture, implementation, testing, security, accessibility, design, and review. |
-| **45 engineering skills** | Reusable instructions covering the full software-development lifecycle plus provider-neutral external research. |
+| **46 engineering skills** | Reusable instructions covering the full software-development lifecycle plus provider-neutral external research. |
 | **External Capability Providers** | Optional adapters can extend external research without becoming trusted instruction authorities or core dependencies. |
 | **Verification-first execution** | Tests, runtime checks, specification review, quality review, and simplification gates before completion. |
 | **Safety controls** | Human approval gates for authenticated provider access, external writes, system changes, remote/destructive actions, deployment, and release operations. |
@@ -217,8 +217,8 @@ Every non-trivial change follows the same principles:
 
 | Environment | Integration |
 |---|---|
-| **Antigravity** | Plugin, agents, commands, hooks, 45 skills, templates, evaluations, and runtime utilities. |
-| **OpenCode** | Official schema-based `opencode.json`, automatically loaded `AGENTS.md`, and 45 progressively loaded compatible skills. |
+| **Antigravity** | Plugin, agents, commands, hooks, 46 skills, templates, evaluations, and runtime utilities. |
+| **OpenCode** | Official schema-based `opencode.json`, automatically loaded `AGENTS.md`, and 46 progressively loaded compatible skills. |
 | **Claude Code** | `CLAUDE.md` plus native, invokable skills for all 14 DK commands under `.claude/skills/`. |
 | **Cursor** | Project rule at `.cursor/rules/dkf.mdc`. |
 | **VS Code with GitHub Copilot** | Repository instructions at `.github/copilot-instructions.md`; no `.vscode/settings.json` modification. |

@@ -69,6 +69,12 @@ commands:
       - scope-definition
     workflow: discovery
 
+  /dk-research:
+    primary: external-research
+    supporting:
+      - agent-reach-integration
+    workflow: research
+
   /dk-spec:
     primary: adaptive-artifact-planning
     supporting:

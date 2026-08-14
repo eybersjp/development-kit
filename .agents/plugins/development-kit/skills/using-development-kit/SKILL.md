@@ -64,6 +64,7 @@ Before writing any new code, traverse this ladder:
 |---------|---------|
 | `/dk-autopilot` | Run the complete Development Kit lifecycle in Automated Guided Workflow mode |
 | `/dk-idea` | Run idea discovery and requirements interview |
+| `/dk-research` | Gather source-backed external evidence through approved providers |
 | `/dk-spec` | Create the required artifact set |
 | `/dk-design` | Produce technical and visual design |
 | `/dk-tasks` | Create task decomposition |

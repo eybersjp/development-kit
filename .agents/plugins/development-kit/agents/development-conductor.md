@@ -104,7 +104,8 @@ For each task:
 ### Step 9: Complete
 1. Apply `task-completion-gate`: verify all gates (acceptance criteria, tests, spec review, code review, simplicity review) have passed.
 2. Update documentation where required.
-3. Proceed to the next task or present completion to the user.
+3. Apply `next-step-guidance` to append the appropriate context-aware `Suggested Next Step` section when returning control to the user.
+4. Proceed to the next task or present completion to the user.
 
 ## External Capability Provider Rules
 
