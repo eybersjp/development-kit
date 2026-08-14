@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/development-kit-banner.svg" alt="Development Kit - engineering discipline for AI coding agents" width="100%">
+
 # Development Kit
 
 ### A disciplined AI software-development team, installed into your coding agent.
@@ -173,14 +175,14 @@ npx development-kit init --windsurf
 | `--cursor` | Install `.cursor/rules/dkf.mdc`. |
 | `--vscode` | Install `.github/copilot-instructions.md` for VS Code with GitHub Copilot. |
 | `--cline` | Install `.clinerules/dkf.md`. |
-| `--windsurf` | Install `.windsurf/rules/dkf.md`. |
+| `--windsurf` | Install `.windsurf/rules/dkf.mdc`. |
 | `--all-platforms` | Install all five adapters above (does not include Antigravity or OpenCode). |
 | `--dry-run` | Preview changes without writing files. |
 | `--force` | Explicitly allow replacement where safety guards normally preserve user files. |
 
 The installer preserves existing guarded files by default, including `AGENTS.md` and platform-adapter destinations. Platform dry runs perform no writes. Rule-based adapters expose DK workflow names as instructions where native slash commands are unavailable; Claude skills are natively invokable.
 
-## Core commands
+### Core commands
 
 | Command | Outcome |
 |---|---|
