@@ -1,0 +1,126 @@
+<svg width="1600" height="620" viewBox="0 0 1600 620" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Development Kit</title>
+  <desc id="desc">A professional banner for Development Kit, an engineering workflow for AI coding agents.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="80" y1="20" x2="1520" y2="600" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#07111F"/>
+      <stop offset="0.52" stop-color="#0B1730"/>
+      <stop offset="1" stop-color="#11152C"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#52E5FF"/>
+      <stop offset="1" stop-color="#8B7CFF"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="920" y1="102" x2="1490" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#101F39" stop-opacity="0.96"/>
+      <stop offset="1" stop-color="#0A1224" stop-opacity="0.96"/>
+    </linearGradient>
+    <pattern id="grid" width="42" height="42" patternUnits="userSpaceOnUse">
+      <path d="M42 0H0V42" stroke="#A8C8FF" stroke-opacity="0.055"/>
+    </pattern>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="28" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="24"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="620" rx="32" fill="url(#bg)"/>
+  <rect width="1600" height="620" rx="32" fill="url(#grid)"/>
+
+  <circle cx="1365" cy="55" r="210" fill="#6D5EF7" fill-opacity="0.11" filter="url(#glow)"/>
+  <circle cx="260" cy="610" r="260" fill="#27D9FF" fill-opacity="0.08" filter="url(#glow)"/>
+
+  <g transform="translate(92 92)">
+    <rect x="0" y="0" width="66" height="66" rx="17" fill="url(#accent)"/>
+    <path d="M18 20H39C45.627 20 51 25.373 51 32V34C51 40.627 45.627 46 39 46H18V20Z" fill="#061221" fill-opacity="0.92"/>
+    <path d="M26 28H38C41.314 28 44 30.686 44 34C44 37.314 41.314 40 38 40H26V28Z" fill="url(#accent)"/>
+    <circle cx="20" cy="24" r="3" fill="#061221"/>
+    <circle cx="20" cy="42" r="3" fill="#061221"/>
+  </g>
+
+  <text x="184" y="119" fill="#C9DAF4" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="4.5">DEVELOPMENT KIT</text>
+  <text x="92" y="222" fill="#F6F9FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="70" font-weight="760" letter-spacing="-2.5">Engineering discipline</text>
+  <text x="92" y="296" fill="#F6F9FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="70" font-weight="760" letter-spacing="-2.5">for AI coding agents.</text>
+
+  <text x="94" y="354" fill="#A9BCD6" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="450">Plan deliberately. Build in verified steps. Review against the spec.</text>
+  <text x="94" y="389" fill="#A9BCD6" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="450">Simplify before shipping.</text>
+
+  <g transform="translate(94 445)">
+    <rect x="0" y="0" width="150" height="45" rx="22.5" fill="#13233D" stroke="#2A4161"/>
+    <text x="75" y="29" text-anchor="middle" fill="#D7E7FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" font-weight="650">14 commands</text>
+
+    <rect x="165" y="0" width="150" height="45" rx="22.5" fill="#13233D" stroke="#2A4161"/>
+    <text x="240" y="29" text-anchor="middle" fill="#D7E7FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" font-weight="650">18 agents</text>
+
+    <rect x="330" y="0" width="150" height="45" rx="22.5" fill="#13233D" stroke="#2A4161"/>
+    <text x="405" y="29" text-anchor="middle" fill="#D7E7FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" font-weight="650">46 skills</text>
+
+    <rect x="0" y="62" width="480" height="45" rx="22.5" fill="#0C182B" stroke="#223B59"/>
+    <circle cx="26" cy="22.5" r="6" fill="#52E5FF"/>
+    <text x="45" y="29" fill="#AFC5E2" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="15" font-weight="560">Antigravity · OpenCode · Claude · Cursor · Copilot · Cline · Windsurf</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="900" y="86" width="608" height="448" rx="24" fill="url(#panel)" stroke="#2B4264"/>
+    <rect x="900" y="86" width="608" height="54" rx="24" fill="#14243D"/>
+    <rect x="900" y="116" width="608" height="24" fill="#14243D"/>
+    <circle cx="934" cy="113" r="6" fill="#FF6B6B"/>
+    <circle cx="956" cy="113" r="6" fill="#FFD166"/>
+    <circle cx="978" cy="113" r="6" fill="#5DE2A7"/>
+    <text x="1204" y="119" text-anchor="middle" fill="#7892B4" font-family="JetBrains Mono, Consolas, monospace" font-size="14">development-kit / autopilot</text>
+
+    <text x="940" y="187" fill="#52E5FF" font-family="JetBrains Mono, Consolas, monospace" font-size="18" font-weight="700">$ /dk-autopilot</text>
+    <text x="940" y="229" fill="#E5EEFA" font-family="JetBrains Mono, Consolas, monospace" font-size="16">Lifecycle initialized</text>
+    <text x="940" y="258" fill="#7F98B9" font-family="JetBrains Mono, Consolas, monospace" font-size="15">Selecting the smallest verified next step...</text>
+
+    <g transform="translate(940 303)">
+      <rect x="0" y="0" width="112" height="42" rx="10" fill="#122B38" stroke="#2BD8F0" stroke-opacity="0.65"/>
+      <text x="56" y="27" text-anchor="middle" fill="#BDF7FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700">UNDERSTAND</text>
+      <path d="M118 21H142" stroke="#45607E" stroke-width="2"/>
+      <path d="M138 16L144 21L138 26" stroke="#45607E" stroke-width="2" fill="none"/>
+
+      <rect x="150" y="0" width="94" height="42" rx="10" fill="#171F3C" stroke="#7166E8" stroke-opacity="0.65"/>
+      <text x="197" y="27" text-anchor="middle" fill="#DCD8FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700">DEFINE</text>
+      <path d="M250 21H274" stroke="#45607E" stroke-width="2"/>
+      <path d="M270 16L276 21L270 26" stroke="#45607E" stroke-width="2" fill="none"/>
+
+      <rect x="282" y="0" width="96" height="42" rx="10" fill="#171F3C" stroke="#7166E8" stroke-opacity="0.65"/>
+      <text x="330" y="27" text-anchor="middle" fill="#DCD8FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700">DESIGN</text>
+      <path d="M384 21H408" stroke="#45607E" stroke-width="2"/>
+      <path d="M404 16L410 21L404 26" stroke="#45607E" stroke-width="2" fill="none"/>
+
+      <rect x="416" y="0" width="106" height="42" rx="10" fill="#171F3C" stroke="#7166E8" stroke-opacity="0.65"/>
+      <text x="469" y="27" text-anchor="middle" fill="#DCD8FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700">PLAN</text>
+    </g>
+
+    <g transform="translate(940 367)">
+      <rect x="0" y="0" width="112" height="42" rx="10" fill="#171F3C" stroke="#7166E8" stroke-opacity="0.65"/>
+      <text x="56" y="27" text-anchor="middle" fill="#DCD8FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700">IMPLEMENT</text>
+      <path d="M118 21H142" stroke="#45607E" stroke-width="2"/>
+      <path d="M138 16L144 21L138 26" stroke="#45607E" stroke-width="2" fill="none"/>
+
+      <rect x="150" y="0" width="94" height="42" rx="10" fill="#171F3C" stroke="#7166E8" stroke-opacity="0.65"/>
+      <text x="197" y="27" text-anchor="middle" fill="#DCD8FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700">VERIFY</text>
+      <path d="M250 21H274" stroke="#45607E" stroke-width="2"/>
+      <path d="M270 16L276 21L270 26" stroke="#45607E" stroke-width="2" fill="none"/>
+
+      <rect x="282" y="0" width="96" height="42" rx="10" fill="#171F3C" stroke="#7166E8" stroke-opacity="0.65"/>
+      <text x="330" y="27" text-anchor="middle" fill="#DCD8FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700">REVIEW</text>
+      <path d="M384 21H408" stroke="#45607E" stroke-width="2"/>
+      <path d="M404 16L410 21L404 26" stroke="#45607E" stroke-width="2" fill="none"/>
+
+      <rect x="416" y="0" width="106" height="42" rx="10" fill="#122B38" stroke="#2BD8F0" stroke-opacity="0.65"/>
+      <text x="469" y="27" text-anchor="middle" fill="#BDF7FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700">SHIP</text>
+    </g>
+
+    <line x1="940" y1="447" x2="1468" y2="447" stroke="#253A56"/>
+    <circle cx="950" cy="487" r="7" fill="#5DE2A7"/>
+    <text x="970" y="493" fill="#9FB3CC" font-family="JetBrains Mono, Consolas, monospace" font-size="15">verification-first · approval-gated · resumable</text>
+  </g>
+
+  <path d="M101 570H1499" stroke="url(#accent)" stroke-opacity="0.32"/>
+  <text x="94" y="594" fill="#627894" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="600" letter-spacing="1.2">OPEN SOURCE · MIT LICENSE · BUILT FOR REAL SOFTWARE DELIVERY</text>
+</svg>
