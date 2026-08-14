@@ -50,6 +50,10 @@ v0.6 introduces multi-platform integration across Claude Code (`CLAUDE.md`, `.cl
 
 ## Automated Guided Workflow
 
+<div align="center">
+<img src="assets/development-kit-workflow.svg" alt="Development Kit verified engineering lifecycle coordinated by Autopilot" width="100%">
+</div>
+
 ```text
 UNDERSTAND -> DEFINE -> DESIGN -> PLAN -> IMPLEMENT
      -> VERIFY -> REVIEW -> SIMPLIFY -> COMPLETE
@@ -216,6 +220,10 @@ Every non-trivial change follows the same principles:
 9. **Stop on unresolved failure.** Do not advance the lifecycle by hiding broken gates.
 
 ## Supported environments
+
+<div align="center">
+<img src="assets/development-kit-platforms.svg" alt="Development Kit supported coding environments" width="100%">
+</div>
 
 | Environment | Integration |
 |---|---|
