@@ -255,7 +255,7 @@ function installAll(dryRun = false, force = false) {
 
   console.log(`${label} Development Kit to: ${targetDir}\n`);
 
-  const dirs = ['agents', 'skills', 'commands', 'hooks', 'templates', 'evals', 'scripts'];
+  const dirs = ['agents', 'skills', 'commands', 'hooks', 'templates', 'evals', 'runtime', 'scripts'];
   const files = ['AGENTS.md', 'README.md'];
 
   // Copy all directories recursively
