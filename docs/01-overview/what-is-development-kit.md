@@ -1,6 +1,6 @@
 # What is Development Kit?
 
-**Development Kit** (`development-kit@0.5.2`) is an opinionated, installable AI software-development methodology and skill collection designed for **Antigravity** and **OpenCode** AI environments.
+**Development Kit** (`development-kit@0.6.1`) is an opinionated, installable AI software-development methodology and skill collection designed for **Antigravity**, **OpenCode**, and leading AI coding environments.
 
 It equips AI agents with senior software-engineering discipline, preventing common failure modes such as hallucinated architectures, unverified implementations, scope creep, over-engineering, and assumptions drift.
 
@@ -9,7 +9,7 @@ It equips AI agents with senior software-engineering discipline, preventing comm
 ## What It Is
 
 * A structured methodology enforcing sequential, gated lifecycle development: `UNDERSTAND → DEFINE → DESIGN → PLAN → IMPLEMENT → VERIFY → REVIEW → SIMPLIFY → COMPLETE`.
-* A collection of 14 slash commands, 18 specialist agent roles, 45 core skills, 4 execution hooks, 6 standardized document templates, and 11 evaluation test suites.
+* A collection of 14 slash commands, 18 specialist agent roles, 46 core skills, 4 execution hooks, standardized document templates, and 11 evaluation test suites.
 * An installer that deploys senior-engineering rules (`AGENTS.md`) and plugin manifests seamlessly across global, project-local, standalone, and OpenCode environments.
 
 ---

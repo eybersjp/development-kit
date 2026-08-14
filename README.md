@@ -28,9 +28,9 @@ It is **not** a project-management dashboard and it does not replace engineering
 
 ## Current release
 
-The current release line is **v0.6.0**.
+The current release line is **v0.6.1** (proposed release candidate).
 
-v0.6.0 introduces multi-platform integration across Claude Code (`CLAUDE.md`, `.claude/skills/`), Cursor (`.cursor/rules/dkf.mdc`), VS Code with GitHub Copilot (`.github/copilot-instructions.md`), Cline (`.clinerules/dkf.md`), and Windsurf (`.windsurf/rules/dkf.md`). The CLI installer includes new target flags `--claude`, `--cursor`, `--vscode`, `--cline`, `--windsurf`, and `--all-platforms`.
+v0.6 introduces multi-platform integration across Claude Code (`CLAUDE.md`, `.claude/skills/`), Cursor (`.cursor/rules/dkf.mdc`), VS Code with GitHub Copilot (`.github/copilot-instructions.md`), Cline (`.clinerules/dkf.md`), and Windsurf (`.windsurf/rules/dkf.md`). The CLI installer includes target flags `--claude`, `--cursor`, `--vscode`, `--cline`, `--windsurf`, and `--all-platforms`. v0.6.1 adds context-aware Next-Step Guidance, fail-closed consequential action gating, and standalone runtime installation fixes.
 
 ## What you get
 
@@ -261,7 +261,7 @@ The release gate runs framework validation, plugin manifest and mirror synchroni
 
 ## Project status
 
-Development Kit is actively developed. The v0.5.2 release line includes the production Autopilot foundation, current OpenCode compatibility, provider-neutral external research, optional Agent-Reach integration guidance, OS-agnostic canonical plugin-mirror integrity checks, a validated public npm package workflow, and complete framework documentation. Public feedback, integration reports, focused improvements, and well-scoped contributions are welcome.
+Development Kit is actively developed. The v0.6.1 release line includes the production Autopilot foundation, Next-Step Guidance, standalone installer fixes, multi-platform integrations, current OpenCode compatibility, provider-neutral external research, optional Agent-Reach integration guidance, OS-agnostic canonical plugin-mirror integrity checks, a validated public npm package workflow, and complete framework documentation. Public feedback, integration reports, focused improvements, and well-scoped contributions are welcome.
 
 See [SUPPORT.md](SUPPORT.md) for help, [SECURITY.md](SECURITY.md) for vulnerability reporting, and [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes.
 

@@ -1,13 +1,13 @@
 # OpenCode Workflow
 
-This example shows how Development Kit v0.5.2 operates inside OpenCode.
+This example shows how Development Kit v0.6.1 operates inside OpenCode.
 
 ## Install
 
 ```bash
 mkdir dk-example
 cd dk-example
-npx development-kit@0.5.2 init --opencode
+npx development-kit@0.6.1 init --opencode
 ```
 
 The resulting integration is:

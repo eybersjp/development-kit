@@ -6,6 +6,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.6.1] - Proposed
+
+### Added
+- Context-aware Suggested Next Step guidance automatically computed and appended to completed Development Kit command responses.
+- Centralized Next-Step runtime (`runtime/next-step/`) and CLI bridge (`scripts/next-step.mjs`) supporting Markdown and JSON output formatting.
+- `next-step-guidance` meta skill and conductor agent integration across the complete 9-stage lifecycle.
+- Strict schema validation for context inputs (`validateContextSchema`), CLI flags, and context files.
+- Explicit `postSimplificationVerificationStatus` state to prevent premature shipping after code simplification.
+
+### Changed
+- Engineering skill count updated from 45 to 46 in catalogue and documentation.
+- Command routing documentation updated for next-step lifecycle recommendations.
+- Release validation pipeline (`release:validate`) expanded to include `next-step:test` and `installer:validate:test`.
+
+### Fixed
+- Standalone installation (`installAll`) now includes `runtime/` to prevent missing-module runtime failures.
+- Distribution packaging test (`scripts/install-antigravity.test.mjs`) now verifies that all runtime modules (`autopilot`, `next-step`), skills, scripts, and plugins are packaged.
+- Fixed ESM integration in `runtime/next-step/formatter.mjs` by using valid static ES module imports.
+- Eliminated unsafe and premature `/dk-ship` recommendations; `/dk-ship` is strictly forbidden immediately after simplification.
+- Fixed missing-review evidence defaulting; absence of review status fails closed instead of passing.
+- Fixed CLI error handling so malformed context input fails safely with exit code 1.
+
+### Security
+- Consequential `/dk-ship` recommendations fail closed, requiring all 9 explicit conditions: success, approvalStatus (`approved`), verificationStatus (`passed`), testsStatus (`passed`), reviewStatus (`passed`), postSimplificationVerificationStatus (`passed`), empty blockers, empty outstandingApprovals, and non-automated mode.
+
 ## [0.6.0] - 2026-08-11
 
 ### Added
@@ -98,7 +123,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Production-grade 12-section documentation system.
 - Documentation validation suite and installer synchronization verification.
 
-[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/eybersjp/development-kit/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/eybersjp/development-kit/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/eybersjp/development-kit/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/eybersjp/development-kit/compare/v0.5.0...v0.5.1

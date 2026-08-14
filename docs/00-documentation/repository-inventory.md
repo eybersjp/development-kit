@@ -1,14 +1,15 @@
 # Repository Inventory
 
-## Summary Counts (`development-kit@0.5.2`)
+## Summary Counts (`development-kit@0.6.1`)
 
 * **Commands**: 14
 * **Agents**: 18
-* **Skills**: 45
+* **Skills**: 46
 * **Hooks**: 4
-* **Templates**: 6
+* **Templates**: 6 (plus 5 platform adapter templates)
 * **Evaluation Suites**: 11
-* **Scripts**: 12
+* **Scripts**: 18
+* **Runtime Subsystems**: 2 (`runtime/autopilot/`, `runtime/next-step/`)
 * **Configuration Files**: 3 (`package.json`, `opencode.json`, `.agents/plugins/development-kit/plugin.json`)
 
 ---
@@ -75,28 +76,29 @@
 21. `incremental-implementation`
 22. `minimal-diff`
 23. `native-platform-first`
-24. `regression-testing`
-25. `release-readiness`
-26. `repository-orientation`
-27. `requirements-interview`
-28. `risk-first-planning`
-29. `scope-definition`
-30. `security-review`
-31. `simplicity-review`
-32. `skill-routing`
-33. `specification-compliance-review`
-34. `subagent-driven-implementation`
-35. `subtask-decomposition`
-36. `systematic-debugging`
-37. `task-completion-gate`
-38. `task-decomposition`
-39. `task-readiness-check`
-40. `technical-design`
-41. `test-driven-development`
-42. `test-strategy`
-43. `user-flow-design`
-44. `using-development-kit`
-45. `verification-before-completion`
+24. `next-step-guidance`
+25. `regression-testing`
+26. `release-readiness`
+27. `repository-orientation`
+28. `requirements-interview`
+29. `risk-first-planning`
+30. `scope-definition`
+31. `security-review`
+32. `simplicity-review`
+33. `skill-routing`
+34. `specification-compliance-review`
+35. `subagent-driven-implementation`
+36. `subtask-decomposition`
+37. `systematic-debugging`
+38. `task-completion-gate`
+39. `task-decomposition`
+40. `task-readiness-check`
+41. `technical-design`
+42. `test-driven-development`
+43. `test-strategy`
+44. `user-flow-design`
+45. `using-development-kit`
+46. `verification-before-completion`
 
 ### 4. Hooks (`hooks/`)
 1. `session-start.js`
@@ -129,12 +131,22 @@
 1. `autopilot.mjs`
 2. `autopilot.test.mjs`
 3. `install-antigravity.mjs`
-4. `research-contract.test.mjs`
-5. `sync-plugin.mjs`
-6. `sync-plugin.test.mjs`
-7. `validate-docs.mjs`
-8. `validate-docs.test.mjs`
-9. `validate-evals.mjs`
-10. `validate-opencode-config.test.mjs`
-11. `validate-skills.mjs`
-12. `validate-skills.test.mjs`
+4. `install-antigravity.test.mjs`
+5. `install-platform-adapters.mjs`
+6. `install-platform-adapters-cli.test.mjs`
+7. `next-step.mjs`
+8. `next-step.test.mjs`
+9. `research-contract.test.mjs`
+10. `sync-plugin.mjs`
+11. `sync-plugin.test.mjs`
+12. `validate-docs.mjs`
+13. `validate-docs.test.mjs`
+14. `validate-evals.mjs`
+15. `validate-opencode-config.test.mjs`
+16. `validate-platform-templates.test.mjs`
+17. `validate-skills.mjs`
+18. `validate-skills.test.mjs`
+
+### 8. Runtime Subsystems (`runtime/`)
+1. `runtime/autopilot/` (11 modules)
+2. `runtime/next-step/` (5 modules)

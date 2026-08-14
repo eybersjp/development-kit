@@ -11,12 +11,14 @@
 | `npm run opencode:validate` | `scripts/validate-opencode-config.test.mjs` | OpenCode JSON schema declaration, obsolete-key rejection, and optional instructions shape | Exits 1 on failure |
 | `npm run platform:validate` | Two platform adapter test files | Adapter selection, CLI behavior, official paths, preservation/force, dry-run safety, and packaged templates | Exits 1 on failure |
 | `npm run research:validate` | `scripts/research-contract.test.mjs` | External research command/skill integration, trust boundaries, plugin registration, documentation navigation, and package wiring | Exits 1 on failure |
+| `npm run next-step:test` | `scripts/next-step.test.mjs` | Next-Step guidance unit, policy, safety gate, schema, and CLI validation suite | Exits 1 on failure |
+| `npm run installer:validate:test` | `scripts/install-antigravity.test.mjs` | Standalone installer completeness, runtime packaging, and distribution isolation | Exits 1 on failure |
 | `npm run autopilot:test` | `scripts/autopilot.test.mjs` | Autopilot runtime, persistence, policy, security, and lifecycle behaviour | Exits 1 on failure |
 | `npm run evals:validate` | `scripts/validate-evals.mjs` | Evaluation suite structure and scenario validity | Exits 1 on errors |
 | `npm run autopilot:validate` | Chained npm script | Autopilot tests and evaluation validation | Exits 1 when either gate fails |
 | `npm run release:validate` | Chained npm script | Complete release gate suite | Exits 1 when any required gate fails |
 
-## Current v0.5.2 release gate
+## Current v0.6.1 release gate
 
 Run the authoritative pre-release suite with:
 
@@ -28,12 +30,16 @@ The chain executes:
 
 ```text
 validate
+-> skills:validate:test
 -> doctor
+-> sync:validate:test
 -> docs:validate
 -> docs:validate:test
 -> opencode:validate
 -> platform:validate
 -> research:validate
+-> next-step:test
+-> installer:validate:test
 -> autopilot:test
 -> evals:validate
 ```
@@ -46,11 +52,11 @@ The authoritative requirement is that every current gate completes successfully 
 |---|---:|---|---|
 | Commands | 14 | `docs/03-reference/commands/` | `validate`, `doctor`, and `docs:validate` |
 | Agents | 18 | `docs/03-reference/agents/` | `validate`, `doctor`, and `docs:validate` |
-| Skills | 45 | `docs/03-reference/skills/` | `validate`, `doctor`, `docs:validate`, and `research:validate` |
+| Skills | 46 | `docs/03-reference/skills/` | `validate`, `doctor`, `docs:validate`, `research:validate`, and `next-step:test` |
 | Hooks | 4 | `docs/03-reference/hooks/` | `doctor` and `docs:validate` |
 | Templates | 6 | `docs/03-reference/templates/` | `docs:validate` |
 | Evaluation suites | 11 | `docs/03-reference/evaluations/` | `docs:validate` and `evals:validate` |
-| Framework scripts | 6 non-test scripts plus test suites | `docs/03-reference/scripts/` | `docs:validate` and targeted test scripts |
+| Framework scripts | 7 non-test scripts plus test suites | `docs/03-reference/scripts/` | `docs:validate` and targeted test scripts |
 | OpenCode configuration | 1 project configuration | `docs/03-reference/configuration/` | `opencode:validate` |
 | Platform adapters | 5 project integrations | `docs/03-reference/scripts/install-platform-adapters.md` | `platform:validate` |
 

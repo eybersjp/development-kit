@@ -9,7 +9,7 @@ Reference for the configuration files that define Development Kit packaging and 
 | Field | Current value | Notes |
 |---|---|---|
 | `name` | `development-kit` | Public npm package name |
-| `version` | `0.5.2` | Current public package version and `v0.5.2` release |
+| `version` | `0.6.1` | Current package version and proposed `v0.6.1` release candidate |
 | `description` | Disciplined AI software-development workflow for Antigravity and OpenCode | Public package description |
 | `license` | `MIT` | Root license file is included in the package |
 | `bin` | `development-kit` to `scripts/install-antigravity.mjs` | Enables `npx development-kit init` |
@@ -26,6 +26,10 @@ Reference for the configuration files that define Development Kit packaging and 
 | `docs:validate` | `node scripts/validate-docs.mjs` | Validate documentation coverage, links, placeholders, and navigation |
 | `docs:validate:test` | `node --test scripts/validate-docs.test.mjs` | Run documentation validator regression tests |
 | `opencode:validate` | `node --test scripts/validate-opencode-config.test.mjs` | Validate current OpenCode configuration compatibility |
+| `platform:validate` | `node --test scripts/validate-platform-templates.test.mjs scripts/install-platform-adapters-cli.test.mjs` | Validate platform adapter templates and CLI flags |
+| `research:validate` | `node --test scripts/research-contract.test.mjs` | Validate external research integration contract |
+| `next-step:test` | `node --test scripts/next-step.test.mjs` | Run Next-Step guidance unit and CLI tests |
+| `installer:validate:test` | `node --test scripts/install-antigravity.test.mjs` | Run installer and distribution packaging tests |
 | `autopilot:test` | `node --test scripts/autopilot.test.mjs` | Run Autopilot runtime tests |
 | `evals:validate` | `node scripts/validate-evals.mjs` | Validate lifecycle evaluation fixtures |
 | `autopilot:validate` | `npm run autopilot:test && npm run evals:validate` | Run Autopilot tests and evaluations |
@@ -61,7 +65,7 @@ The obsolete form below is invalid and must not be generated:
 |---|---|
 | `name` | `development-kit` |
 | `version` | `0.1.0` |
-| `skills` | 43 references |
+| `skills` | 46 references |
 | `agents` | 18 references |
 | `hooks` | 4 references |
 

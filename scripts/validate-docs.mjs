@@ -204,6 +204,40 @@ export function validateDocs(targetRoot = DEFAULT_ROOT, options = { silent: fals
     }
   }
 
+  // Active Version Consistency Checks
+  const pkgJsonPath = join(targetRoot, 'package.json');
+  if (existsSync(pkgJsonPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
+      const activeVersion = pkg.version;
+      if (activeVersion) {
+        if (!options.silent) console.log('\n--- Active Version Consistency Checks ---');
+
+        const activeVersionFiles = [
+          { file: 'README.md', pattern: new RegExp(`v${activeVersion.replace(/\./g, '\\.')}|development-kit@${activeVersion.replace(/\./g, '\\.')}`) },
+          { file: '01-overview/framework-at-a-glance.md', pattern: new RegExp(`\\b${activeVersion.replace(/\./g, '\\.')}\\b`) },
+          { file: '01-overview/what-is-development-kit.md', pattern: new RegExp(`development-kit@${activeVersion.replace(/\./g, '\\.')}`) },
+          { file: '02-user-guide/prerequisites.md', pattern: new RegExp(`development-kit@${activeVersion.replace(/\./g, '\\.')}`) },
+          { file: '02-user-guide/verifying-installation.md', pattern: new RegExp(`\\b${activeVersion.replace(/\./g, '\\.')}\\b`) },
+          { file: '03-reference/configuration/manifests-and-configs.md', pattern: new RegExp(`\\b${activeVersion.replace(/\./g, '\\.')}\\b`) },
+          { file: '08-maintenance-release/npm-publishing.md', pattern: new RegExp(`\\b${activeVersion.replace(/\./g, '\\.')}\\b`) }
+        ];
+
+        for (const { file, pattern } of activeVersionFiles) {
+          const docPath = join(docsDir, file);
+          if (existsSync(docPath)) {
+            const docContent = readFileSync(docPath, 'utf-8');
+            if (pattern.test(docContent)) {
+              pass(`Active version ${activeVersion} declared in docs/${file}`);
+            } else {
+              error(`docs/${file}: Does not declare current active package version ${activeVersion}`);
+            }
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
   return { passCount, warnings, errors };
 }
 

@@ -1,20 +1,21 @@
 # Development Kit Documentation System
 
-Welcome to the official documentation for **Development Kit v0.5.2** (`development-kit@0.5.2`).
+Welcome to the official documentation for **Development Kit v0.6.1** (`development-kit@0.6.1`).
 
-Development Kit is a disciplined AI software-development workflow for Antigravity and OpenCode. It installs lifecycle commands, specialist agents, reusable skills, verification gates, and the persistent `/dk-autopilot` guided workflow into supported coding-agent environments.
+Development Kit is a disciplined AI software-development workflow for Antigravity, OpenCode, Claude Code, Cursor, VS Code (GitHub Copilot), Cline, and Windsurf. It installs lifecycle commands, specialist agents, reusable skills, verification gates, Next-Step Guidance, and the persistent `/dk-autopilot` guided workflow into supported coding-agent environments.
 
 ## Current release highlights
 
-- Public GitHub release: `v0.5.2`.
-- Public npm package: `development-kit@0.5.2`.
-- The framework includes 14 workflow commands, 18 specialist agents, 45 engineering skills, and 4 hooks.
+- Target GitHub release: `v0.6.1` (proposed release candidate).
+- Target npm package: `development-kit@0.6.1`.
+- The framework includes 14 workflow commands, 18 specialist agents, 46 engineering skills, and 4 hooks.
+- Next-Step Guidance automatically computes and appends context-aware recommendations across the full 9-stage lifecycle.
+- Standalone installation (`installAll`) includes `runtime/` for standalone operation without repository fallbacks.
+- Multi-platform adapters provide native project integration for Claude Code, Cursor, VS Code, Cline, and Windsurf.
 - `/dk-research` provides provider-neutral, source-backed external research with provenance, uncertainty handling, and explicit trust boundaries.
-- Agent-Reach is the first documented optional research provider adapter and is not a core dependency.
 - Skill frontmatter parsing and canonical plugin-mirror checks treat equivalent CRLF and LF content consistently across operating systems.
-- Current OpenCode configuration uses the official schema declaration.
-- OpenCode automatically loads the root `AGENTS.md` file.
-- The release validation suite covers OpenCode configuration, external research integration, and line-ending normalization regressions.
+- OpenCode configuration uses the official schema declaration and automatically loads the root `AGENTS.md` file.
+- The release validation suite covers OpenCode configuration, external research integration, platform templates, next-step guidance, and standalone packaging regressions.
 
 Projects installed with v0.4.1 that report `Unrecognized key: rules` should follow the [OpenCode migration instructions](08-maintenance-release/migration-guide.md#upgrading-from-v041-to-v042).
 

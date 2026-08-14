@@ -1,6 +1,6 @@
 # Verifying Installation
 
-Use the checks below after installing Development Kit v0.5.2.
+Use the checks below after installing Development Kit v0.6.1.
 
 ## Verify the published package
 
@@ -11,7 +11,7 @@ npm view development-kit version
 Expected current version:
 
 ```text
-0.5.2
+0.6.1
 ```
 
 ## Verify framework integrity
@@ -28,8 +28,12 @@ This includes:
 2. Plugin synchronization verification.
 3. Documentation validation and regression tests.
 4. OpenCode configuration regression tests.
-5. Autopilot unit tests.
-6. Lifecycle evaluation validation.
+5. Platform adapter template and CLI validation tests.
+6. Research trust boundary contract tests.
+7. Next-step guidance unit and CLI validation tests.
+8. Standalone installer and distribution tests.
+9. Autopilot unit tests.
+10. Lifecycle evaluation validation.
 
 ## Verify an OpenCode installation
 
@@ -65,7 +69,7 @@ Run:
 npm run doctor
 ```
 
-Confirm that the installed plugin manifest references the expected 45 skills, 18 agents, and 4 hooks and that the plugin is reported as synchronized.
+Confirm that the installed plugin manifest references the expected 46 skills, 18 agents, and 4 hooks and that the plugin is reported as synchronized.
 
 ## Verify Autopilot
 

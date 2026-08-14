@@ -148,3 +148,21 @@ test('7. Broken link registered in docs/SUMMARY.md fails', () => {
     cleanup(fixture);
   }
 });
+
+test('8. Inconsistent active version declaration fails while preserving historical references', () => {
+  const fixture = createFixtureRoot();
+  try {
+    // Write package.json with version 9.9.9
+    writeFileSync(join(fixture, 'package.json'), JSON.stringify({ name: 'development-kit', version: '9.9.9' }, null, 2));
+
+    // Create active doc page with stale version 0.5.2
+    mkdirSync(join(fixture, 'docs', '01-overview'), { recursive: true });
+    writeFileSync(join(fixture, 'docs', '01-overview', 'framework-at-a-glance.md'), '# Framework\n| Framework Version | 0.5.2 |');
+
+    const res = validateDocs(fixture, { silent: true });
+    assert.ok(res.errors.length > 0, 'Expected validation error for stale active version');
+    assert.ok(res.errors.some(e => e.includes('Does not declare current active package version 9.9.9')));
+  } finally {
+    cleanup(fixture);
+  }
+});

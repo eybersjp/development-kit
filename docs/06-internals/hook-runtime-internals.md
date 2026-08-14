@@ -32,7 +32,7 @@
 
 ## Version Note
 
-`session-start.js` hard-codes `version: '0.1.0'`, which does not track `package.json` (`0.5.2`). Documented in [known-limitations.md](../11-appendices/known-limitations.md).
+`session-start.js` hard-codes `version: '0.1.0'`, which does not track `package.json` (`0.6.1`). Documented in [known-limitations.md](../11-appendices/known-limitations.md).
 
 ## Testing Hooks
 
