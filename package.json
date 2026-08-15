@@ -58,9 +58,11 @@
     "next-step:test": "node --test scripts/next-step.test.mjs",
     "installer:validate:test": "node --test scripts/install-antigravity.test.mjs",
     "research:validate": "node --test scripts/research-contract.test.mjs",
+    "intelligence:validate": "node --test scripts/intelligence-phase1.test.mjs scripts/intelligence-phase2.test.mjs scripts/intelligence-phase3.test.mjs scripts/intelligence-phase4.test.mjs scripts/intelligence-phase5.test.mjs scripts/intelligence-phase6.test.mjs scripts/intelligence-phase7-8.test.mjs scripts/intelligence-phase9.test.mjs scripts/intelligence-phase10-11.test.mjs scripts/intelligence-phase12.test.mjs scripts/intelligence-phase13.test.mjs scripts/intelligence-phase14.test.mjs scripts/intelligence-evals.test.mjs",
+    "test:intelligence": "npm run intelligence:validate",
     "evals:validate": "node scripts/validate-evals.mjs",
     "autopilot:validate": "npm run autopilot:test && npm run evals:validate",
-    "release:validate": "npm run validate && npm run skills:validate:test && npm run doctor && npm run sync:validate:test && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run platform:validate && npm run research:validate && npm run next-step:test && npm run installer:validate:test && npm run autopilot:validate"
+    "release:validate": "npm run validate && npm run skills:validate:test && npm run doctor && npm run sync:validate:test && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run platform:validate && npm run research:validate && npm run next-step:test && npm run installer:validate:test && npm run intelligence:validate && npm run autopilot:validate"
   },
   "engines": {
     "node": ">=18.0.0"

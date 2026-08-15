@@ -1,6 +1,6 @@
 # DK Intelligence and Memory Architecture
 
-> Status: Planned for Development Kit v0.7. This document defines target architecture and must not be read as shipped functionality until implementation and validation are complete.
+> Status: Implemented in Development Kit v0.7.0.
 
 ## Purpose
 
