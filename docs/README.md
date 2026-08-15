@@ -19,6 +19,18 @@ Development Kit is a disciplined AI software-development workflow for Antigravit
 
 Projects installed with v0.4.1 that report `Unrecognized key: rules` should follow the [OpenCode migration instructions](08-maintenance-release/migration-guide.md#upgrading-from-v041-to-v042).
 
+## Planned v0.7 architecture
+
+The following documents define the approved planning baseline for **DK Intelligence and DK Control Center**. They describe planned functionality and must not be represented as shipped until implementation and release validation are complete.
+
+* [DK Intelligence and Memory Architecture](04-architecture/dk-intelligence-memory-architecture.md)
+* [DK Control Center Product Specification](04-architecture/dk-control-center-product-specification.md)
+* [DK Runtime API](04-architecture/dk-runtime-api.md)
+* [DK Memory Provider Contract](04-architecture/dk-memory-provider-contract.md)
+* [Planned v0.7 Architecture Decisions](04-architecture/v0.7-architecture-decisions.md)
+* [v0.7 Security Threat Model](07-testing-quality-security/v0.7-intelligence-control-center-threat-model.md)
+* [v0.7 Implementation Plan](04-architecture/v0.7-intelligence-control-center-implementation-plan.md)
+
 ---
 
 ## Documentation quick links
