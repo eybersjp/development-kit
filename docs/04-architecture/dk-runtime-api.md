@@ -1,6 +1,6 @@
 # DK Runtime API
 
-> Status: Planned for Development Kit v0.7.
+> Status: Implemented in Development Kit v0.7.0.
 
 ## Purpose
 
