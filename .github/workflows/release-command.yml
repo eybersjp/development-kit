@@ -29,7 +29,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
 
       - name: Parse and validate release command
         id: release
@@ -89,75 +88,11 @@ jobs:
             exit 1
           fi
 
-      - name: Create GitHub Release
-        id: github-release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.release.outputs.tag }}
-        run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "created=false" >> "$GITHUB_OUTPUT"
-          else
-            gh release create "$TAG" --verify-tag --generate-notes --title "Development Kit $TAG"
-            echo "created=true" >> "$GITHUB_OUTPUT"
-          fi
-          RELEASE_URL=$(gh release view "$TAG" --json url --jq '.url')
-          echo "url=$RELEASE_URL" >> "$GITHUB_OUTPUT"
-
-      - name: Detect npm publishing credentials
-        id: npm-auth
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -n "$NODE_AUTH_TOKEN" ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Publish package from release tag when credentials are configured
-        id: npm-publish
-        if: steps.npm-auth.outputs.configured == 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          TAG: ${{ steps.release.outputs.tag }}
-        shell: bash
-        run: |
-          git checkout --detach "$TAG"
-          PACKAGE_NAME=$(node -p "require('./package.json').name")
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
-
-          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version >/dev/null 2>&1; then
-            echo "status=already-published" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          set +e
-          npm publish --access public
-          PUBLISH_STATUS=$?
-          set -e
-
-          if [ "$PUBLISH_STATUS" -eq 0 ]; then
-            echo "status=published" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::GitHub Release was created, but npm publication failed. Configure or verify NPM_TOKEN and package ownership before retrying npm publication."
-            echo "status=failed" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Confirm public release
+      - name: Report release delegation
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           TAG: ${{ steps.release.outputs.tag }}
-          RELEASE_URL: ${{ steps.github-release.outputs.url }}
-          NPM_CONFIGURED: ${{ steps.npm-auth.outputs.configured }}
-          NPM_STATUS: ${{ steps.npm-publish.outputs.status }}
         run: |
-          if [ "$NPM_CONFIGURED" = "true" ]; then
-            NPM_NOTE="npm status: ${NPM_STATUS:-not-reported}."
-          else
-            NPM_NOTE="npm publication was skipped because NPM_TOKEN is not configured."
-          fi
-
-          gh issue comment "$ISSUE_NUMBER" --body "Public release \`$TAG\` is available at $RELEASE_URL. $NPM_NOTE"
+          gh issue comment "$ISSUE_NUMBER" --body "Release tag \`$TAG\` has been pushed to trigger the canonical \`publish.yml\` workflow for validation, GitHub Release creation, and npm publication."
           gh issue close "$ISSUE_NUMBER" --reason completed
