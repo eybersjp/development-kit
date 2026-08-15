@@ -396,34 +396,6 @@ function main() {
   }
 
 
-  if (args.includes('--opencode')) {
-    installOpencode(args.includes('--dry-run'), force);
-    process.exit(0);
-  }
-
-  if (args.includes('--all')) {
-    installAll(args.includes('--dry-run'), force);
-    process.exit(0);
-  }
-
-  if (args.includes('--global')) {
-    const globalDir = join(process.env.HOME || process.env.USERPROFILE || '~', '.gemini', 'config');
-    if (!existsSync(globalDir)) {
-      mkdirSync(globalDir, { recursive: true });
-    }
-    installPlugin(globalDir, force);
-    process.exit(0);
-  }
-
-  if (args.includes('--project')) {
-    const projectDir = join(process.cwd(), '.agents');
-    if (!existsSync(projectDir)) {
-      mkdirSync(projectDir, { recursive: true });
-    }
-    installPlugin(projectDir, force);
-    process.exit(0);
-  }
-
   // Auto-detect or prompt
   const antigravityPath = detectAntigravity();
   if (antigravityPath) {
