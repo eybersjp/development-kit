@@ -22,10 +22,10 @@ import { validateMemoryCandidate, MemoryValidationError } from './memory-schema.
 import { resolveMemoryIdentity } from './memory-identity.mjs';
 
 const SENSITIVE_PATTERNS = [
-  /(?:api[_-]?key|secret|token|password|auth|bearer)\s*[:=]\s*['"][a-zA-Z0-9_\-\.]{8,}['"]/i,
+  /(?:api[_-]?key|secret|token|password|auth|bearer)\s*[:=]\s*['"][^\r\n'"]{6,}['"]/i,
   /ghp_[a-zA-Z0-9]{36}/,
   /xox[baprs]-[0-9a-zA-Z]{10,48}/,
-  /-----BEGIN (?:RSA|EC|OPENSSH|PRIVATE) KEY-----/,
+  /-----BEGIN [A-Z ]+ PRIVATE KEY-----/,
 ];
 
 /**
