@@ -74,6 +74,7 @@ export class LocalMemoryProvider extends DKMemoryProvider {
     return {
       status: 'healthy',
       providerId: this.providerId,
+      storageType: 'local-file-atomic',
       details: {
         rootDir: this.rootDir,
         storagePath: this.getMemoryDir(),

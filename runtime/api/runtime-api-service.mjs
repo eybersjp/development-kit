@@ -12,6 +12,8 @@
  * - No secrets exposed in responses
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { URL } from 'node:url';
@@ -20,7 +22,7 @@ import { resolveMemoryIdentity } from '../intelligence/memory-identity.mjs';
 import { resolveEffectiveSettings } from '../intelligence/settings.mjs';
 import { LocalMemoryProvider } from '../intelligence/local-memory-provider.mjs';
 import { getCurrentState } from '../autopilot/state-store.mjs';
-import { MemoryType, MemoryStatus } from '../intelligence/memory-enums.mjs';
+import { MemoryType, MemoryStatus, MemoryAuthority } from '../intelligence/memory-enums.mjs';
 import { validateMemoryRecord, validateAuthorityTransition } from '../intelligence/memory-schema.mjs';
 
 export class RuntimeApiService {
@@ -209,6 +211,13 @@ export class RuntimeApiService {
       return this._json(res, 200, { record: saved });
     }
 
+    if (method === 'POST' && pathname.endsWith('/supersede') && pathname.startsWith('/v1/memory/')) {
+      const id = pathname.replace('/v1/memory/', '').replace('/supersede', '');
+      const body = await this._readJsonBody(req);
+      const result = await this.memoryProvider.supersede(id, body);
+      return this._json(res, 200, result);
+    }
+
     if (method === 'POST' && pathname.endsWith('/archive') && pathname.startsWith('/v1/memory/')) {
       const id = pathname.replace('/v1/memory/', '').replace('/archive', '');
       const archived = await this.memoryProvider.archive(id);
@@ -219,6 +228,46 @@ export class RuntimeApiService {
       const id = pathname.replace('/v1/memory/', '');
       await this.memoryProvider.forget(id);
       return this._json(res, 200, { success: true, forgotten: id });
+    }
+
+    // Candidate routes
+    if (method === 'POST' && pathname.startsWith('/v1/memory-candidates/') && pathname.endsWith('/promote')) {
+      const candidateId = pathname.replace('/v1/memory-candidates/', '').replace('/promote', '');
+      const body = await this._readJsonBody(req);
+      const { promoteCandidateToRecord } = await import('../intelligence/candidate-extraction.mjs');
+      const candidate = body.candidate || { candidateId, ...body };
+      const userConfirmed = Boolean(body.userConfirmed);
+      if (body.targetAuthority === MemoryAuthority.USER_APPROVED && !userConfirmed) {
+        return this._json(res, 400, { error: 'Bad Request', message: 'Explicit user confirmation required to promote to user-approved' });
+      }
+      const record = promoteCandidateToRecord(candidate, {
+        authority: body.targetAuthority || candidate.proposedAuthority,
+      });
+      const stored = await this.memoryProvider.store(record);
+      return this._json(res, 200, { candidateId, status: 'promoted', record: stored });
+    }
+
+    if (method === 'POST' && pathname.startsWith('/v1/memory-candidates/') && pathname.endsWith('/reject')) {
+      const candidateId = pathname.replace('/v1/memory-candidates/', '').replace('/reject', '');
+      return this._json(res, 200, { candidateId, status: 'rejected' });
+    }
+
+    // Settings update
+    if (method === 'PATCH' && pathname === '/v1/settings') {
+      const body = await this._readJsonBody(req);
+      const { validateSettings, getProjectSettingsPath } = await import('../intelligence/settings.mjs');
+      validateSettings(body);
+      const projectSettingsPath = getProjectSettingsPath(this.rootDir);
+      const dir = path.dirname(projectSettingsPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      let existingSettings = {};
+      if (fs.existsSync(projectSettingsPath)) {
+        try { existingSettings = JSON.parse(fs.readFileSync(projectSettingsPath, 'utf8')); } catch {}
+      }
+      const merged = { ...existingSettings, ...body };
+      fs.writeFileSync(projectSettingsPath, JSON.stringify(merged, null, 2), 'utf8');
+      const effective = resolveEffectiveSettings(this.rootDir);
+      return this._json(res, 200, { settings: effective });
     }
 
     // Default 404
