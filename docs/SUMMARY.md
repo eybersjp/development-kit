@@ -282,6 +282,7 @@
 * [Rollback & Recovery](08-maintenance-release/rollback-and-recovery.md)
 * [Release Manager Runbook](08-maintenance-release/release-manager-runbook.md)
 * [Release Notes (v0.6.1)](08-maintenance-release/release-notes-v0.6.1.md)
+* [Release Notes (v0.7.0)](08-maintenance-release/release-notes-v0.7.0.md)
 
 ## 09. Contributing
 * [Contribution Overview](09-contributing/contribution-overview.md)

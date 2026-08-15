@@ -1,6 +1,6 @@
 {
   "name": "development-kit",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "A disciplined AI software-development workflow for Antigravity and OpenCode, with lifecycle commands, specialist agents, verification gates, persistent guided automation, and optional external capability providers.",
   "author": "Juan-Pierre Eybers",
   "license": "MIT",

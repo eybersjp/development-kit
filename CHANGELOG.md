@@ -6,7 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-## [0.6.1] - Proposed
+## [0.7.0] - 2026-08-15
+
+### Added
+- **DK Intelligence**: Built-in, local-first engineering memory and intelligence layer preserving technical context, architecture decisions, and proven lessons across sessions.
+- **DK Local Memory**: Offline atomic file-based persistence under `.development-kit/intelligence/memory/` with deterministic project partitioning and zero external database dependencies.
+- **Authority & Trust Model**: Strict separation of authority classes (`user-approved`, `repository-verified`, `system-verified`, `inferred`, `imported-untrusted`) with transition validation.
+- **Provenance & Staleness Tracking**: SHA-256 artifact fingerprinting for automatic staleness detection and invalidation, preserving complete supersession histories for architecture decisions.
+- **Lifecycle-Aware Context Assembly**: Dynamic, budgeted token context retrieval prioritizing decisions matching the current lifecycle stage without exceeding context windows.
+- **Candidate Extraction & Secret Filtering**: Automatic extraction of decision candidates from `/dk-design`, `/dk-debug`, `/dk-review`, and `/dk-ship` with built-in regex filtering against credentials and API tokens.
+- **DK Control Center**: Integrated, zero-dependency local browser interface providing graphical inspection and management of Overview, Workflow, Memory, Decisions, Providers, and Settings.
+- **Automatic Control Center Launch Engine**: Configurable `controlCenter.autoOpen` setting (default: `Off`), hierarchical project-over-global precedence, and automatic launch suppression in CI/headless/test environments.
+- **Secure Local Runtime API**: Loopback-bound (`127.0.0.1`) HTTP service protected by runtime session tokens (`X-DK-Session-Token`) and strict CORS deny-by-default anti-CSRF protections.
+- **Agent Loadouts & Skill Governance**: Scoped memory permissions per specialist role and governance gates for learned/provider skill candidates.
+- **Import, Export & Recovery**: Portable memory bundle export and safe import with default untrusted trust classification and corrupt file isolation.
+- **Native Knowledge & Code Intelligence Providers**: Lightweight filesystem-based documentation search and symbol lookup.
+- **TencentDB Agent Memory Adapter**: Optional remote provider adapter with graceful degradation and zero core framework lock-in.
+
+### Security
+- Memory records are informational only and strictly cannot authorize consequential actions or bypass approval tokens.
+- Remembered approval claims cannot satisfy Autopilot gates without live cryptographic tokens.
+- Cross-origin browser write attempts without valid session token fail closed.
+- Inferred and imported-untrusted records cannot promote themselves to `user-approved` without explicit user confirmation.
+
+## [0.6.1] - 2026-08-13
 
 ### Added
 - Context-aware Suggested Next Step guidance automatically computed and appended to completed Development Kit command responses.

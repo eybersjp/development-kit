@@ -1,10 +1,10 @@
 # Framework at a Glance
 
-A quick-reference summary of **Development Kit** (`v0.6.1`):
+A quick-reference summary of **Development Kit** (`v0.7.0`):
 
 | Aspect | Summary Metric / Value |
 | :--- | :--- |
-| **Framework Version** | `0.6.1` |
+| **Framework Version** | `0.7.0` |
 | **Node Requirement** | `>=18.0.0` |
 | **Commands** | 14 commands (`/dk-autopilot`, `/dk-idea`, `/dk-research`, `/dk-spec`, `/dk-design`, `/dk-tasks`, `/dk-build`, `/dk-build-auto`, `/dk-test`, `/dk-review`, `/dk-simplify`, `/dk-debug`, `/dk-ship`, `/dk-status`) |
 | **Agents** | 18 specialized roles (`development-conductor`, `repository-scout-agent`, `specification-agent`, `implementation-agent`, `code-reviewer`, `security-reviewer`, etc.) |
