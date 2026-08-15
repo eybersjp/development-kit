@@ -37,6 +37,7 @@ Determine the type of request:
 | "Review this code" | Review | specification-compliance-review |
 | "Simplify this" | Simplification | simplicity-review |
 | "Ship this" | Completion | branch-completion |
+| "Open control center" | Informational | skill-routing |
 | "What's the status?" | Informational | skill-routing |
 
 ### 2. Determine Required Skills
@@ -161,6 +162,13 @@ commands:
       - task-completion-gate
       - release-readiness
     workflow: completion
+
+  /dk-control:
+    primary: skill-routing
+    note: >-
+      Informational/runtime command. Launches the project-scoped Development Kit
+      Control Center web interface.
+    workflow: informational
 
   /dk-status:
     primary: skill-routing

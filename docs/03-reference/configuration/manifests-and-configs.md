@@ -9,7 +9,7 @@ Reference for the configuration files that define Development Kit packaging and 
 | Field | Current value | Notes |
 |---|---|---|
 | `name` | `development-kit` | Public npm package name |
-| `version` | `0.7.0` | Current package version and `v0.7.0` release |
+| `version` | `0.7.1` | Current package version and `v0.7.1` release |
 | `description` | Disciplined AI software-development workflow for Antigravity and OpenCode | Public package description |
 | `license` | `MIT` | Root license file is included in the package |
 | `bin` | `development-kit` to `scripts/install-antigravity.mjs` | Enables `npx development-kit init` |

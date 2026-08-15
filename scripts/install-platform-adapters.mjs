@@ -32,6 +32,7 @@ const commandNames = Object.freeze([
   'dk-simplify',
   'dk-debug',
   'dk-ship',
+  'dk-control',
   'dk-status',
 ]);
 

@@ -21,7 +21,10 @@ Inspects a new or unfamiliar repository before changes begin. Understands the pr
 
 ## Process
 
-### 1. Analyse Project Structure
+### 1. Ensure Project Runtime State
+Verify that the project-local `.development-kit/` runtime state is established (project identity, workspace ID, settings, memory, and autopilot roots). If missing, run `node scripts/bootstrap.mjs` or ensure bootstrap completes before recording persistent project context.
+
+### 2. Analyse Project Structure
 
 Read the top-level directory listing. Identify:
 - Configuration files (package.json, tsconfig, Dockerfile, etc.)
@@ -29,7 +32,7 @@ Read the top-level directory listing. Identify:
 - Test directory organisation
 - Documentation location
 
-### 2. Understand the Stack
+### 3. Understand the Stack
 
 From configuration files, determine:
 - **Language**: TypeScript, Python, Go, Rust, etc.
@@ -38,7 +41,7 @@ From configuration files, determine:
 - **Testing**: Jest, pytest, Playwright, etc.
 - **Build tools**: Webpack, Vite, esbuild, etc.
 
-### 3. Identify Architecture Patterns
+### 4. Identify Architecture Patterns
 
 Review existing source code to understand:
 - Module/component organisation
@@ -49,7 +52,7 @@ Review existing source code to understand:
 - Error handling conventions
 - Testing patterns and locations
 
-### 4. Find Conventions
+### 5. Find Conventions
 
 Identify implicit project conventions:
 - Naming conventions (camelCase, kebab-case, PascalCase)
@@ -59,7 +62,7 @@ Identify implicit project conventions:
 - Commit message format
 - Branch naming
 
-### 5. Produce Orientation Report
+### 6. Produce Orientation Report
 
 Provide a structured report covering:
 - **Stack**: Languages, frameworks, databases, tools

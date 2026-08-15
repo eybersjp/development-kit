@@ -30,9 +30,9 @@ It is **not** a project-management dashboard and it does not replace engineering
 
 ## Current release
 
-The current release line is **v0.7.0**.
+The current release line is **v0.7.1**.
 
-v0.7 introduces **DK Intelligence** (durable local-first engineering memory, provenance, staleness, and lifecycle-aware context assembly) and **DK Control Center** (integrated local browser management interface, Runtime API, and auto-open preferences).
+v0.7 introduces **DK Intelligence** (durable local-first engineering memory, provenance, staleness, and lifecycle-aware context assembly) and **DK Control Center** (integrated local browser management interface, Runtime API, `/dk-control` launcher, and project-local runtime bootstrap).
 
 ## What you get
 
@@ -40,8 +40,8 @@ v0.7 introduces **DK Intelligence** (durable local-first engineering memory, pro
 |---|---|
 | **Automated Guided Workflow** | `/dk-autopilot` coordinates the complete lifecycle and persists progress between sessions. |
 | **DK Intelligence & Memory** | Durable local engineering memory, architecture decisions, and lifecycle-aware context budgeting with strict project isolation. |
-| **DK Control Center** | Integrated local browser UI and secure loopback Runtime API for inspecting and governing workflow, decisions, memory, and settings. |
-| **14 workflow commands** | Discovery, external research, specification, design, planning, implementation, testing, review, debugging, simplification, status, and shipping. |
+| **DK Control Center** | Integrated local browser UI (`/dk-control`) and secure loopback Runtime API for inspecting and governing workflow, decisions, memory, and settings. |
+| **15 workflow commands** | Discovery, external research, specification, design, planning, implementation, testing, review, debugging, simplification, status, control center, and shipping. |
 | **18 specialist agents** | Focused personas for discovery, architecture, implementation, testing, security, accessibility, design, and review. |
 | **46 engineering skills** | Reusable instructions covering the full software-development lifecycle plus provider-neutral external research. |
 | **External Capability Providers** | Optional adapters (e.g. Agent-Reach, TencentDB Agent Memory) can extend capabilities without becoming trusted instruction authorities or core dependencies. |
@@ -205,6 +205,7 @@ The installer preserves existing guarded files by default, including `AGENTS.md`
 | `/dk-debug` | Reproduce, localise, identify root cause, fix, and protect. |
 | `/dk-simplify` | Remove unnecessary code, files, abstractions, and dependencies. |
 | `/dk-ship` | Perform final release-readiness and branch-completion checks. |
+| `/dk-control` | Launch the local Development Kit Control Center web interface. |
 | `/dk-status` | Inspect the current lifecycle stage, task, blockers, and recommended action. |
 
 ## How the discipline works

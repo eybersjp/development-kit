@@ -1,12 +1,12 @@
 # Framework at a Glance
 
-A quick-reference summary of **Development Kit** (`v0.7.0`):
+A quick-reference summary of **Development Kit** (`v0.7.1`):
 
 | Aspect | Summary Metric / Value |
 | :--- | :--- |
-| **Framework Version** | `0.7.0` |
+| **Framework Version** | `0.7.1` |
 | **Node Requirement** | `>=18.0.0` |
-| **Commands** | 14 commands (`/dk-autopilot`, `/dk-idea`, `/dk-research`, `/dk-spec`, `/dk-design`, `/dk-tasks`, `/dk-build`, `/dk-build-auto`, `/dk-test`, `/dk-review`, `/dk-simplify`, `/dk-debug`, `/dk-ship`, `/dk-status`) |
+| **Commands** | 15 commands (`/dk-autopilot`, `/dk-idea`, `/dk-research`, `/dk-spec`, `/dk-design`, `/dk-tasks`, `/dk-build`, `/dk-build-auto`, `/dk-test`, `/dk-review`, `/dk-simplify`, `/dk-debug`, `/dk-ship`, `/dk-control`, `/dk-status`) |
 | **Agents** | 18 specialized roles (`development-conductor`, `repository-scout-agent`, `specification-agent`, `implementation-agent`, `code-reviewer`, `security-reviewer`, etc.) |
 | **Skills** | 46 core skills across discovery, research, design, planning, implementation, verification, review, and shipping |
 | **Hooks** | 4 execution hooks (`session-start.js`, `before-task.js`, `after-task.js`, `before-completion.js`) |

@@ -50,6 +50,7 @@ const COMMANDS = [
   '/dk-simplify',
   '/dk-debug',
   '/dk-ship',
+  '/dk-control',
   '/dk-status',
 ];
 

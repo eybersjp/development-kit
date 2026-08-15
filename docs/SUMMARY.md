@@ -64,6 +64,7 @@
 * [dk-simplify](03-reference/commands/dk-simplify.md)
 * [dk-spec](03-reference/commands/dk-spec.md)
 * [dk-status](03-reference/commands/dk-status.md)
+* [dk-control](03-reference/commands/dk-control.md)
 * [dk-tasks](03-reference/commands/dk-tasks.md)
 * [dk-test](03-reference/commands/dk-test.md)
 
@@ -175,6 +176,8 @@
 ### Scripts & Configuration
 * [Scripts Index](03-reference/scripts/README.md)
 * [autopilot](03-reference/scripts/autopilot.md)
+* [bootstrap](03-reference/scripts/bootstrap.md)
+* [control-center](03-reference/scripts/control-center.md)
 * [install-antigravity](03-reference/scripts/install-antigravity.md)
 * [install-platform-adapters](03-reference/scripts/install-platform-adapters.md)
 * [next-step](03-reference/scripts/next-step.md)
@@ -283,6 +286,7 @@
 * [Release Manager Runbook](08-maintenance-release/release-manager-runbook.md)
 * [Release Notes (v0.6.1)](08-maintenance-release/release-notes-v0.6.1.md)
 * [Release Notes (v0.7.0)](08-maintenance-release/release-notes-v0.7.0.md)
+* [Release Notes (v0.7.1)](08-maintenance-release/release-notes-v0.7.1.md)
 
 ## 09. Contributing
 * [Contribution Overview](09-contributing/contribution-overview.md)

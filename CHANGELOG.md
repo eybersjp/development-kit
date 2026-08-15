@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-15
+
+### Fixed
+- **Project-Local State Bootstrapping**: Added deterministic runtime bootstrap (`runtime/bootstrap/project-bootstrap.mjs` and `scripts/bootstrap.mjs`) ensuring `.development-kit/` state (project identity, workspace ID, settings, memory, autopilot) is established on first lifecycle interaction or explicitly initialized.
+- **Control Center User Launch Path**: Added canonical `/dk-control` command (`commands/dk-control.md`) and CLI runner (`scripts/control-center.mjs`) to provide an explicit, documented launch path for the local Control Center UI while keeping auto-open disabled by default.
+- **Command & Template Synchronisation**: Updated Antigravity installer, plugin manifest, and platform adapters (Claude, Cursor, VS Code, Cline, Windsurf) to register `/dk-control`.
+- **Packaging Integrity**: Ensured all platform and plugin command mirrors are completely packaged and synchronised.
+
 ## [0.7.0] - 2026-08-15
 
 ### Added
@@ -146,7 +154,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Production-grade 12-section documentation system.
 - Documentation validation suite and installer synchronization verification.
 
-[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/eybersjp/development-kit/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/eybersjp/development-kit/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/eybersjp/development-kit/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/eybersjp/development-kit/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/eybersjp/development-kit/compare/v0.5.1...v0.5.2

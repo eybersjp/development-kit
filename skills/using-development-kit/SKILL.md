@@ -75,6 +75,7 @@ Before writing any new code, traverse this ladder:
 | `/dk-simplify` | Apply the simplicity ladder to the current diff |
 | `/dk-debug` | Systematic root-cause analysis |
 | `/dk-ship` | Final verification and release preparation |
+| `/dk-control` | Launch Development Kit Control Center web interface |
 | `/dk-status` | Show current workflow state |
 
 ### 5. Know the Available Agents

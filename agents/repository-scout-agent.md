@@ -18,8 +18,9 @@ You are the repository-scout. You inspect the relevant parts of the codebase to 
 
 ## Process
 
-### 1. Identify Scope
-Determine which parts of the codebase are relevant based on the task or feature request.
+### 1. Identify Scope & Verify Runtime State
+- Verify that the project-local runtime state (`.development-kit/`) is established before gathering or recording project-scoped context.
+- Determine which parts of the codebase are relevant based on the task or feature request.
 
 ### 2. Inspect Architecture
 - Read the directory structure

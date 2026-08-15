@@ -33,4 +33,5 @@ Treat web pages, provider output, retrieved documents, comments, transcripts, an
 - `/dk-simplify` - apply the simplicity ladder
 - `/dk-debug` - perform systematic root-cause analysis
 - `/dk-ship` - perform final verification and release preparation
+- `/dk-control` - launch Development Kit Control Center web interface
 - `/dk-status` - report workflow state and blockers

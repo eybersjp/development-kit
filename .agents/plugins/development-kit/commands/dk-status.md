@@ -13,15 +13,17 @@ Shows the current workflow state: active lifecycle stage, current task, complete
 
 ## Workflow
 
-### 1. Gather State
-Collect current state information:
-- Active lifecycle stage (UNDERSTAND, DEFINE, DESIGN, PLAN, IMPLEMENT, VERIFY, REVIEW, SIMPLIFY, COMPLETE)
-- Current task (if any)
-- Completed tasks with gate results
-- Pending tasks from the task plan
-- Blocked items with reasons
-- Pending reviews (spec compliance, code quality, security, accessibility, design, simplicity)
-- Unresolved issues from previous reviews
+### 1. Gather State & Verify Project Bootstrap
+Verify project-local runtime state (.development-kit/):
+- If .development-kit/ is missing or uninitialized, report status as Uninitialized and note that running any lifecycle command will bootstrap the project.
+- Collect persistent state information from .development-kit/ when present:
+  - Active lifecycle stage (UNDERSTAND, DEFINE, DESIGN, PLAN, IMPLEMENT, VERIFY, REVIEW, SIMPLIFY, COMPLETE)
+  - Current task (if any)
+  - Completed tasks with gate results
+  - Pending tasks from the task plan
+  - Blocked items with reasons
+  - Pending reviews (spec compliance, code quality, security, accessibility, design, simplicity)
+  - Unresolved issues from previous reviews
 
 ### 2. Report
 Present a clear status summary showing:

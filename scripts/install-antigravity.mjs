@@ -92,6 +92,7 @@ function printCommands() {
   console.log('  /dk-simplify   - Apply the simplicity ladder');
   console.log('  /dk-debug      - Systematic root-cause analysis');
   console.log('  /dk-ship       - Final verification and release preparation');
+  console.log('  /dk-control    - Launch Development Kit Control Center web interface');
   console.log('  /dk-status     - Show current workflow state');
 }
 
@@ -290,16 +291,16 @@ function installAll(dryRun = false, force = false) {
     }
   }
 
-  // Copy plugin manifest
-  const pluginSource = join(ROOT, '.agents', 'plugins', 'development-kit', 'plugin.json');
-  const pluginTarget = join(targetDir, '.agents', 'plugins', 'development-kit', 'plugin.json');
+  // Copy plugin mirror
+  const pluginSource = join(ROOT, '.agents', 'plugins', 'development-kit');
+  const pluginTarget = join(targetDir, '.agents', 'plugins', 'development-kit');
   if (existsSync(pluginSource)) {
     const exists = existsSync(pluginTarget) ? ' (overwrite)' : '';
     if (!dryRun) {
-      mkdirSync(dirname(pluginTarget), { recursive: true });
-      copyFileSync(pluginSource, pluginTarget);
+      mkdirSync(pluginTarget, { recursive: true });
+      cpSync(pluginSource, pluginTarget, { recursive: true });
     }
-    console.log(`  ${dryRun ? '→' : '✓'} .agents/plugins/development-kit/plugin.json${exists}`);
+    console.log(`  ${dryRun ? '→' : '✓'} .agents/plugins/development-kit/${exists}`);
   }
 
   if (dryRun) {

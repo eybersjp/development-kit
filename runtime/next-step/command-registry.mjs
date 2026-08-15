@@ -155,6 +155,17 @@ export const CANONICAL_COMMAND_METADATA = Object.freeze({
     workflow: 'completion',
     category: 'lifecycle'
   },
+  '/dk-control': {
+    name: '/dk-control',
+    command: '/dk-control',
+    stage: 'INFORMATIONAL',
+    description: 'Launch the Development Kit Control Center web interface for inspecting workflow state, project memory, and runtime health.',
+    isConsequential: false,
+    requiresApproval: false,
+    safetyLevel: 'read_only',
+    workflow: 'informational',
+    category: 'utility'
+  },
   '/dk-status': {
     name: '/dk-status',
     command: '/dk-status',

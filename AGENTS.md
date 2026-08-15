@@ -92,6 +92,7 @@ The following commands are available. Each command activates a specific workflow
 - `/dk-simplify` - Apply the Ponytail simplicity ladder to remove unnecessary code, abstractions, and dependencies
 - `/dk-debug` - Systematic root-cause analysis: reproduce, localise, identify root cause, fix, protect
 - `/dk-ship` - Final verification and release preparation: task completion gate, branch completion, release readiness assessment
+- `/dk-control` - Launch the Development Kit Control Center web interface
 - `/dk-status` - Show the current workflow state: active lifecycle stage, current task, completed tasks, and blocked items
 
 ## Agents
