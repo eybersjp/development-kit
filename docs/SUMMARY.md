@@ -207,6 +207,12 @@
 * [Architecture Invariants](04-architecture/architecture-invariants.md)
 * [Architecture Decisions](04-architecture/architecture-decisions.md)
 * [Autopilot Implementation Plan](04-architecture/autopilot-implementation-plan.md)
+* [DK Intelligence & Memory Architecture (Planned v0.7)](04-architecture/dk-intelligence-memory-architecture.md)
+* [DK Control Center Product Specification (Planned v0.7)](04-architecture/dk-control-center-product-specification.md)
+* [DK Runtime API (Planned v0.7)](04-architecture/dk-runtime-api.md)
+* [DK Memory Provider Contract (Planned v0.7)](04-architecture/dk-memory-provider-contract.md)
+* [v0.7 Architecture Decisions (Planned v0.7)](04-architecture/v0.7-architecture-decisions.md)
+* [v0.7 Intelligence & Control Center Implementation Plan (Planned v0.7)](04-architecture/v0.7-intelligence-control-center-implementation-plan.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)
@@ -254,6 +260,7 @@
 * [Code Quality Review](07-testing-quality-security/code-quality-review.md)
 * [Security Review](07-testing-quality-security/security-review.md)
 * [Threat Model](07-testing-quality-security/threat-model.md)
+* [v0.7 Intelligence & Control Center Threat Model (Planned v0.7)](07-testing-quality-security/v0.7-intelligence-control-center-threat-model.md)
 * [Accessibility Review](07-testing-quality-security/accessibility-review.md)
 * [Design Quality Review](07-testing-quality-security/design-quality-review.md)
 * [Regression & Edge Case Testing](07-testing-quality-security/regression-and-edge-case-testing.md)
