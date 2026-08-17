@@ -1,6 +1,6 @@
 # Prerequisites
 
-Before installing Development Kit (`development-kit@0.8.0`), ensure your environment meets the following requirements:
+Before installing Development Kit (`development-kit@0.8.1`), ensure your environment meets the following requirements:
 
 ## System & Software Requirements
 
@@ -14,6 +14,7 @@ Before installing Development Kit (`development-kit@0.8.0`), ensure your environ
 1. **Antigravity AI Platform**:
    - Supports global configuration directory (`~/.gemini/config/` or `%USERPROFILE%\.gemini\config\`).
    - Supports project-local directory (`./.agents/`).
+   - Discovers the 16 Development Kit `/dk-*` workflows through native skill adapters.
 2. **OpenCode Environment**:
    - Supports project-local configuration directory (`./.opencode/skills/`).
 

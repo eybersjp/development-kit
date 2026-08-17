@@ -84,6 +84,7 @@ The following commands are available. Each command activates a specific workflow
 - `/dk-research` - Gather source-backed external evidence through approved providers while preserving trust boundaries and provenance
 - `/dk-spec` - Create the minimum required specification artifacts for the approved concept
 - `/dk-design` - Produce technical and visual design including data models, API contracts, user flows, and design direction
+- `/dk-design-system` - Establish, inspect, verify, and govern the authoritative project `design.md`
 - `/dk-tasks` - Break approved work into small, verifiable tasks with subtask decomposition and dependency ordering
 - `/dk-build` - Implement the next task through every verification gate using fresh sub-agents and TDD
 - `/dk-build-auto` - Process the entire approved task plan automatically, pausing on failures

@@ -1,6 +1,6 @@
 # Verifying Installation
 
-Use the checks below after installing Development Kit v0.8.0.
+Use the checks below after installing Development Kit v0.8.1.
 
 ## Verify the published package
 
@@ -11,7 +11,7 @@ npm view development-kit version
 Expected current version:
 
 ```text
-0.8.0
+0.8.1
 ```
 
 ## Verify framework integrity
@@ -24,7 +24,7 @@ npm run release:validate
 
 This includes:
 
-1. Framework component validation.
+1. Framework component and Antigravity workflow-discovery validation.
 2. Plugin synchronization verification.
 3. Documentation validation and regression tests.
 4. OpenCode configuration regression tests.
@@ -32,8 +32,10 @@ This includes:
 6. Research trust boundary contract tests.
 7. Next-step guidance unit and CLI validation tests.
 8. Standalone installer and distribution tests.
-9. Autopilot unit tests.
-10. Lifecycle evaluation validation.
+9. DK Intelligence and regression validation.
+10. DKF Design Authority validation.
+11. Autopilot unit tests.
+12. Lifecycle evaluation validation.
 
 ## Verify an OpenCode installation
 
@@ -69,7 +71,17 @@ Run:
 npm run doctor
 ```
 
-Confirm that the installed plugin manifest references the expected 46 skills, 18 agents, and 4 hooks and that the plugin is reported as synchronized.
+Confirm that the plugin is synchronized and contains 47 engineering skills plus 16 Antigravity-native workflow-entry skills, 18 agents, and 4 hooks.
+
+Then open Antigravity and type:
+
+```text
+/dk
+```
+
+Confirm that all 16 Development Kit workflows appear in slash discovery, including `/dk-design-system`.
+
+For an existing project upgrade, verify that the project's pre-existing `AGENTS.md` remains unchanged unless `--force` was intentionally used.
 
 ## Verify Autopilot
 

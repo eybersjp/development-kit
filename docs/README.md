@@ -1,28 +1,30 @@
 # Development Kit Documentation System
 
-Welcome to the official documentation for **Development Kit v0.8.0** (`development-kit@0.8.0`).
+Welcome to the official documentation for **Development Kit v0.8.1** (`development-kit@0.8.1`).
 
 Development Kit is a disciplined AI software-development workflow for Antigravity, OpenCode, Claude Code, Cursor, VS Code (GitHub Copilot), Cline, and Windsurf. It installs lifecycle commands, specialist agents, reusable skills, verification gates, Next-Step Guidance, DK Intelligence, DK Control Center, DKF Design Authority, and the persistent `/dk-autopilot` guided workflow into supported coding-agent environments.
 
 ## Current release highlights
 
-| Package Version | 0.8.0 |
+| Package Version | 0.8.1 |
 | Lifecycle Stages | 9 (UNDERSTAND through COMPLETE) |
 | Workflow Commands | 16 |
 | Specialist Agents | 18 |
 | Engineering Skills | 47 |
+| Native Workflow Adapters | 16 |
 
 - Includes **DKF Design Authority** (enforcing `design.md` as the single authoritative source of truth for frontend UI styling, token architecture, and visual consistency).
+- Includes **native Antigravity slash-workflow discovery** for all 16 `/dk-*` workflows while retaining `commands/*.md` as the authoritative workflow definitions.
 - Includes **DK Intelligence** (durable local-first engineering memory, provenance, and lifecycle context assembly).
 - Includes **DK Control Center** (integrated local browser UI and secure loopback Runtime API).
-- The framework includes 16 workflow commands, 18 specialist agents, 47 engineering skills, and 4 hooks.
+- The framework includes 16 workflow commands, 18 specialist agents, 47 engineering skills, 16 workflow-entry adapters, and 4 hooks.
 - Next-Step Guidance automatically computes and appends context-aware recommendations across the full 9-stage lifecycle.
 - Standalone installation (`installAll`) includes `runtime/` for standalone operation without repository fallbacks.
 - Multi-platform adapters provide native project integration for Claude Code, Cursor, VS Code, Cline, and Windsurf.
 - `/dk-research` provides provider-neutral, source-backed external research with provenance, uncertainty handling, and explicit trust boundaries.
 - Skill frontmatter parsing and canonical plugin-mirror checks treat equivalent CRLF and LF content consistently across operating systems.
 - OpenCode configuration uses the official schema declaration and automatically loads the root `AGENTS.md` file.
-- The release validation suite covers OpenCode configuration, external research integration, platform templates, next-step guidance, standalone packaging regressions, and intelligence tests.
+- The release validation suite covers Antigravity workflow discovery and upgrade regressions, OpenCode configuration, external research integration, platform templates, next-step guidance, standalone packaging regressions, DKF Design Authority, and intelligence tests.
 
 Projects installed with earlier versions should follow the [Migration Guide](08-maintenance-release/migration-guide.md).
 
