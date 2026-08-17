@@ -1,13 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 const COMMANDS_DIR = join(ROOT, 'commands');
 const SKILLS_DIR = join(ROOT, 'skills');
+const INSTALLER = join(ROOT, 'scripts', 'install-antigravity.mjs');
 
 function publicCommands() {
   return readdirSync(COMMANDS_DIR)
@@ -48,4 +51,42 @@ test('every public DK command has a native Antigravity skill adapter', () => {
 
 test('Antigravity public workflow skills exactly mirror DK command definitions', () => {
   assert.deepEqual(publicWorkflowSkills(), publicCommands());
+});
+
+test('project upgrade preserves existing AGENTS.md while installing all DK slash workflow skills', (t) => {
+  const target = mkdtempSync(join(tmpdir(), 'dk-antigravity-upgrade-'));
+  t.after(() => rmSync(target, { recursive: true, force: true }));
+
+  const agentsDir = join(target, '.agents');
+  mkdirSync(agentsDir, { recursive: true });
+  const existingAgents = '# Existing project instructions\n\nKeep this file unchanged.\n';
+  writeFileSync(join(agentsDir, 'AGENTS.md'), existingAgents, 'utf8');
+
+  const result = spawnSync(process.execPath, [INSTALLER, '--project'], {
+    cwd: target,
+    encoding: 'utf8',
+  });
+
+  assert.equal(
+    result.status,
+    0,
+    `Project installer failed: ${result.stderr || result.stdout}`,
+  );
+  assert.equal(
+    readFileSync(join(agentsDir, 'AGENTS.md'), 'utf8'),
+    existingAgents,
+    'Existing project AGENTS.md must remain preserved during a normal upgrade',
+  );
+
+  const installedPlugin = join(agentsDir, 'plugins', 'development-kit');
+  for (const command of publicCommands()) {
+    assert.ok(
+      existsSync(join(installedPlugin, 'skills', command, 'SKILL.md')),
+      `Installed Antigravity plugin must expose ${command} as a native skill`,
+    );
+    assert.ok(
+      existsSync(join(installedPlugin, 'commands', `${command}.md`)),
+      `Installed plugin must include authoritative commands/${command}.md`,
+    );
+  }
 });
