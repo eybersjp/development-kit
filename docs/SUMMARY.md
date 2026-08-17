@@ -186,6 +186,7 @@
 * [install-platform-adapters](03-reference/scripts/install-platform-adapters.md)
 * [next-step](03-reference/scripts/next-step.md)
 * [sync-plugin](03-reference/scripts/sync-plugin.md)
+* [v071-regression-runner](03-reference/scripts/v071-regression-runner.md)
 * [validate-skills](03-reference/scripts/validate-skills.md)
 * [validate-docs](03-reference/scripts/validate-docs.md)
 * [validate-evals](03-reference/scripts/validate-evals.md)
