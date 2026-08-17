@@ -202,8 +202,16 @@ test('TEST E: Bootstrap must be idempotent', async (t) => {
 });
 
 test('TEST F: Bootstrap failure must not falsely report persisted lifecycle progress', async (t) => {
-  // If bootstrap directory cannot be written (or fails)
-  const invalidDir = process.platform === 'win32' ? 'Z:\\non_existent_drive_root\\test' : '/proc/invalid_dir/test';
+  const fixtureRoot = makeTempDir('dk-test-f-');
+  t.after(() => rmSync(fixtureRoot, { recursive: true, force: true }));
+
+  // Create a regular file where bootstrap requires a directory. Joining a child
+  // beneath this file produces a deterministic ENOTDIR/equivalent failure on
+  // Windows, Linux, and macOS without relying on special OS filesystems.
+  const blockingFile = join(fixtureRoot, 'not-a-directory');
+  writeFileSync(blockingFile, 'bootstrap must fail beneath this file', 'utf8');
+  const invalidDir = join(blockingFile, 'project-root');
+
   const result = await bootstrapProject(invalidDir);
   assert.equal(result.success, false);
   assert.equal(result.initialized, false);
@@ -295,6 +303,8 @@ test('TEST K: manual /dk-control works when auto-open is Off', async (t) => {
   assert.ok(started.uiUrl);
   const res = await fetch(started.uiUrl);
   assert.equal(res.status, 200);
+  const html = await res.text();
+  assert.match(html, /Development Kit Control Center/);
 });
 
 test('TEST L: duplicate Control Center launch remains suppressed', async (t) => {
