@@ -44,5 +44,8 @@ jobs:
       - name: Validate external research contract
         run: npm run research:validate
 
+      - name: Validate v0.7.1 regression suite
+        run: npm run v071:validate
+
       - name: Validate Autopilot runtime and evaluations
         run: npm run autopilot:validate
