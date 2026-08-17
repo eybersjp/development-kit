@@ -188,13 +188,21 @@ jobs:
             exit 0
           fi
 
-          PUBLISHED_VERSION=$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version --silent)
-          if [ "$PUBLISHED_VERSION" != "$PACKAGE_VERSION" ]; then
-            echo "::error::npm verification failed: expected $PACKAGE_VERSION, got $PUBLISHED_VERSION"
-            exit 1
-          fi
+          for attempt in {1..12}; do
+            PUBLISHED_VERSION=$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version --silent 2>/dev/null || true)
+            if [ "$PUBLISHED_VERSION" = "$PACKAGE_VERSION" ]; then
+              echo "status=published" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
 
-          echo "status=published" >> "$GITHUB_OUTPUT"
+            echo "npm registry has not exposed $PACKAGE_NAME@$PACKAGE_VERSION yet (attempt $attempt/12)."
+            if [ "$attempt" -lt 12 ]; then
+              sleep 5
+            fi
+          done
+
+          echo "::error::npm verification failed after 12 attempts: expected $PACKAGE_VERSION"
+          exit 1
 
       - name: Report completed release
         env:
