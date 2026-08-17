@@ -65,11 +65,30 @@ export class RuntimeApiService {
   }
 
   async stop() {
-    if (this.server) {
-      return new Promise((resolve) => {
-        this.server.close(() => resolve());
+    const server = this.server;
+    if (!server) return;
+
+    // Detach the instance immediately so repeated stop() calls are idempotent.
+    this.server = null;
+    this.boundPort = null;
+
+    if (!server.listening) return;
+
+    await new Promise((resolve, reject) => {
+      server.close((err) => {
+        if (err) reject(err);
+        else resolve();
       });
-    }
+
+      // A local Control Center shutdown is terminal for this server instance.
+      // Do not allow pooled/keep-alive loopback clients to keep the process alive.
+      if (typeof server.closeIdleConnections === 'function') {
+        server.closeIdleConnections();
+      }
+      if (typeof server.closeAllConnections === 'function') {
+        server.closeAllConnections();
+      }
+    });
   }
 
   async _handleRequest(req, res) {
