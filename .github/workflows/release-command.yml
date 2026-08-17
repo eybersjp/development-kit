@@ -17,6 +17,8 @@ jobs:
     if: github.actor == github.repository_owner && startsWith(github.event.issue.title, 'Release v')
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
 
     steps:
       - name: Check out main
@@ -88,11 +90,118 @@ jobs:
             exit 1
           fi
 
-      - name: Report release delegation
+  publish:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: write
+      issues: write
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Set up Node.js for npm
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Verify release target
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          TAG_VERSION="${TAG#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+
+          TAG_COMMIT=$(git rev-list -n 1 "$TAG")
+          HEAD_COMMIT=$(git rev-parse HEAD)
+          if [ "$TAG_COMMIT" != "$HEAD_COMMIT" ]; then
+            echo "::error::Checked-out commit ($HEAD_COMMIT) does not match release tag commit ($TAG_COMMIT)"
+            exit 1
+          fi
+
+      - name: Create or verify GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "GitHub Release $TAG already exists."
+          else
+            gh release create "$TAG" --verify-tag --generate-notes --title "Development Kit $TAG"
+          fi
+
+      - name: Inspect npm publication state
+        id: npm-state
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+
+          if PUBLISHED_VERSION=$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version --silent 2>/dev/null) && [ "$PUBLISHED_VERSION" = "$PACKAGE_VERSION" ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -n "$NODE_AUTH_TOKEN" ]; then
+            echo "credentials=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "credentials=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish package
+        if: steps.npm-state.outputs.published != 'true' && steps.npm-state.outputs.credentials == 'true'
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Verify npm publication
+        id: npm-result
+        env:
+          PREVIOUSLY_PUBLISHED: ${{ steps.npm-state.outputs.published }}
+          CREDENTIALS_CONFIGURED: ${{ steps.npm-state.outputs.credentials }}
+        shell: bash
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+
+          if [ "$PREVIOUSLY_PUBLISHED" = "true" ]; then
+            echo "status=already-published" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$CREDENTIALS_CONFIGURED" != "true" ]; then
+            echo "status=skipped-no-token" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PUBLISHED_VERSION=$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version --silent)
+          if [ "$PUBLISHED_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "::error::npm verification failed: expected $PACKAGE_VERSION, got $PUBLISHED_VERSION"
+            exit 1
+          fi
+
+          echo "status=published" >> "$GITHUB_OUTPUT"
+
+      - name: Report completed release
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
-          TAG: ${{ steps.release.outputs.tag }}
+          TAG: ${{ needs.release.outputs.tag }}
+          NPM_STATUS: ${{ steps.npm-result.outputs.status }}
         run: |
-          gh issue comment "$ISSUE_NUMBER" --body "Release tag \`$TAG\` has been pushed to trigger the canonical \`publish.yml\` workflow for validation, GitHub Release creation, and npm publication."
+          gh issue comment "$ISSUE_NUMBER" --body "Release \`$TAG\` completed. GitHub Release: confirmed. npm status: \`$NPM_STATUS\`."
           gh issue close "$ISSUE_NUMBER" --reason completed
