@@ -30,9 +30,11 @@ It is **not** a project-management dashboard and it does not replace engineering
 
 ## Current release
 
-The current release line is **v0.8.0**.
+The current release line is **v0.8.1**.
 
 v0.8 introduces **DKF Design Authority** (enforcing `design.md` as the single authoritative source of truth for frontend UI styling, token architecture, and visual consistency), the `/dk-design-system` command, reference-based design system generation, and strict controlled design amendments.
+
+v0.8.1 restores native Antigravity slash-workflow discovery by exposing all 16 `/dk-*` workflows as Antigravity skills while keeping `commands/*.md` as the authoritative workflow definitions. Existing guarded `AGENTS.md` files remain preserved during normal upgrades.
 
 ## What you get
 
@@ -198,6 +200,7 @@ The installer preserves existing guarded files by default, including `AGENTS.md`
 | `/dk-research` | Gather source-backed external evidence through approved capabilities while preserving provenance and trust boundaries. |
 | `/dk-spec` | Produce the minimum sufficient specification and acceptance criteria. |
 | `/dk-design` | Define the smallest compatible technical and user-experience design. |
+| `/dk-design-system` | Establish, inspect, verify, or amend the authoritative frontend design system. |
 | `/dk-tasks` | Create ordered, independently verifiable implementation tasks. |
 | `/dk-build` | Implement the next task through the required verification gates. |
 | `/dk-build-auto` | Process an approved task plan automatically, stopping on failures. |
@@ -231,9 +234,9 @@ Every non-trivial change follows the same principles:
 
 | Environment | Integration |
 |---|---|
-| **Antigravity** | Plugin, agents, commands, hooks, 46 skills, templates, evaluations, and runtime utilities. |
-| **OpenCode** | Official schema-based `opencode.json`, automatically loaded `AGENTS.md`, and 46 progressively loaded compatible skills. |
-| **Claude Code** | `CLAUDE.md` plus native, invokable skills for all 14 DK commands under `.claude/skills/`. |
+| **Antigravity** | Plugin with 47 engineering skills plus 16 native `/dk-*` workflow-entry skills, 18 agents, 4 hooks, templates, evaluations, and runtime utilities. |
+| **OpenCode** | Official schema-based `opencode.json`, automatically loaded `AGENTS.md`, 47 engineering skills, and the 16 workflow-entry skills. |
+| **Claude Code** | `CLAUDE.md` plus native, invokable DK workflow skills under `.claude/skills/`. |
 | **Cursor** | Project rule at `.cursor/rules/dkf.mdc`. |
 | **VS Code with GitHub Copilot** | Repository instructions at `.github/copilot-instructions.md`; no `.vscode/settings.json` modification. |
 | **Cline** | Project rule at `.clinerules/dkf.md`. |
@@ -275,7 +278,7 @@ The release gate runs framework validation, plugin manifest and mirror synchroni
 
 ## Project status
 
-Development Kit is actively developed. The v0.6.1 release line includes the production Autopilot foundation, Next-Step Guidance, standalone installer fixes, multi-platform integrations, current OpenCode compatibility, provider-neutral external research, optional Agent-Reach integration guidance, OS-agnostic canonical plugin-mirror integrity checks, a validated public npm package workflow, and complete framework documentation. Public feedback, integration reports, focused improvements, and well-scoped contributions are welcome.
+Development Kit is actively developed. The v0.8.1 release line includes the production Autopilot foundation, DK Intelligence & Memory, DK Control Center, DKF Design Authority, native Antigravity discovery for all 16 `/dk-*` workflows, multi-platform integrations, provider-neutral external research, and the complete verification-first release pipeline. Public feedback, integration reports, focused improvements, and well-scoped contributions are welcome.
 
 See [SUPPORT.md](SUPPORT.md) for help, [SECURITY.md](SECURITY.md) for vulnerability reporting, and [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes.
 

@@ -67,6 +67,7 @@ Before writing any new code, traverse this ladder:
 | `/dk-research` | Gather source-backed external evidence through approved providers |
 | `/dk-spec` | Create the required artifact set |
 | `/dk-design` | Produce technical and visual design |
+| `/dk-design-system` | Establish, inspect, verify, and govern the authoritative project design system |
 | `/dk-tasks` | Create task decomposition |
 | `/dk-build` | Implement the next task through every gate |
 | `/dk-build-auto` | Process the entire plan automatically |
