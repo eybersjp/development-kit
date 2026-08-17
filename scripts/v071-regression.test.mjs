@@ -295,6 +295,8 @@ test('TEST K: manual /dk-control works when auto-open is Off', async (t) => {
   assert.ok(started.uiUrl);
   const res = await fetch(started.uiUrl);
   assert.equal(res.status, 200);
+  const html = await res.text();
+  assert.match(html, /Development Kit Control Center/);
 });
 
 test('TEST L: duplicate Control Center launch remains suppressed', async (t) => {
