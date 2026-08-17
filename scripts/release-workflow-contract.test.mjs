@@ -29,3 +29,9 @@ test('maintainer release workflow is retry-safe for existing tags and public art
   assert.match(releaseWorkflow, /published=true/, 'workflow must detect an already-published npm version');
   assert.match(releaseWorkflow, /status=already-published/, 'workflow must report already-published npm state');
 });
+
+test('post-publish npm verification tolerates bounded registry propagation delay', () => {
+  assert.match(releaseWorkflow, /for attempt in \{1\.\.12\}/, 'npm verification must retry for a bounded number of attempts');
+  assert.match(releaseWorkflow, /sleep 5/, 'npm verification retries must allow registry propagation time');
+  assert.match(releaseWorkflow, /npm verification failed after 12 attempts/, 'npm verification must still fail closed after the bounded retry window');
+});
