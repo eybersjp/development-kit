@@ -45,7 +45,7 @@
     "opencode.json"
   ],
   "scripts": {
-    "validate": "node scripts/validate-skills.mjs && node --test scripts/antigravity-command-discovery.test.mjs",
+    "validate": "node scripts/validate-skills.mjs && node --test scripts/antigravity-command-discovery.test.mjs scripts/release-workflow-contract.test.mjs",
     "skills:validate:test": "node --test scripts/validate-skills.test.mjs",
     "init": "node scripts/install-antigravity.mjs",
     "doctor": "node scripts/sync-plugin.mjs --check",
