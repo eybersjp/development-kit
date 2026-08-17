@@ -38,7 +38,7 @@ Based on the scope of work:
 - **Data model design**: If persistent data changes are required (new models, migrations)
 - **API contract design**: If APIs or module boundaries are being defined or changed
 - **User flow design**: If a user-facing workflow changes
-- **Design direction**: For UI work, define visual language, typography, colour, and interaction patterns
+- **Design Authority & Direction**: For UI work, establish, inspect, and enforce `design.md` via `/dk-design-system` and `design-authority` to govern visual tokens, layouts, and components.
 
 ### 5. Present for Approval
 Show the design to the user for approval before proceeding.
@@ -53,6 +53,7 @@ Supporting (conditional on scope):
 - `api-contract-design` — API contracts and module boundaries (API or interface changes only)
 - `user-flow-design` — User workflows and journeys (UI workflow changes only)
 - `design-direction` — Visual language, typography, colour, interaction patterns (UI work only)
+- `design-authority` — Governs authoritative `design.md` and 7-level conflict priority (UI work only)
 
 Overarching:
 - `using-development-kit` — Methodology context for the design phase

@@ -30,6 +30,7 @@ graph LR
 | [`/dk-research`](dk-research.md) | Conditional / any stage | Gather current external evidence through approved capabilities with provenance and trust boundaries |
 | [`/dk-spec`](dk-spec.md) | DEFINE | Create the minimum required specification artifacts |
 | [`/dk-design`](dk-design.md) | DESIGN | Produce technical and visual design |
+| [`/dk-design-system`](dk-design-system.md) | DESIGN / Governance | Establish, inspect, verify, and govern the project's authoritative frontend design system (`design.md`) |
 | [`/dk-tasks`](dk-tasks.md) | PLAN | Break approved work into small, verifiable tasks |
 | [`/dk-build`](dk-build.md) | IMPLEMENT | Implement the next task through every gate |
 | [`/dk-build-auto`](dk-build-auto.md) | IMPLEMENT | Process the entire plan automatically |

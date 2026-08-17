@@ -84,6 +84,7 @@ function printCommands() {
   console.log('  /dk-research   - Gather source-backed external evidence safely');
   console.log('  /dk-spec       - Create the required specification artifacts');
   console.log('  /dk-design     - Produce technical and visual design');
+  console.log('  /dk-design-system - Establish, inspect, verify, and govern the project design system');
   console.log('  /dk-tasks      - Break approved work into small tasks');
   console.log('  /dk-build      - Implement the next task through every gate');
   console.log('  /dk-build-auto - Process the entire plan automatically');

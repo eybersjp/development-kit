@@ -57,6 +57,7 @@
 * [dk-build](03-reference/commands/dk-build.md)
 * [dk-debug](03-reference/commands/dk-debug.md)
 * [dk-design](03-reference/commands/dk-design.md)
+* [dk-design-system](03-reference/commands/dk-design-system.md)
 * [dk-idea](03-reference/commands/dk-idea.md)
 * [dk-research](03-reference/commands/dk-research.md)
 * [dk-review](03-reference/commands/dk-review.md)
@@ -108,6 +109,7 @@
 * [data-model-design](03-reference/skills/data-model-design.md)
 * [dependency-ordering](03-reference/skills/dependency-ordering.md)
 * [dependency-restraint](03-reference/skills/dependency-restraint.md)
+* [design-authority](03-reference/skills/design-authority.md)
 * [design-direction](03-reference/skills/design-direction.md)
 * [design-quality-review](03-reference/skills/design-quality-review.md)
 * [edge-case-testing](03-reference/skills/edge-case-testing.md)
@@ -158,6 +160,7 @@
 * [review-report](03-reference/templates/review-report.md)
 * [task-plan](03-reference/templates/task-plan.md)
 * [technical-design](03-reference/templates/technical-design.md)
+* [design-system-reference-analysis](03-reference/templates/design-system-reference-analysis.md)
 
 ### Evaluations
 * [Evaluations Index](03-reference/evaluations/README.md)
@@ -165,6 +168,7 @@
 * [autopilot-lifecycle](03-reference/evaluations/autopilot-lifecycle.md)
 * [code-quality-review](03-reference/evaluations/code-quality-review.md)
 * [dependency-restraint](03-reference/evaluations/dependency-restraint.md)
+* [design-authority](03-reference/evaluations/design-authority.md)
 * [idea-discovery](03-reference/evaluations/idea-discovery.md)
 * [scope-definition](03-reference/evaluations/scope-definition.md)
 * [simplicity-review](03-reference/evaluations/simplicity-review.md)
@@ -216,6 +220,7 @@
 * [DK Memory Provider Contract (Planned v0.7)](04-architecture/dk-memory-provider-contract.md)
 * [v0.7 Architecture Decisions (Planned v0.7)](04-architecture/v0.7-architecture-decisions.md)
 * [v0.7 Intelligence & Control Center Implementation Plan (Planned v0.7)](04-architecture/v0.7-intelligence-control-center-implementation-plan.md)
+* [DK Design Authority Feature Specification (v0.8)](04-architecture/dk-design-authority-v0.8-feature-spec.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)
@@ -287,6 +292,7 @@
 * [Release Notes (v0.6.1)](08-maintenance-release/release-notes-v0.6.1.md)
 * [Release Notes (v0.7.0)](08-maintenance-release/release-notes-v0.7.0.md)
 * [Release Notes (v0.7.1)](08-maintenance-release/release-notes-v0.7.1.md)
+* [Release Notes (v0.8.0)](08-maintenance-release/release-notes-v0.8.0.md)
 
 ## 09. Contributing
 * [Contribution Overview](09-contributing/contribution-overview.md)

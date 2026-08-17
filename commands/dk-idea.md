@@ -16,8 +16,33 @@ Takes a rough idea and refines it into a concrete, well-defined concept. Runs th
 ### 1. Understand
 Read the user's request. Identify what is clearly stated and what needs clarification.
 
-### 2. Requirements Interview
+### 2. Requirements Interview & Design System Discovery
 Spawn the **product-discovery-agent** to conduct the requirements interview. Surface requirements, preferences, assumptions, and constraints.
+
+If the project includes a visual user interface, prompt early for visual references:
+
+```text
+Design System Setup
+
+This project includes a user interface.
+Do you have visual references you want the application to follow?
+
+You can provide:
+- screenshots
+- application/website screens
+- mockups
+- Figma exports/images
+- competitor/interface references
+- existing project UI
+- an existing design.md
+
+Options:
+1. Attach design references
+2. Use an existing design.md
+3. Derive the design system from an existing application
+4. Create a new design direction without references
+5. Defer for now (blocks first frontend implementation)
+```
 
 ### 3. Idea Challenge
 Test assumptions. Is this the real problem? Does it need to exist? Is there a simpler approach? Challenge the proposed solution against the problem.

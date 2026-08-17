@@ -10,7 +10,7 @@ UNDERSTAND → DEFINE → DESIGN → PLAN → IMPLEMENT → VERIFY → REVIEW �
 
 1. **UNDERSTAND** (`/dk-idea`): Refines raw requests into clear concepts using interactive interviews and scope boundaries.
 2. **DEFINE** (`/dk-spec`): Generates minimum required specifications, acceptance criteria, and explicit exclusions.
-3. **DESIGN** (`/dk-design`): Establishes data models, API contracts, user flows, and visual direction.
+3. **DESIGN** (`/dk-design` / `/dk-design-system`): Establishes data models, API contracts, user flows, visual direction, and the authoritative `design.md` frontend design system.
 4. **PLAN** (`/dk-tasks`): Decomposes work into risk-ordered, independently testable tasks.
 5. **IMPLEMENT** (`/dk-build` / `/dk-build-auto`): Executes tasks using isolated sub-agents and Test-Driven Development (TDD).
 6. **VERIFY** (`/dk-test`): Runs unit tests, regression tests, edge-case tests, and browser runtime checks.

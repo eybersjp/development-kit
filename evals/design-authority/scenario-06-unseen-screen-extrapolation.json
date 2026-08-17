@@ -1,0 +1,16 @@
+{
+  "skill": "design-authority",
+  "scenario": "Extrapolate unseen screens using established design language tokens without visual drift",
+  "input": {
+    "command": "/dk-build",
+    "task": "Create new Analytics Report screen not present in original references",
+    "design_authority_state": "approved"
+  },
+  "expected": {
+    "reuses_application_shell": true,
+    "reuses_spacing_scale": true,
+    "reuses_card_and_table_tokens": true,
+    "passes_same_design_team_test": true,
+    "must_not_invent_new_visual_language": true
+  }
+}

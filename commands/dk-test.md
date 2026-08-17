@@ -27,13 +27,14 @@ Spawn the **test-engineer** to execute the verification suite:
 - Identify edge cases and unhappy paths
 - Run type checking and linting
 
-### 3. Apply Browser Runtime Verification (for UI tasks)
-Activate the browser-runtime-verification approach:
+### 3. Apply Browser Runtime Verification & Design System Compliance (for UI tasks)
+Activate the browser-runtime-verification and design compliance checks:
 - Check for console errors and warnings
 - Verify network requests succeed with proper error handling
 - Confirm DOM behaviour and dynamic updates
 - Test responsive layout at multiple viewport sizes
 - Verify keyboard navigation and focus management
+- **Design System Compliance**: Audit usage of defined tokens (colors, typography, spacing, radius) against raw hardcoded values, Tailwind brackets, or unauthorized UI component conventions.
 
 ### 4. Apply Regression Testing
 Activate regression-testing to ensure existing behaviour remains intact:

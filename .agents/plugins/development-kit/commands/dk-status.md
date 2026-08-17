@@ -67,6 +67,16 @@ None. This command is informational only.
 ### Pending Reviews
 - [Type of review needed]
 
+### Design Authority (when applicable)
+- Status: [approved / draft / deferred / not_required]
+- Version: [version e.g. 1.0.0]
+- Authority: [design.md]
+- References: [reference count and roles]
+- Pending amendments: [count]
+- Last verification: [PASS / FAIL / null]
+- Same Design Team: [PASS / PARTIAL / FAIL / null]
+- Frontend work: [allowed / blocked]
+
 ### Workflow State
 - Skills active: [active skill names]
 - Waiting on: [user input / implementation / review / tests]

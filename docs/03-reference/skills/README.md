@@ -9,7 +9,7 @@ Development Kit ships **45 skills** covering the full lifecycle from idea discov
 | **Meta** (4) | using-development-kit, skill-routing, repository-orientation, context-packing | Always / session start |
 | **Research & External Capability** (2) | external-research, agent-reach-integration | Conditional, primarily UNDERSTAND / DEFINE |
 | **Idea & Definition** (5) | idea-discovery, requirements-interview, idea-challenge, scope-definition, acceptance-criteria-writing | UNDERSTAND -> DEFINE |
-| **Artifact** (8) | adaptive-artifact-planning, feature-specification, technical-design, data-model-design, api-contract-design, user-flow-design, design-direction, test-strategy | DEFINE -> DESIGN |
+| **Artifact & Governance** (9) | adaptive-artifact-planning, feature-specification, technical-design, data-model-design, api-contract-design, user-flow-design, design-direction, design-authority, test-strategy | DEFINE -> DESIGN |
 | **Planning** (5) | task-decomposition, subtask-decomposition, dependency-ordering, task-readiness-check, risk-first-planning | PLAN |
 | **Implementation** (7) | subagent-driven-implementation, incremental-implementation, test-driven-development, existing-code-first, native-platform-first, dependency-restraint, minimal-diff | IMPLEMENT |
 | **Verification** (5) | verification-before-completion, systematic-debugging, browser-runtime-verification, regression-testing, edge-case-testing | VERIFY |

@@ -25,7 +25,7 @@ graph LR
 | :--- | :--- | :--- |
 | **UNDERSTAND** | repository-orientation, idea-discovery, requirements-interview, idea-challenge, scope-definition; `external-research` conditionally | `/dk-idea`, `/dk-research` when needed |
 | **DEFINE** | adaptive-artifact-planning, feature-specification, acceptance-criteria-writing; `external-research` conditionally for external constraints | `/dk-spec`, `/dk-research` when needed |
-| **DESIGN** | technical-design, data-model-design, api-contract-design, user-flow-design, design-direction; `external-research` only when current standards/platform/provider evidence materially affects design | `/dk-design` |
+| **DESIGN** | technical-design, data-model-design, api-contract-design, user-flow-design, design-direction, design-authority; `external-research` only when current standards/platform/provider evidence materially affects design | `/dk-design`, `/dk-design-system` |
 | **PLAN** | task-decomposition, subtask-decomposition, dependency-ordering, risk-first-planning, task-readiness-check, test-strategy | `/dk-tasks` |
 | **IMPLEMENT** | subagent-driven-implementation, incremental-implementation, test-driven-development, existing-code-first, native-platform-first, dependency-restraint, minimal-diff, context-packing | `/dk-build`, `/dk-build-auto` |
 | **VERIFY** | verification-before-completion, browser-runtime-verification, regression-testing, edge-case-testing, systematic-debugging (recovery); research only for current external compatibility/security/release evidence | `/dk-test`, `/dk-debug` |

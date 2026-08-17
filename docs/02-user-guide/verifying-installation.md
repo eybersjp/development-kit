@@ -1,6 +1,6 @@
 # Verifying Installation
 
-Use the checks below after installing Development Kit v0.7.1.
+Use the checks below after installing Development Kit v0.8.0.
 
 ## Verify the published package
 
@@ -11,7 +11,7 @@ npm view development-kit version
 Expected current version:
 
 ```text
-0.7.1
+0.8.0
 ```
 
 ## Verify framework integrity

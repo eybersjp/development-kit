@@ -40,6 +40,7 @@ Complete catalogue of all 46 skills with purpose and lifecycle stage.
 | [api-contract-design](api-contract-design.md) | Designs API contracts and module boundaries | DESIGN |
 | [user-flow-design](user-flow-design.md) | Designs user-facing workflows | DESIGN |
 | [design-direction](design-direction.md) | Premium UI direction and visual language | DESIGN |
+| [design-authority](design-authority.md) | Governs authoritative frontend design system (`design.md`), amendments, and conflict priority | DESIGN / Governance |
 | [test-strategy](test-strategy.md) | Defines how features are proven correct | PLAN |
 
 ## E. Planning Skills

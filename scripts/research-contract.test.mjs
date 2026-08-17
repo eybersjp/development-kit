@@ -16,9 +16,9 @@ function readJson(relativePath) {
   return JSON.parse(read(relativePath));
 }
 
-test('v0.7 release line exposes research validation', () => {
+test('v0.7+ release line exposes research validation', () => {
   const pkg = readJson('package.json');
-  assert.match(pkg.version, /^0\.[567]\.\d+$/);
+  assert.match(pkg.version, /^0\.[5-9]\.\d+$/);
   assert.equal(pkg.scripts['research:validate'], 'node --test scripts/research-contract.test.mjs');
   assert.match(pkg.scripts['release:validate'], /research:validate/);
 });

@@ -42,6 +42,75 @@ function getAllFiles(dir, ext = '.md') {
   return files;
 }
 
+export function containsUnresolvedPlaceholders(text) {
+  if (!text) return false;
+
+  const lines = text.split('\n');
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    // Explanatory prose patterns (MUST PASS):
+    // Sentences discussing, rejecting, or prohibiting placeholders
+    // (e.g. "Do not use TBD placeholders", "must not contain TODO or TBD", "rather than unresolved TBD",
+    //  "avoid placeholder content such as TODO, TBD, or Lorem ipsum", "prohibits TBD")
+    const isExplanatoryProse =
+      /\b(?:do\s+not|must\s+not|should\s+not|never|no\s+|avoid|rejects?|rejecting|prohibits?|prohibited|without|rather\s+than|such\s+as|discuss(?:es|ing)?|containing|words?|terms?|placeholders?|markers?)\b/i.test(line) ||
+      /\b(?:TODO|TBD)\b\s+(?:placeholders?|markers?|terminology|values?|decisions?)/i.test(line) ||
+      /(?:left\s+as|marked\s+as|unresolved)\s+[`"']?(?:TODO|TBD)[`"']?/i.test(line);
+
+    if (isExplanatoryProse) {
+      continue;
+    }
+
+    // 1. Strict match on Lorem ipsum (actual latin filler text) unless part of explanatory sentence
+    if (/\blorem\s+ipsum\b/i.test(line)) {
+      return true;
+    }
+
+    // Check if line contains TODO or TBD
+    if (!/\b(TODO|TBD)\b/i.test(line)) {
+      continue;
+    }
+
+    // A. Explicit unresolved placeholder patterns:
+    // Standalone TODO / TBD (e.g. "TODO", "TBD", "`TBD`", "[TBD]", "<TBD>", "{{TBD}}", "(TBD)")
+    if (/^(?:[-*+]\s+|\d+\.\s+)?(?:[\[<{(«`"']\s*)?(?:TODO|TBD)(?:\s*[\]>)}»"'])?[:.?!]?$/i.test(line)) {
+      return true;
+    }
+
+    // Key-value / field assignment placeholder (e.g. "Status: TBD", "Owner: [TODO]", "Due Date: `TBD`")
+    if (/^[A-Za-z0-9_\s\-\.\/]+:\s*(?:[\[<{(«`"']\s*)?(?:TODO|TBD)(?:\s*[\]>)}»"'])?\.?$/i.test(line)) {
+      return true;
+    }
+
+    // Table cell standalone placeholder (e.g. "| Component | TBD | ... |")
+    if (/\|\s*(?:[\[<{(«`"']\s*)?(?:TODO|TBD)(?:\s*[\]>)}»"'])?\s*\|/i.test(line)) {
+      return true;
+    }
+
+    // Markdown heading placeholder (e.g. "## TBD", "### TODO", "## [TBD]")
+    if (/^#{1,6}\s+(?:[\[<{(«`"']\s*)?(?:TODO|TBD)(?:\s*[\]>)}»"'])?$/i.test(line)) {
+      return true;
+    }
+
+    // Actionable task marker (e.g. "TODO: fix this", "TODO(user): ...", "TODO - implement", "TBD: details")
+    if (/\b(?:TODO|TBD)(?:\([^)]*\))?\s*[:\-–—]\s*\S+/i.test(line)) {
+      return true;
+    }
+
+    // Placeholder in bracketed/template forms (e.g. "[TBD]", "<TBD>", "{{TBD}}", "{{TODO}}", "{TBD}")
+    if (/[\[<{]{1,2}\s*(?:TODO|TBD)\s*[\]>}]{1,2}/i.test(line)) {
+      return true;
+    }
+
+    // If it's not recognized as explanatory prose and has raw unmatched TODO/TBD, treat as unresolved placeholder
+    return true;
+  }
+
+  return false;
+}
+
 export function validateDocs(targetRoot = DEFAULT_ROOT, options = { silent: false }) {
   const docsDir = join(targetRoot, 'docs');
   let errors = [];
@@ -169,8 +238,9 @@ export function validateDocs(targetRoot = DEFAULT_ROOT, options = { silent: fals
     const relPath = relative(docsDir, filePath).replace(/\\/g, '/');
     const content = readFileSync(filePath, 'utf-8');
 
-    // Check for forbidden placeholders
-    if (/\b(TODO|TBD|Lorem ipsum)\b/i.test(content)) {
+    // Check for forbidden unresolved placeholders (TODO, TBD, Lorem ipsum)
+    // Distinguishes actual unresolved placeholders from documentation discussing or prohibiting placeholders
+    if (containsUnresolvedPlaceholders(content)) {
       error(`${relPath}: Contains placeholder text (TODO, TBD, or Lorem ipsum)`);
     }
 

@@ -16,6 +16,7 @@ npx development-kit init --all
 
 ```bash
 /dk-idea
+/dk-design-system   # (automatic if UI references supplied in /dk-idea)
 /dk-spec
 /dk-design
 /dk-tasks

@@ -29,7 +29,8 @@ How the development-conductor routes user requests to skills, including the v0.5
 | `/dk-idea` | idea-discovery | requirements-interview, idea-challenge, scope-definition | discovery |
 | `/dk-research` | external-research | agent-reach-integration when applicable, security-review for credential/session/system/write risk, context-packing | conditional research |
 | `/dk-spec` | adaptive-artifact-planning | feature-specification, acceptance-criteria-writing | definition |
-| `/dk-design` | technical-design | data-model-design, api-contract-design, user-flow-design, design-direction | design |
+| `/dk-design` | technical-design | data-model-design, api-contract-design, user-flow-design, design-direction, design-authority | design |
+| `/dk-design-system` | design-authority | design-direction, browser-runtime-verification | design governance |
 | `/dk-tasks` | task-decomposition | subtask-decomposition, dependency-ordering, risk-first-planning, task-readiness-check | planning |
 | `/dk-build` | subagent-driven-implementation | incremental-implementation, test-driven-development, existing-code-first, native-platform-first, dependency-restraint, minimal-diff, context-packing, test-strategy | implementation |
 | `/dk-build-auto` | subagent-driven-implementation | incremental-implementation, test-driven-development, existing-code-first, native-platform-first, dependency-restraint, minimal-diff, context-packing, test-strategy, task-readiness-check, dependency-ordering, verification-before-completion, regression-testing | implementation |

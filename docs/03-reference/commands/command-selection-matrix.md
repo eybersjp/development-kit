@@ -11,6 +11,7 @@ Use this table to choose the right command based on your current situation.
 | Current external facts, standards, compatibility, market, security, or release evidence materially affects a decision | `/dk-research` | Performs provider-neutral external research with provenance, uncertainty, and explicit trust boundaries |
 | You have a defined feature but no specification | `/dk-spec` | Creates minimal specification artifacts and acceptance criteria |
 | You have an approved specification but no design | `/dk-design` | Produces data models, API contracts, user flows |
+| You have a frontend UI project and need to establish, inspect, verify, or amend the authoritative design system (`design.md`) | `/dk-design-system` | Governs design tokens, reference analysis, 31-section `design.md`, and Controlled Design System Amendments |
 | You have an approved design but no task plan | `/dk-tasks` | Decomposes work into risk-ordered, verifiable tasks |
 | You have approved tasks, implementing one at a time | `/dk-build` | Implements next task through full gate cycle |
 | You have approved tasks, want automatic progression | `/dk-build-auto` | Processes all tasks sequentially, pausing on failures |

@@ -47,13 +47,14 @@ Use the code-quality-review skill for structured assessment.
 - Colour contrast, focus indicators, motion preferences
 - Activate the accessibility-review skill and spawn the **accessibility-reviewer** agent
 
-**Design Quality Review** (for UI tasks):
-- Visual hierarchy, spacing, typography
-- Interaction design, prevents generic AI-generated visual language
+**Design Quality & Design Authority Review** (for UI tasks):
+- Visual hierarchy, spacing, typography, design tokens, visual invariants
+- Evaluates compliance against `design.md` and assigns stable issue IDs (`DS-001`, `DS-002`)
+- Issues mandatory verdict: `Same Design Team Test: PASS | PARTIAL | FAIL` (FAIL blocks acceptance)
 - Activate the design-quality-review skill and spawn the **design-reviewer** agent
 
 ### Stage 4: Report
-Provide a structured review report with verdicts for each stage and a go/no-go recommendation.
+Provide a structured review report with verdicts for each stage, Same Design Team Test status, and a go/no-go recommendation.
 
 ## Skills Activated
 

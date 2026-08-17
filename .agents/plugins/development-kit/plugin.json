@@ -16,6 +16,7 @@
     "../../../skills/data-model-design",
     "../../../skills/dependency-ordering",
     "../../../skills/dependency-restraint",
+    "../../../skills/design-authority",
     "../../../skills/design-direction",
     "../../../skills/design-quality-review",
     "../../../skills/edge-case-testing",

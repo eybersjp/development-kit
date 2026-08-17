@@ -23,6 +23,7 @@ graph TD
 * **Provider-Neutral External Research (`/dk-research`)**: Gathers current source-backed evidence through native, connected, or optional provider capabilities while preserving provenance, uncertainty, and trust boundaries.
 * **External Capability Providers**: Extensible provider contract with READ, AUTHENTICATED READ, WRITE, SYSTEM, and DESTRUCTIVE capability classes. Agent-Reach is the first documented optional provider adapter and is not a core dependency.
 * **Minimal Artifact Planning (`/dk-spec`, `/dk-design`)**: Produces feature specs, technical designs, and API contracts without over-documentation.
+* **DKF Design Authority (`/dk-design-system`)**: Enforces `design.md` as the single authoritative source of truth for frontend UI styling, token architecture, and layout rules to eliminate visual drift across multi-step agent implementations.
 * **Sub-agent Task Execution (`/dk-build`, `/dk-build-auto`)**: Spawns isolated fresh implementation sub-agents for every task to prevent assumption drift.
 * **Systematic Debugging (`/dk-debug`)**: Follows a strict reproduce -> localise -> identify root cause -> fix -> protect cycle.
 * **Multi-Axis Review Pipeline (`/dk-review`)**: Runs specification compliance, code quality, security, accessibility, and design quality reviews.

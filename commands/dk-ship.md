@@ -14,13 +14,18 @@ Performs final verification and release preparation. Runs the full test suite, i
 
 ## Workflow
 
-### 1. Task Completion Gate
+### 1. Task Completion & Design Authority Gate
 Before shipping, verify every task has passed its completion gate:
 - All acceptance criteria satisfied
 - All tests pass
 - Spec review passed
 - Code review passed
 - Simplicity review passed
+- **Design Authority Gate** (for visual UI scope):
+  - `Same Design Team Test: PASS`
+  - No unresolved `DS-xxx` blocking issues
+  - `design.md` is approved and up-to-date
+  - Exempt if project is confirmed non-visual (`applicable: false`)
 
 If any task has not passed all gates, stop and report which tasks are incomplete.
 

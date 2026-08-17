@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { validateDocs } from './validate-docs.mjs';
+import { validateDocs, containsUnresolvedPlaceholders } from './validate-docs.mjs';
 
 function createFixtureRoot() {
   const root = mkdtempSync(join(tmpdir(), 'dk-doc-val-test-'));
@@ -164,5 +164,74 @@ test('8. Inconsistent active version declaration fails while preserving historic
     assert.ok(res.errors.some(e => e.includes('Does not declare current active package version 9.9.9')));
   } finally {
     cleanup(fixture);
+  }
+});
+
+test('9. Explanatory prose discussing TODO or TBD passes validation', () => {
+  const fixture = createFixtureRoot();
+  try {
+    const prose = `# Design Spec Rules
+Do not use TBD placeholders in generated specifications.
+Specifications must contain no TODO or TBD markers.
+The validator rejects unresolved "TBD" values.
+Avoid placeholder content such as TODO, TBD, or Lorem ipsum.
+No required token/value may be left as \`TBD\`.
+Generated design.md contains reasoned implementation values rather than unresolved TBD design decisions.
+`;
+    writeFileSync(join(fixture, 'docs', '03-reference', 'commands', 'dk-test-cmd.md'), prose);
+    const res = validateDocs(fixture, { silent: true });
+    assert.equal(res.errors.length, 0, `Expected 0 errors, got: ${res.errors.join(', ')}`);
+  } finally {
+    cleanup(fixture);
+  }
+});
+
+test('10. Unresolved placeholder patterns correctly fail validation', () => {
+  // Unit tests on containsUnresolvedPlaceholders
+  const failingCases = [
+    'TBD',
+    'TODO',
+    '`TBD`',
+    '- TBD',
+    '* TODO',
+    '1. TBD',
+    'Owner: TBD',
+    'Status: [TBD]',
+    'Due Date: `TODO`',
+    '| Component | TBD |',
+    '## TBD',
+    '### TODO',
+    '# [TBD]',
+    'TODO: complete this section',
+    'TBD: define data schema',
+    '[TBD]',
+    '<TBD>',
+    '{{TBD}}',
+    'Lorem ipsum dolor sit amet, consectetur adipiscing elit.'
+  ];
+
+  for (const snippet of failingCases) {
+    assert.equal(
+      containsUnresolvedPlaceholders(snippet),
+      true,
+      `Expected snippet to be detected as unresolved placeholder: "${snippet}"`
+    );
+  }
+
+  const passingCases = [
+    'Do not use TBD placeholders.',
+    'Specifications must contain no TODO or TBD markers.',
+    'The validator rejects unresolved "TBD" values.',
+    'Avoid placeholder content such as TODO, TBD, or Lorem ipsum.',
+    'No required token/value may be left as `TBD`.',
+    'Generated design.md contains reasoned implementation values rather than unresolved TBD design decisions.'
+  ];
+
+  for (const snippet of passingCases) {
+    assert.equal(
+      containsUnresolvedPlaceholders(snippet),
+      false,
+      `Expected explanatory snippet to pass: "${snippet}"`
+    );
   }
 });

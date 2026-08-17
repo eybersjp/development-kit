@@ -27,6 +27,7 @@ npx development-kit init --opencode
 | Existing conventions | Scout findings are handed to implementers; `existing-code-first` and `minimal-diff` prevent disruption |
 | Existing tests | `regression-testing` protects them; no previously passing test may fail |
 | Existing dependencies | `dependency-restraint` requires justification for any *new* dependency |
+| Existing frontend UI | `/dk-design-system existing` inspects components/styles and offers preserve/refine/redesign options |
 | Existing docs | Kept as-is; only the artifacts this work requires are created |
 
 ## Recommended First Steps on an Existing Codebase

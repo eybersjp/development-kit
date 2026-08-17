@@ -30,20 +30,21 @@ It is **not** a project-management dashboard and it does not replace engineering
 
 ## Current release
 
-The current release line is **v0.7.1**.
+The current release line is **v0.8.0**.
 
-v0.7 introduces **DK Intelligence** (durable local-first engineering memory, provenance, staleness, and lifecycle-aware context assembly) and **DK Control Center** (integrated local browser management interface, Runtime API, `/dk-control` launcher, and project-local runtime bootstrap).
+v0.8 introduces **DKF Design Authority** (enforcing `design.md` as the single authoritative source of truth for frontend UI styling, token architecture, and visual consistency), the `/dk-design-system` command, reference-based design system generation, and strict controlled design amendments.
 
 ## What you get
 
 | Capability | What it provides |
 |---|---|
 | **Automated Guided Workflow** | `/dk-autopilot` coordinates the complete lifecycle and persists progress between sessions. |
+| **DKF Design Authority** | `/dk-design-system` establishes, inspects, verifies, and amends the authoritative project `design.md`, eliminating frontend visual drift. |
 | **DK Intelligence & Memory** | Durable local engineering memory, architecture decisions, and lifecycle-aware context budgeting with strict project isolation. |
 | **DK Control Center** | Integrated local browser UI (`/dk-control`) and secure loopback Runtime API for inspecting and governing workflow, decisions, memory, and settings. |
-| **15 workflow commands** | Discovery, external research, specification, design, planning, implementation, testing, review, debugging, simplification, status, control center, and shipping. |
+| **16 workflow commands** | Discovery, design system governance, external research, specification, design, planning, implementation, testing, review, debugging, simplification, status, control center, and shipping. |
 | **18 specialist agents** | Focused personas for discovery, architecture, implementation, testing, security, accessibility, design, and review. |
-| **46 engineering skills** | Reusable instructions covering the full software-development lifecycle plus provider-neutral external research. |
+| **47 engineering skills** | Tested skills for requirements, design governance, TDD, code review, security review, a11y, and research provenance. |
 | **External Capability Providers** | Optional adapters (e.g. Agent-Reach, TencentDB Agent Memory) can extend capabilities without becoming trusted instruction authorities or core dependencies. |
 | **Verification-first execution** | Tests, runtime checks, specification review, quality review, and simplification gates before completion. |
 | **Safety controls** | Human approval gates for authenticated provider access, external writes, system changes, remote/destructive actions, deployment, and release operations. |

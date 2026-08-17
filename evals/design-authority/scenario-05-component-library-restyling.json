@@ -1,0 +1,20 @@
+{
+  "skill": "design-authority",
+  "scenario": "Restyle third-party component library defaults to match project design system",
+  "input": {
+    "command": "/dk-build",
+    "task": "Add a Radix/shadcn dialog modal to the application",
+    "design_authority_state": "approved"
+  },
+  "expected": {
+    "restyles_library_defaults": true,
+    "applies_tokens": [
+      "border-radius",
+      "elevation/shadow",
+      "typography scale",
+      "surface background",
+      "border colors"
+    ],
+    "must_not_allow_stock_library_look": true
+  }
+}

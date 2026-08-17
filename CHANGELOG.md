@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-17
+
+### Added
+- **DKF Design Authority**: First-class lifecycle capability enforcing `design.md` as the single authoritative source of truth for frontend UI styling, token architecture, and visual consistency across AI coding workflows.
+- **`/dk-design-system` Command**: New command (`commands/dk-design-system.md`) supporting 6 modes (`create`, `reference`, `existing`, `inspect`, `verify`, `amend`).
+- **`design-authority` Skill**: Shared design governance skill (`skills/design-authority/SKILL.md`) enforcing 7-level conflict priority and preventing unauthorized visual drift.
+- **Reference Analysis Template**: Canonical 31-section analysis template (`templates/design-system-reference-analysis.md`) generating complete implementation-grade design systems from visual references with observed/inferred/recommended evidence tagging.
+- **Design Authority State Persistence**: Per-project JSON state storage (`.development-kit/design-system-state.json`) with deterministic schema v1 lifecycle states.
+- **Design System Preflight**: Mandatory `DESIGN SYSTEM PRE-FLIGHT` gate integrated into `/dk-build`, `/dk-build-auto`, and `/dk-autopilot` to prevent unapproved UI execution.
+- **Design System Compliance Testing**: Heuristic checks integrated into `/dk-test` for design tokens, unmapped colors, arbitrary utility values, font consistency, responsive structure, and accessibility.
+- **Same Design Team Test & DS Review**: Specialist review pass in `/dk-review` and `agents/design-reviewer.md` with `DS-xxx` issue reporting and `Same Design Team Test: PASS | PARTIAL | FAIL` verdict gating.
+- **Early Visual Reference Discovery**: Interactive prompt near the start of `/dk-idea` for attaching design references, using existing `design.md`, deriving from existing UI, or deferring.
+- **Controlled Design System Amendments**: Strict 6-field `DESIGN SYSTEM AMENDMENT PROPOSAL` flow requiring explicit user approval before foundational changes to `design.md`.
+- **Backward Compatibility**: Non-destructive lazy state migration for pre-v0.8 projects with existing `design.md` and complete exemption for non-visual / backend-only projects.
+- **Design Authority Evaluation Suite**: 10 behavioral eval scenarios (`evals/design-authority/`) with test runner.
+
 ## [0.7.1] - 2026-08-15
 
 ### Fixed
@@ -154,7 +170,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Production-grade 12-section documentation system.
 - Documentation validation suite and installer synchronization verification.
 
-[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/eybersjp/development-kit/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/eybersjp/development-kit/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/eybersjp/development-kit/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/eybersjp/development-kit/compare/v0.6.0...v0.6.1

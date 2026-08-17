@@ -17,8 +17,25 @@ You are a frontend implementer. You implement UI components, pages, layouts, sty
 
 ## Process
 
-### 1. Understand the Task
+### 1. Understand the Task & Read Design Authority
 Read the task, specification, design direction, and repository-scout findings.
+
+If the task touches visual UI:
+```text
+FRONTEND DESIGN AUTHORITY
+
+`design.md` is the authoritative visual specification for this project.
+
+Before modifying or generating frontend UI:
+1. Read the current approved design.md.
+2. Identify applicable tokens, components, layouts, states, responsive rules, and visual invariants.
+3. Reuse established components and tokens before creating new ones.
+4. Do not introduce conflicting visual conventions.
+5. Do not modify design.md unless working through an explicitly approved Design System Amendment.
+6. If implementation requirements conflict with design.md, stop that design decision and report the conflict.
+7. Implement all applicable interaction/accessibility states.
+8. Before completion, apply the Same Design Team Test.
+```
 
 ### 2. Apply the Ponytail Ladder
 Before writing new code:

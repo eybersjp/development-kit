@@ -20,8 +20,24 @@ Choose the next uncompleted task from the approved task plan.
 ### 2. Repository Scout
 Spawn the **repository-scout-agent** to gather task context. Apply the `repository-orientation` skill to understand the relevant code.
 
-### 3. Validate Task Readiness
+### 3. Validate Task Readiness & Design System Preflight
 Run the task-readiness-check before spawning an implementation agent. Confirm the task is clear enough to implement.
+
+If the task touches visual frontend scope, execute:
+
+```text
+DESIGN SYSTEM PRE-FLIGHT
+
+[ ] applicability determined
+[ ] design.md exists when required
+[ ] state is approved when required
+[ ] current design-system version known
+[ ] no unresolved amendment blocks the task
+[ ] implementation agent has been given current design.md
+[ ] relevant reference/baseline evidence is available when required
+```
+
+If state is `deferred`, `unconfigured`, `draft`, or `awaiting_approval`, halt frontend tasks and route to `/dk-design-system`.
 
 ### 4. Apply Implementation Restraint Skills
 Before the implementation agent starts, ensure these principles are loaded:

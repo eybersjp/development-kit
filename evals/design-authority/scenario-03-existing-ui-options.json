@@ -1,0 +1,18 @@
+{
+  "skill": "design-authority",
+  "scenario": "Establish design authority for an existing UI codebase",
+  "input": {
+    "command": "/dk-design-system existing",
+    "project_type": "Existing React + Tailwind frontend application"
+  },
+  "expected": {
+    "inspects_existing_codebase": true,
+    "presents_4_options": [
+      "Preserve & Document",
+      "Refine Current Design",
+      "Redesign",
+      "Use Existing design.md"
+    ],
+    "must_not_destroy_existing_styles_without_choice": true
+  }
+}

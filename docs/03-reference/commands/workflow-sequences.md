@@ -8,6 +8,14 @@
 
 Use this sequence when starting from a vague concept and proceeding through to release.
 
+## Visual Frontend Lifecycle Sequence (DKF Design Authority)
+
+```text
+/dk-idea (with visual references) → /dk-design-system (create/reference) → /dk-spec → /dk-design → /dk-tasks → /dk-build (with preflight) → /dk-test (compliance) → /dk-review (Same Design Team) → /dk-ship
+```
+
+Use this sequence for projects with a visual user interface to establish `design.md` and prevent visual drift.
+
 ## Targeted Implementation Sequence (Approved Plan)
 
 ```text
