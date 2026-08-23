@@ -41,6 +41,8 @@ const VERIFIER_ROLES = new Set([
   'test-engineer',
 ]);
 
+const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/;
+
 export class EvidenceValidationError extends Error {
   constructor(message, details = []) {
     super(message);
@@ -94,8 +96,7 @@ function normalizeEvidenceItem(item) {
 
   const normalized = { type };
   for (const [key, value] of Object.entries(item)) {
-    if (key === 'type') continue;
-    if (value === undefined) continue;
+    if (key === 'type' || value === undefined) continue;
     if (typeof value === 'function' || typeof value === 'symbol') {
       throw new EvidenceValidationError(`Evidence property ${key} is not serializable`);
     }
@@ -148,11 +149,20 @@ function normalizeControlResults(results = []) {
   return map;
 }
 
-function criterionVerdict(entries, { requiredKey = 'required' } = {}) {
-  const requiredEntries = entries.filter((entry) => entry[requiredKey] !== false);
-  if (requiredEntries.some((entry) => entry.status === 'FAIL')) return VERDICTS.FAIL;
-  if (requiredEntries.some((entry) => ['PARTIAL', 'UNVERIFIED'].includes(entry.status))) return VERDICTS.INCOMPLETE;
+function computeVerdict(entries, { optionalKey = null } = {}) {
+  const relevant = optionalKey ? entries.filter((entry) => entry[optionalKey] !== false) : entries;
+  if (relevant.some((entry) => entry.status === 'FAIL')) return VERDICTS.FAIL;
+  if (relevant.some((entry) => ['PARTIAL', 'UNVERIFIED'].includes(entry.status))) return VERDICTS.INCOMPLETE;
   return VERDICTS.PASS;
+}
+
+function validateEvidenceBearingStatus(entry, label) {
+  if (entry.status === 'PASS' && entry.requiredEvidence !== false && entry.evidence.length === 0) {
+    throw new EvidenceValidationError(`PASS ${label} requires evidence`);
+  }
+  if (entry.status === 'NOT_APPLICABLE' && !entry.reason) {
+    throw new EvidenceValidationError(`NOT_APPLICABLE ${label} requires a reason`);
+  }
 }
 
 export function evaluateControlCoverage({
@@ -184,21 +194,14 @@ export function evaluateControlCoverage({
       };
     }
 
-    if (observed.status === 'PASS' && control.requiredEvidence && observed.evidence.length === 0) {
-      throw new EvidenceValidationError(`PASS control ${control.id} requires evidence`);
-    }
-    if (observed.status === 'NOT_APPLICABLE' && !observed.reason) {
-      throw new EvidenceValidationError(`NOT_APPLICABLE control ${control.id} requires a reason`);
-    }
-
-    return { ...control, ...observed };
+    const normalized = { ...control, ...observed };
+    validateEvidenceBearingStatus(normalized, `control ${control.id}`);
+    return normalized;
   });
 
   const requiredControls = controls.filter((control) => control.required);
   const verifiedRequired = requiredControls.filter((control) => ['PASS', 'NOT_APPLICABLE'].includes(control.status));
-  const verdict = criterionVerdict(controls);
-
-  return {
+  const manifest = {
     schemaVersion: '1.0.0',
     contractId: normalizedContractId,
     runId: normalizedRunId,
@@ -209,8 +212,11 @@ export function evaluateControlCoverage({
       verifiedRequired: verifiedRequired.length,
       percent: requiredControls.length === 0 ? 100 : Math.round((verifiedRequired.length / requiredControls.length) * 10000) / 100,
     },
-    verdict,
+    verdict: computeVerdict(controls, { optionalKey: 'required' }),
   };
+
+  validateControlManifest(manifest);
+  return manifest;
 }
 
 function normalizeVerificationCriteria(contract, criteria = []) {
@@ -241,16 +247,9 @@ function normalizeVerificationCriteria(contract, criteria = []) {
     if (!CRITERION_STATUSES.includes(status)) throw new EvidenceValidationError(`Unsupported criterion status for ${id}: ${status}`);
     const evidence = normalizeEvidenceList(criterion.evidence ?? []);
     const reason = criterion.reason === undefined || criterion.reason === null ? null : nonEmptyString(criterion.reason, `criterion ${id} reason`);
-    const expectedCriterion = expected.get(id);
-
-    if (status === 'PASS' && expectedCriterion.requiredEvidence && evidence.length === 0) {
-      throw new EvidenceValidationError(`PASS criterion ${id} requires evidence`);
-    }
-    if (status === 'NOT_APPLICABLE' && !reason) {
-      throw new EvidenceValidationError(`NOT_APPLICABLE criterion ${id} requires a reason`);
-    }
-
-    observed.set(id, { ...expectedCriterion, status, evidence, reason });
+    const normalized = { ...expected.get(id), status, evidence, reason };
+    validateEvidenceBearingStatus(normalized, `criterion ${id}`);
+    observed.set(id, normalized);
   }
 
   return [...expected.values()].map((criterion) => observed.get(criterion.id) ?? {
@@ -283,14 +282,15 @@ export function createVerificationRecord({
   if (sourceFingerprint !== contract.sourceFingerprint) {
     throw new EvidenceValidationError('Verification source fingerprint does not match the Development Contract');
   }
+  if (typeof sourceFingerprint !== 'string' || !SHA256_PATTERN.test(sourceFingerprint)) {
+    throw new EvidenceValidationError('sourceFingerprint must be a sha256 fingerprint');
+  }
   if (typeof createdAt !== 'string' || Number.isNaN(Date.parse(createdAt))) {
     throw new EvidenceValidationError('createdAt must be a valid timestamp');
   }
 
   const normalizedCriteria = normalizeVerificationCriteria(contract, criteria);
-  const verdict = criterionVerdict(normalizedCriteria, { requiredKey: 'requiredEvidence' });
-
-  return {
+  const record = {
     schemaVersion: '1.0.0',
     contractId,
     runId: normalizedRunId,
@@ -299,8 +299,92 @@ export function createVerificationRecord({
     sourceFingerprint,
     createdAt,
     criteria: normalizedCriteria,
-    verdict,
+    verdict: computeVerdict(normalizedCriteria),
   };
+
+  validateVerificationRecord(record);
+  return record;
+}
+
+export function validateVerificationRecord(record) {
+  if (!isPlainObject(record)) throw new EvidenceValidationError('verification record is required');
+  identifier(record.contractId, 'verification.contractId');
+  identifier(record.runId, 'verification.runId');
+  const role = identifier(record.role, 'verification.role');
+  if (!VERIFIER_ROLES.has(role)) throw new EvidenceValidationError(`Role may not produce an authoritative verification record: ${role}`);
+  if (!['fresh', 'rehydrated'].includes(record.contextIsolation)) throw new EvidenceValidationError('Verification context must be fresh or rehydrated');
+  if (typeof record.sourceFingerprint !== 'string' || !SHA256_PATTERN.test(record.sourceFingerprint)) throw new EvidenceValidationError('verification sourceFingerprint is invalid');
+  if (typeof record.createdAt !== 'string' || Number.isNaN(Date.parse(record.createdAt))) throw new EvidenceValidationError('verification createdAt is invalid');
+  if (!Array.isArray(record.criteria) || record.criteria.length === 0) throw new EvidenceValidationError('verification criteria must not be empty');
+
+  const ids = new Set();
+  for (const criterion of record.criteria) {
+    if (!isPlainObject(criterion)) throw new EvidenceValidationError('verification criteria entries must be objects');
+    const id = identifier(criterion.id, 'verification criterion id');
+    if (ids.has(id)) throw new EvidenceValidationError(`Duplicate verification criterion id: ${id}`);
+    ids.add(id);
+    nonEmptyString(criterion.statement, `criterion ${id} statement`);
+    if (!CRITERION_STATUSES.includes(criterion.status)) throw new EvidenceValidationError(`Unsupported criterion status for ${id}: ${criterion.status}`);
+    const normalized = {
+      ...criterion,
+      evidence: normalizeEvidenceList(criterion.evidence ?? []),
+      reason: criterion.reason ?? null,
+      requiredEvidence: criterion.requiredEvidence !== false,
+    };
+    validateEvidenceBearingStatus(normalized, `criterion ${id}`);
+  }
+
+  const expectedVerdict = computeVerdict(record.criteria);
+  if (record.verdict !== expectedVerdict) {
+    throw new EvidenceValidationError(`Verification verdict ${record.verdict} does not match computed verdict ${expectedVerdict}`);
+  }
+  return true;
+}
+
+export function validateControlManifest(manifest) {
+  if (!isPlainObject(manifest)) throw new EvidenceValidationError('control manifest is required');
+  identifier(manifest.contractId, 'control manifest contractId');
+  identifier(manifest.runId, 'control manifest runId');
+  identifier(manifest.domain, 'control manifest domain');
+  if (!Array.isArray(manifest.controls) || manifest.controls.length === 0) throw new EvidenceValidationError('control manifest controls must not be empty');
+
+  const ids = new Set();
+  for (const control of manifest.controls) {
+    if (!isPlainObject(control)) throw new EvidenceValidationError('control manifest entries must be objects');
+    const id = identifier(control.id, 'control id');
+    if (ids.has(id)) throw new EvidenceValidationError(`Duplicate control id: ${id}`);
+    ids.add(id);
+    nonEmptyString(control.statement, `control ${id} statement`);
+    if (typeof control.required !== 'boolean') throw new EvidenceValidationError(`control ${id} required must be boolean`);
+    if (typeof control.requiredEvidence !== 'boolean') throw new EvidenceValidationError(`control ${id} requiredEvidence must be boolean`);
+    if (!CRITERION_STATUSES.includes(control.status)) throw new EvidenceValidationError(`Unsupported control status for ${id}: ${control.status}`);
+    const normalized = {
+      ...control,
+      evidence: normalizeEvidenceList(control.evidence ?? []),
+      reason: control.reason ?? null,
+    };
+    validateEvidenceBearingStatus(normalized, `control ${id}`);
+  }
+
+  const requiredControls = manifest.controls.filter((control) => control.required);
+  const verifiedRequired = requiredControls.filter((control) => ['PASS', 'NOT_APPLICABLE'].includes(control.status));
+  const expectedCoverage = {
+    expectedRequired: requiredControls.length,
+    verifiedRequired: verifiedRequired.length,
+    percent: requiredControls.length === 0 ? 100 : Math.round((verifiedRequired.length / requiredControls.length) * 10000) / 100,
+  };
+  if (!isPlainObject(manifest.coverage)
+    || manifest.coverage.expectedRequired !== expectedCoverage.expectedRequired
+    || manifest.coverage.verifiedRequired !== expectedCoverage.verifiedRequired
+    || manifest.coverage.percent !== expectedCoverage.percent) {
+    throw new EvidenceValidationError('Control coverage summary does not match control statuses');
+  }
+
+  const expectedVerdict = computeVerdict(manifest.controls, { optionalKey: 'required' });
+  if (manifest.verdict !== expectedVerdict) {
+    throw new EvidenceValidationError(`Control manifest verdict ${manifest.verdict} does not match computed verdict ${expectedVerdict}`);
+  }
+  return true;
 }
 
 export function getRunDirectory(rootDir, contractId, runId) {
@@ -332,13 +416,13 @@ function persistImmutableJson(filePath, value) {
 }
 
 export function persistVerificationRecord(record, rootDir = process.cwd()) {
-  if (!isPlainObject(record)) throw new EvidenceValidationError('verification record is required');
+  validateVerificationRecord(record);
   const runDir = getRunDirectory(rootDir, record.contractId, record.runId);
   return persistImmutableJson(path.join(runDir, 'verification.json'), record);
 }
 
 export function persistControlManifest(manifest, rootDir = process.cwd()) {
-  if (!isPlainObject(manifest)) throw new EvidenceValidationError('control manifest is required');
+  validateControlManifest(manifest);
   const runDir = getRunDirectory(rootDir, manifest.contractId, manifest.runId);
   const domain = identifier(manifest.domain, 'domain');
   return persistImmutableJson(path.join(runDir, `control-${domain}.json`), manifest);
