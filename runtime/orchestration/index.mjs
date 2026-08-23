@@ -114,3 +114,5 @@ export * from './correction-engine.mjs';
 export * from './host-capabilities.mjs';
 export * from './gate-selector.mjs';
 export * from './orchestration-run.mjs';
+export * from './execution-safety.mjs';
+export * from './reconciliation.mjs';

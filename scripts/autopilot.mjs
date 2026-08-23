@@ -1,20 +1,6 @@
 #!/usr/bin/env node
 /**
  * Development Kit Autopilot — Executable CLI Adapter
- *
- * Usage:
- *   node scripts/autopilot.mjs --init [--autonomy=guided-autopilot|high-autonomy|review-every-stage]
- *   node scripts/autopilot.mjs --status
- *   node scripts/autopilot.mjs --next
- *   node scripts/autopilot.mjs --begin-action --action=<actionId>
- *   node scripts/autopilot.mjs --record-result [--input-file=<path> | --input-json=<json>]
- *   node scripts/autopilot.mjs --renew-action --action=<actionId>
- *   node scripts/autopilot.mjs --approve --approval=<approvalId> --token=<token>
- *   node scripts/autopilot.mjs --reject --approval=<approvalId> --token=<token>
- *   node scripts/autopilot.mjs --pause
- *   node scripts/autopilot.mjs --resume
- *   node scripts/autopilot.mjs --cancel
- *   node scripts/autopilot.mjs --cancel --confirm=<confirmationToken>
  */
 
 import fs from 'node:fs';
@@ -32,20 +18,17 @@ import {
   approveState,
   rejectState,
   requestCancelState,
-  confirmCancelState
+  confirmCancelState,
 } from '../runtime/autopilot/transition-model.mjs';
 import { validateActionResult } from '../runtime/autopilot/validators.mjs';
+import { enforceAutopilotOrchestrationGate } from '../runtime/autopilot/orchestration-result-gate.mjs';
 
 function parseArgs() {
-  const args = process.argv.slice(2);
   const options = {};
-  for (const arg of args) {
-    if (arg.startsWith('--')) {
-      const parts = arg.substring(2).split('=');
-      const key = parts[0];
-      const value = parts.length > 1 ? parts.slice(1).join('=') : true;
-      options[key] = value;
-    }
+  for (const arg of process.argv.slice(2)) {
+    if (!arg.startsWith('--')) continue;
+    const [key, ...rest] = arg.substring(2).split('=');
+    options[key] = rest.length ? rest.join('=') : true;
   }
   return options;
 }
@@ -53,6 +36,20 @@ function parseArgs() {
 function respond(success, data, exitCode = 0) {
   console.log(JSON.stringify({ success, ...data }, null, 2));
   process.exit(exitCode);
+}
+
+function resolveInputFile(rootDir, inputFile) {
+  const root = path.resolve(rootDir);
+  const resolved = path.resolve(root, inputFile);
+  const relative = path.relative(root, resolved);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error('Security violation: invalid input file path');
+  }
+  return resolved;
+}
+
+function requireWorkflow(currentState) {
+  if (!currentState) respond(false, { error: 'No active autopilot workflow found', code: 'ERROR_NO_WORKFLOW' }, 1);
 }
 
 function main() {
@@ -67,7 +64,6 @@ function main() {
   }
 
   const currentState = getCurrentState(rootDir);
-
   if (currentState) {
     const identity = getProjectIdentity(rootDir);
     if (currentState.projectId !== identity.projectId) {
@@ -76,17 +72,12 @@ function main() {
   }
 
   if (options.status) {
-    if (!currentState) {
-      return respond(false, { error: 'No active autopilot workflow found', code: 'ERROR_NO_WORKFLOW' }, 1);
-    }
+    requireWorkflow(currentState);
     return respond(true, { state: currentState });
   }
 
   if (options.cancel) {
-    if (!currentState) {
-      return respond(false, { error: 'No active autopilot workflow found', code: 'ERROR_NO_WORKFLOW' }, 1);
-    }
-
+    requireWorkflow(currentState);
     if (options.confirm) {
       try {
         const updatedState = confirmCancelState(currentState, options.confirm);
@@ -95,26 +86,21 @@ function main() {
       } catch (err) {
         return respond(false, { error: err.message, code: 'ERROR_CANCELLATION_FAILED' }, 1);
       }
-    } else {
-      const { confirmationToken } = requestCancelState(currentState);
-      saveStateRevision(currentState, rootDir);
-      return respond(true, {
-        status: 'CANCELLATION_CONFIRMATION_REQUIRED',
-        message: 'Cancellation requested. Re-run with --cancel --confirm=<confirmationToken> to proceed.',
-        confirmationToken
-      });
     }
+    const { confirmationToken } = requestCancelState(currentState);
+    saveStateRevision(currentState, rootDir);
+    return respond(true, {
+      status: 'CANCELLATION_CONFIRMATION_REQUIRED',
+      message: 'Cancellation requested. Re-run with --cancel --confirm=<confirmationToken> to proceed.',
+      confirmationToken,
+    });
   }
 
   if (options.approve) {
-    if (!currentState) {
-      return respond(false, { error: 'No active autopilot workflow found', code: 'ERROR_NO_WORKFLOW' }, 1);
-    }
+    requireWorkflow(currentState);
     const approvalId = typeof options.approval === 'string' ? options.approval : options.approve;
     const token = options.token;
-    if (!approvalId || !token) {
-      return respond(false, { error: 'Missing --approval or --token parameter', code: 'ERROR_INVALID_ARGS' }, 1);
-    }
+    if (!approvalId || !token) return respond(false, { error: 'Missing --approval or --token parameter', code: 'ERROR_INVALID_ARGS' }, 1);
     try {
       const updatedState = approveState(currentState, approvalId, token);
       saveStateRevision(updatedState, rootDir);
@@ -125,14 +111,10 @@ function main() {
   }
 
   if (options.reject) {
-    if (!currentState) {
-      return respond(false, { error: 'No active autopilot workflow found', code: 'ERROR_NO_WORKFLOW' }, 1);
-    }
+    requireWorkflow(currentState);
     const approvalId = typeof options.approval === 'string' ? options.approval : options.reject;
     const token = options.token;
-    if (!approvalId || !token) {
-      return respond(false, { error: 'Missing --approval or --token parameter', code: 'ERROR_INVALID_ARGS' }, 1);
-    }
+    if (!approvalId || !token) return respond(false, { error: 'Missing --approval or --token parameter', code: 'ERROR_INVALID_ARGS' }, 1);
     try {
       const updatedState = rejectState(currentState, approvalId, token);
       saveStateRevision(updatedState, rootDir);
@@ -143,9 +125,7 @@ function main() {
   }
 
   if (options.pause) {
-    if (!currentState) {
-      return respond(false, { error: 'No active autopilot workflow found', code: 'ERROR_NO_WORKFLOW' }, 1);
-    }
+    requireWorkflow(currentState);
     try {
       const updatedState = pauseWorkflow(currentState);
       saveStateRevision(updatedState, rootDir);
@@ -156,9 +136,7 @@ function main() {
   }
 
   if (options.resume) {
-    if (!currentState) {
-      return respond(false, { error: 'No active autopilot workflow found', code: 'ERROR_NO_WORKFLOW' }, 1);
-    }
+    requireWorkflow(currentState);
     try {
       const updatedState = resumeWorkflow(currentState);
       saveStateRevision(updatedState, rootDir);
@@ -169,13 +147,9 @@ function main() {
   }
 
   if (options['renew-action']) {
-    if (!currentState) {
-      return respond(false, { error: 'No active autopilot workflow found', code: 'ERROR_NO_WORKFLOW' }, 1);
-    }
+    requireWorkflow(currentState);
     const actionId = options.action;
-    if (!actionId) {
-      return respond(false, { error: 'Missing --action parameter', code: 'ERROR_INVALID_ARGS' }, 1);
-    }
+    if (!actionId) return respond(false, { error: 'Missing --action parameter', code: 'ERROR_INVALID_ARGS' }, 1);
     try {
       const updatedState = renewActionLease(currentState, actionId);
       saveStateRevision(updatedState, rootDir);
@@ -186,12 +160,8 @@ function main() {
   }
 
   if (options.next) {
-    if (!currentState) {
-      return respond(false, { error: 'No active autopilot workflow found', code: 'ERROR_NO_WORKFLOW' }, 1);
-    }
-    if (currentState.workflowStatus === 'paused') {
-      return respond(false, { error: 'Workflow is paused', code: 'ERROR_WORKFLOW_PAUSED' }, 1);
-    }
+    requireWorkflow(currentState);
+    if (currentState.workflowStatus === 'paused') return respond(false, { error: 'Workflow is paused', code: 'ERROR_WORKFLOW_PAUSED' }, 1);
     const action = calculateNextAction(currentState);
     if (!currentState.activeAction && action.actionId) {
       currentState.activeAction = action;
@@ -201,16 +171,10 @@ function main() {
   }
 
   if (options['begin-action']) {
-    if (!currentState) {
-      return respond(false, { error: 'No active autopilot workflow found', code: 'ERROR_NO_WORKFLOW' }, 1);
-    }
-    if (currentState.workflowStatus === 'paused') {
-      return respond(false, { error: 'Workflow is paused', code: 'ERROR_WORKFLOW_PAUSED' }, 1);
-    }
+    requireWorkflow(currentState);
+    if (currentState.workflowStatus === 'paused') return respond(false, { error: 'Workflow is paused', code: 'ERROR_WORKFLOW_PAUSED' }, 1);
     const actionId = options.action;
-    if (!actionId) {
-      return respond(false, { error: 'Missing --action parameter', code: 'ERROR_INVALID_ARGS' }, 1);
-    }
+    if (!actionId) return respond(false, { error: 'Missing --action parameter', code: 'ERROR_INVALID_ARGS' }, 1);
     try {
       const updatedState = beginActionState(currentState, actionId);
       saveStateRevision(updatedState, rootDir);
@@ -221,28 +185,21 @@ function main() {
   }
 
   if (options['record-result']) {
-    if (!currentState) {
-      return respond(false, { error: 'No active autopilot workflow found', code: 'ERROR_NO_WORKFLOW' }, 1);
-    }
-    if (currentState.workflowStatus === 'paused') {
-      return respond(false, { error: 'Workflow is paused', code: 'ERROR_WORKFLOW_PAUSED' }, 1);
-    }
-
-    let rawResultData = null;
-    if (options['input-file']) {
-      const filePath = path.resolve(rootDir, options['input-file']);
-      if (!filePath.startsWith(rootDir) || filePath.includes('..')) {
-        return respond(false, { error: 'Security violation: invalid input file path', code: 'ERROR_SECURITY_VIOLATION' }, 1);
-      }
-      rawResultData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    } else if (options['input-json']) {
-      rawResultData = JSON.parse(options['input-json']);
-    } else {
-      return respond(false, { error: 'Missing --input-file or --input-json parameter', code: 'ERROR_INVALID_ARGS' }, 1);
-    }
+    requireWorkflow(currentState);
+    if (currentState.workflowStatus === 'paused') return respond(false, { error: 'Workflow is paused', code: 'ERROR_WORKFLOW_PAUSED' }, 1);
 
     try {
+      let rawResultData;
+      if (options['input-file']) {
+        rawResultData = JSON.parse(fs.readFileSync(resolveInputFile(rootDir, options['input-file']), 'utf8'));
+      } else if (options['input-json']) {
+        rawResultData = JSON.parse(options['input-json']);
+      } else {
+        return respond(false, { error: 'Missing --input-file or --input-json parameter', code: 'ERROR_INVALID_ARGS' }, 1);
+      }
+
       validateActionResult(rawResultData);
+      enforceAutopilotOrchestrationGate(currentState, rawResultData);
       const updatedState = recordResultState(currentState, rawResultData);
       saveStateRevision(updatedState, rootDir);
       return respond(true, { message: 'Action result recorded successfully', state: updatedState });
@@ -251,7 +208,10 @@ function main() {
     }
   }
 
-  return respond(false, { error: 'Unknown CLI operation. Supported: --init, --status, --next, --begin-action, --record-result, --renew-action, --approve, --reject, --pause, --resume, --cancel', code: 'ERROR_UNKNOWN_OPERATION' }, 1);
+  return respond(false, {
+    error: 'Unknown CLI operation. Supported: --init, --status, --next, --begin-action, --record-result, --renew-action, --approve, --reject, --pause, --resume, --cancel',
+    code: 'ERROR_UNKNOWN_OPERATION',
+  }, 1);
 }
 
 main();
