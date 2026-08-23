@@ -116,3 +116,4 @@ export * from './gate-selector.mjs';
 export * from './orchestration-run.mjs';
 export * from './execution-safety.mjs';
 export * from './reconciliation.mjs';
+export * from './plan-validator.mjs';
