@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://development-kit.dev/schemas/evidence-record.schema.json",
+  "title": "Development Kit Evidence Record",
+  "type": "object",
+  "required": ["type"],
+  "properties": {
+    "type": { "enum": ["source", "diff", "test", "command", "runtime", "browser", "visual", "schema", "migration", "configuration", "manual"] },
+    "path": { "type": "string" },
+    "range": { "type": "string" },
+    "id": { "type": "string" },
+    "command": { "type": "string" },
+    "result": {},
+    "description": { "type": "string" }
+  },
+  "additionalProperties": true
+}

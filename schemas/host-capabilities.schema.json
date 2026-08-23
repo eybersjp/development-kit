@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://development-kit.dev/schemas/host-capabilities.schema.json",
+  "title": "Development Kit Host Capabilities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "fileRead", "fileWrite", "shell", "git", "freshContext", "subagents", "parallelAgents", "browser", "visualInspection", "externalModelRouting"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "fileRead": { "type": "boolean" },
+    "fileWrite": { "type": "boolean" },
+    "shell": { "type": "boolean" },
+    "git": { "type": "boolean" },
+    "freshContext": { "type": "boolean" },
+    "subagents": { "type": "boolean" },
+    "parallelAgents": { "type": "boolean" },
+    "browser": { "type": "boolean" },
+    "visualInspection": { "type": "boolean" },
+    "externalModelRouting": { "type": "boolean" }
+  }
+}
