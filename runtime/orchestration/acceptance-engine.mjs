@@ -2,6 +2,7 @@ import { checkContractStaleness, validateDevelopmentContract } from './developme
 import { validateControlManifest, validateVerificationRecord } from './evidence-store.mjs';
 import { validateReviewResult } from './review-result.mjs';
 import { validateArchitectureDrift } from './architecture-drift.mjs';
+import { selectRequiredGates } from './gate-selector.mjs';
 
 const ACCEPTANCE_STATES = Object.freeze(['ACCEPTED', 'PENDING', 'BLOCKED']);
 
@@ -16,21 +17,21 @@ function object(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function requiredPolicyArray(contract, key) {
-  const value = contract.approvalPolicy?.[key] ?? [];
-  if (!Array.isArray(value)) throw new AcceptanceEngineError(`approvalPolicy.${key} must be an array`);
-  return [...new Set(value.map((item) => {
-    if (typeof item !== 'string' || !item.trim()) throw new AcceptanceEngineError(`approvalPolicy.${key} entries must be strings`);
-    return item.trim();
-  }))];
-}
-
 function validApproval(approval, contract) {
   return object(approval)
     && typeof approval.id === 'string'
     && approval.status === 'approved'
     && approval.contractId === contract.contractId
     && approval.sourceFingerprint === contract.sourceFingerprint;
+}
+
+function deriveRequiredGates(contract) {
+  return selectRequiredGates(contract, {
+    touchesUi: contract.designConstraints.length > 0
+      || contract.authoritativeSources.some((source) => source.kind === 'design-authority' || /(^|\/)design\.md$/i.test(source.path)),
+    securitySensitive: contract.securityConstraints.length > 0 || contract.risk.level >= 3,
+    architectureSensitive: contract.risk.level >= 3 || contract.requiredReviewers.includes('architecture-reviewer'),
+  });
 }
 
 export function decideAcceptance({
@@ -46,6 +47,7 @@ export function decideAcceptance({
   validateDevelopmentContract(contract);
   const blockers = [];
   const pending = [];
+  const requiredGates = deriveRequiredGates(contract);
 
   const staleness = checkContractStaleness(contract, rootDir);
   if (staleness.stale) blockers.push({ code: 'STALE_CONTRACT', detail: staleness.changes });
@@ -73,7 +75,7 @@ export function decideAcceptance({
     if (review.verdict === 'FAIL') blockers.push({ code: 'REVIEW_FAILED', role: review.role });
     if (review.verdict === 'INCOMPLETE') pending.push({ code: 'REVIEW_INCOMPLETE', role: review.role });
   }
-  for (const role of contract.requiredReviewers) {
+  for (const role of requiredGates.reviewers) {
     if (!reviewByRole.has(role)) pending.push({ code: 'MISSING_REQUIRED_REVIEW', role });
   }
 
@@ -87,20 +89,20 @@ export function decideAcceptance({
     if (manifest.verdict === 'FAIL') blockers.push({ code: 'CONTROL_FAILED', domain: manifest.domain });
     if (manifest.verdict === 'INCOMPLETE') pending.push({ code: 'CONTROL_INCOMPLETE', domain: manifest.domain });
   }
-  for (const domain of requiredPolicyArray(contract, 'requiredControlDomains')) {
+  for (const domain of requiredGates.controlDomains) {
     if (!controlsByDomain.has(domain)) pending.push({ code: 'MISSING_CONTROL_DOMAIN', domain });
   }
 
   if (architectureDrift) {
     validateArchitectureDrift(architectureDrift);
     if (architectureDrift.verdict !== 'PASS') blockers.push({ code: 'ARCHITECTURE_DRIFT_BLOCKED', findings: architectureDrift.findings });
-  } else if (contract.requiredReviewers.includes('architecture-reviewer')) {
+  } else if (requiredGates.reviewers.includes('architecture-reviewer')) {
     pending.push({ code: 'MISSING_ARCHITECTURE_DRIFT_REVIEW' });
   }
 
   if (!Array.isArray(approvals)) throw new AcceptanceEngineError('approvals must be an array');
   const validApprovals = new Set(approvals.filter((approval) => validApproval(approval, contract)).map((approval) => approval.id));
-  for (const approvalId of requiredPolicyArray(contract, 'requiredApprovals')) {
+  for (const approvalId of requiredGates.humanApprovals) {
     if (!validApprovals.has(approvalId)) pending.push({ code: 'MISSING_REQUIRED_APPROVAL', approvalId });
   }
 
@@ -113,7 +115,8 @@ export function decideAcceptance({
     createdAt,
     state,
     verificationVerdict: verification?.verdict ?? null,
-    requiredReviewers: [...contract.requiredReviewers],
+    requiredGates,
+    requiredReviewers: [...requiredGates.reviewers],
     completedReviewers: [...reviewByRole.entries()].filter(([, review]) => review.verdict === 'PASS').map(([role]) => role).sort(),
     blockers,
     pending,
@@ -126,6 +129,12 @@ export function validateAcceptanceRecord(record) {
   if (!object(record)) throw new AcceptanceEngineError('acceptance record is required');
   if (!ACCEPTANCE_STATES.includes(record.state)) throw new AcceptanceEngineError(`Unsupported acceptance state: ${record.state}`);
   if (!Array.isArray(record.blockers) || !Array.isArray(record.pending)) throw new AcceptanceEngineError('Acceptance record requires blocker and pending arrays');
+  if (!object(record.requiredGates)
+      || !Array.isArray(record.requiredGates.reviewers)
+      || !Array.isArray(record.requiredGates.controlDomains)
+      || !Array.isArray(record.requiredGates.humanApprovals)) {
+    throw new AcceptanceEngineError('Acceptance record requires derived gate metadata');
+  }
   const expected = record.blockers.length > 0 ? 'BLOCKED' : record.pending.length > 0 ? 'PENDING' : 'ACCEPTED';
   if (record.state !== expected) throw new AcceptanceEngineError(`Acceptance state must equal computed state ${expected}`);
   if (record.state === 'ACCEPTED' && (record.blockers.length || record.pending.length)) throw new AcceptanceEngineError('Accepted record may not contain unresolved gates');
