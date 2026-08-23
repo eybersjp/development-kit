@@ -53,10 +53,13 @@ export function reconcileCanonicalArtifact({
   if (!fs.existsSync(resolved.absolute) || !fs.statSync(resolved.absolute).isFile()) throw new ReconciliationError(`Canonical artifact not found: ${resolved.normalized}`);
   if (!Array.isArray(operations) || operations.length === 0) throw new ReconciliationError('At least one amendment operation is required');
   if (typeof amendmentId !== 'string' || !amendmentId.trim()) throw new ReconciliationError('amendmentId is required');
+  if (typeof expectedFingerprint !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(expectedFingerprint)) {
+    throw new ReconciliationError('expectedFingerprint is required for canonical amendment reconciliation');
+  }
 
   const before = fs.readFileSync(resolved.absolute, 'utf8');
   const beforeFingerprint = fingerprint(before);
-  if (expectedFingerprint && expectedFingerprint !== beforeFingerprint) {
+  if (expectedFingerprint !== beforeFingerprint) {
     throw new ReconciliationError('Canonical artifact fingerprint changed before amendment', [{ expectedFingerprint, beforeFingerprint }]);
   }
 
