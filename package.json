@@ -5,10 +5,7 @@
   "author": "Juan-Pierre Eybers",
   "license": "MIT",
   "homepage": "https://github.com/eybersjp/development-kit#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/eybersjp/development-kit.git"
-  },
+  "repository": { "type": "git", "url": "git+https://github.com/eybersjp/development-kit.git" },
   "bugs": { "url": "https://github.com/eybersjp/development-kit/issues" },
   "keywords": ["ai-coding-agent", "agentic-development", "antigravity", "opencode", "software-development-lifecycle", "developer-tools", "agent-skills", "workflow-automation", "test-driven-development", "code-review", "external-research", "agent-reach"],
   "bin": { "development-kit": "scripts/install-antigravity.mjs" },
@@ -28,6 +25,8 @@
     "execution-safety:validate": "node --test scripts/execution-safety.test.mjs scripts/execution-safety-policy.test.mjs",
     "evidence:validate": "node --test scripts/evidence-coverage.test.mjs",
     "orchestration-core:validate": "node --test scripts/orchestration-core.test.mjs",
+    "orchestration-integration:validate": "node --test scripts/orchestration-integration.test.mjs",
+    "v09-reliability:validate": "node --test scripts/v09-reliability-regression.test.mjs",
     "next-step:test": "node --test scripts/next-step.test.mjs",
     "installer:validate:test": "node --test scripts/install-antigravity.test.mjs",
     "research:validate": "node --test scripts/research-contract.test.mjs",
@@ -37,7 +36,7 @@
     "design-authority:validate": "node --test scripts/design-authority.test.mjs",
     "evals:validate": "node scripts/validate-evals.mjs",
     "autopilot:validate": "npm run autopilot:test && npm run evals:validate",
-    "release:validate": "npm run validate && npm run skills:validate:test && npm run doctor && npm run sync:validate:test && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run platform:validate && npm run research:validate && npm run next-step:test && npm run installer:validate:test && npm run orchestration:validate && npm run execution-safety:validate && npm run evidence:validate && npm run orchestration-core:validate && npm run intelligence:validate && npm run v071:validate && npm run design-authority:validate && npm run autopilot:validate"
+    "release:validate": "npm run validate && npm run skills:validate:test && npm run doctor && npm run sync:validate:test && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run platform:validate && npm run research:validate && npm run next-step:test && npm run installer:validate:test && npm run orchestration:validate && npm run execution-safety:validate && npm run evidence:validate && npm run orchestration-core:validate && npm run orchestration-integration:validate && npm run v09-reliability:validate && npm run intelligence:validate && npm run v071:validate && npm run design-authority:validate && npm run autopilot:validate"
   },
   "engines": { "node": ">=18.0.0" }
 }
