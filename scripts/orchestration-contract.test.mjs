@@ -12,6 +12,7 @@ import {
   checkContractStaleness,
   createDevelopmentContract,
   ensureDevelopmentContract,
+  loadDevelopmentContract,
   persistDevelopmentContract,
   renderDevelopmentContractMarkdown,
   validateDevelopmentContract,
@@ -132,10 +133,7 @@ test('ORCH-001 persists contract.json and contract.md idempotently but refuses s
 
   const changed = structuredClone(contract);
   changed.objective = 'Silently changed objective';
-  assert.throws(
-    () => persistDevelopmentContract(changed, rootDir),
-    ContractPersistenceError,
-  );
+  assert.throws(() => persistDevelopmentContract(changed, rootDir), ContractPersistenceError);
 });
 
 test('ORCH-001 marks an existing contract stale when an authoritative source changes', (t) => {
@@ -189,7 +187,7 @@ test('ORCH-001 creates a missing contract on demand for backward-compatible work
   assert.deepEqual(second.contract, first.contract);
 });
 
-test('ORCH-001 rejects unapproved tasks and authoritative-source path escape', (t) => {
+test('ORCH-001 rejects unapproved tasks and project escape paths on every operating system', (t) => {
   const rootDir = createTempProject(t);
 
   assert.throws(
@@ -201,12 +199,61 @@ test('ORCH-001 rejects unapproved tasks and authoritative-source path escape', (
     /only be created from an approved task/,
   );
 
+  for (const unsafePath of ['../outside.md', 'C:\\outside\\spec.md', '/tmp/spec.md', '//server/share/spec.md']) {
+    assert.throws(
+      () => createDevelopmentContract({
+        rootDir,
+        task: approvedTask(),
+        authoritativeSources: [{ path: unsafePath, kind: 'specification', authority: 'required' }],
+      }),
+      ContractValidationError,
+      `Expected path to be rejected: ${unsafePath}`,
+    );
+  }
+});
+
+test('ORCH-001 runtime validation rejects malformed or broadened persisted contracts', (t) => {
+  const rootDir = createTempProject(t);
+  const contract = createDevelopmentContract({
+    rootDir,
+    task: approvedTask(),
+    authoritativeSources: authoritativeSources(),
+    createdAt: '2026-08-23T12:00:00.000Z',
+  });
+
+  const invalidSafety = structuredClone(contract);
+  invalidSafety.executionSafety.destructiveOperations = 'unrestricted';
+  assert.throws(() => validateDevelopmentContract(invalidSafety), ContractValidationError);
+
+  const invalidRisk = structuredClone(contract);
+  invalidRisk.risk.level = 5;
+  assert.throws(() => validateDevelopmentContract(invalidRisk), ContractValidationError);
+
+  const invalidSections = structuredClone(contract);
+  invalidSections.authoritativeSources[0].sections = 'REQ-1';
+  assert.throws(() => validateDevelopmentContract(invalidSections), ContractValidationError);
+
+  const unexpectedProperty = structuredClone(contract);
+  unexpectedProperty.executionOverride = 'allow-everything';
+  assert.throws(() => validateDevelopmentContract(unexpectedProperty), ContractValidationError);
+});
+
+test('ORCH-001 loader fails closed when contract.json is manually corrupted', (t) => {
+  const rootDir = createTempProject(t);
+  const contract = createDevelopmentContract({
+    rootDir,
+    task: approvedTask(),
+    authoritativeSources: authoritativeSources(),
+    createdAt: '2026-08-23T12:00:00.000Z',
+  });
+  const persistence = persistDevelopmentContract(contract, rootDir);
+
+  const corrupted = JSON.parse(fs.readFileSync(persistence.jsonPath, 'utf8'));
+  corrupted.executionSafety.remoteMutation = 'always';
+  fs.writeFileSync(persistence.jsonPath, `${JSON.stringify(corrupted, null, 2)}\n`, 'utf8');
+
   assert.throws(
-    () => createDevelopmentContract({
-      rootDir,
-      task: approvedTask(),
-      authoritativeSources: [{ path: '../outside.md', kind: 'specification', authority: 'required' }],
-    }),
+    () => loadDevelopmentContract(contract.contractId, rootDir),
     ContractValidationError,
   );
 });
