@@ -47,6 +47,12 @@ jobs:
       - name: Validate core orchestration runtime
         run: npm run orchestration-core:validate
 
+      - name: Validate orchestration command integration
+        run: npm run orchestration-integration:validate
+
+      - name: Validate v0.9 reliability regressions
+        run: npm run v09-reliability:validate
+
       - name: Validate documentation
         run: npm run docs:validate
 
