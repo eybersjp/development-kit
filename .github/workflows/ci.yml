@@ -41,6 +41,9 @@ jobs:
       - name: Validate execution safety foundation
         run: npm run execution-safety:validate
 
+      - name: Validate evidence and control coverage
+        run: npm run evidence:validate
+
       - name: Validate documentation
         run: npm run docs:validate
 
