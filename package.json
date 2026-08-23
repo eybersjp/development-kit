@@ -57,7 +57,7 @@
     "platform:validate": "node --test scripts/validate-platform-templates.test.mjs scripts/install-platform-adapters-cli.test.mjs",
     "autopilot:test": "node --test scripts/autopilot.test.mjs",
     "orchestration:validate": "node --test scripts/orchestration-contract.test.mjs",
-    "execution-safety:validate": "node --test scripts/execution-safety.test.mjs",
+    "execution-safety:validate": "node --test scripts/execution-safety.test.mjs scripts/execution-safety-policy.test.mjs",
     "next-step:test": "node --test scripts/next-step.test.mjs",
     "installer:validate:test": "node --test scripts/install-antigravity.test.mjs",
     "research:validate": "node --test scripts/research-contract.test.mjs",
