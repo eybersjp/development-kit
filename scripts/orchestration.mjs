@@ -10,6 +10,7 @@ import {
   evaluateCommandSafety,
   loadRunManifest,
   prepareTaskRun,
+  validatePlanModel,
   verifyFromContext,
 } from '../runtime/orchestration/index.mjs';
 import { reconcileCanonicalArtifact } from '../runtime/orchestration/reconciliation.mjs';
@@ -46,7 +47,7 @@ function output(result) {
 }
 
 function fail(error) {
-  process.stderr.write(`${JSON.stringify({ success: false, error: error.message, name: error.name, details: error.details ?? null }, null, 2)}\n`);
+  process.stderr.write(`${JSON.stringify({ success: false, error: error.message, name: error.name, details: error.details ?? null, report: error.report ?? null }, null, 2)}\n`);
   process.exitCode = 1;
 }
 
@@ -58,24 +59,16 @@ function main() {
   const payload = readPayload(options, rootDir);
 
   switch (operation) {
-    case 'prepare-run':
-      return output(prepareTaskRun({ ...payload, rootDir }));
-    case 'context':
-      return output(createRoleContext({ ...payload, rootDir }));
-    case 'verify':
-      return output(verifyFromContext(payload));
-    case 'acceptance':
-      return output(decideAcceptance({ ...payload, rootDir }));
-    case 'correction':
-      return output(decideCorrection(payload));
-    case 'safety':
-      return output(evaluateCommandSafety(payload));
-    case 'reconcile':
-      return output(reconcileCanonicalArtifact({ ...payload, rootDir }));
-    case 'run-status':
-      return output(loadRunManifest(payload.contractId, payload.runId, rootDir));
-    default:
-      throw new Error(`Unsupported orchestration operation: ${operation}`);
+    case 'prepare-run': return output(prepareTaskRun({ ...payload, rootDir }));
+    case 'context': return output(createRoleContext({ ...payload, rootDir }));
+    case 'verify': return output(verifyFromContext(payload));
+    case 'acceptance': return output(decideAcceptance({ ...payload, rootDir }));
+    case 'correction': return output(decideCorrection(payload));
+    case 'safety': return output(evaluateCommandSafety(payload));
+    case 'reconcile': return output(reconcileCanonicalArtifact({ ...payload, rootDir }));
+    case 'plan-validate': return output(validatePlanModel(payload));
+    case 'run-status': return output(loadRunManifest(payload.contractId, payload.runId, rootDir));
+    default: throw new Error(`Unsupported orchestration operation: ${operation}`);
   }
 }
 
