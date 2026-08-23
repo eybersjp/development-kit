@@ -339,6 +339,24 @@ export function classifyCommand(command, environmentInput = {}) {
   return result;
 }
 
+function validateExecutionPolicy(contract) {
+  if (!isPlainObject(contract) || !isPlainObject(contract.executionSafety)) {
+    throw new CommandSafetyError('A Development Contract with executionSafety policy is required', null);
+  }
+
+  const policy = contract.executionSafety;
+  if (!['project-only', 'declared-resources'].includes(policy.resourceScope)) {
+    throw new CommandSafetyError(`Invalid executionSafety.resourceScope: ${policy.resourceScope ?? 'missing'}`, null);
+  }
+  if (!['forbidden', 'explicit-approval'].includes(policy.destructiveOperations)) {
+    throw new CommandSafetyError(`Invalid executionSafety.destructiveOperations: ${policy.destructiveOperations ?? 'missing'}`, null);
+  }
+  if (!['forbidden', 'explicit-contract', 'allowed'].includes(policy.remoteMutation)) {
+    throw new CommandSafetyError(`Invalid executionSafety.remoteMutation: ${policy.remoteMutation ?? 'missing'}`, null);
+  }
+  return policy;
+}
+
 function validApprovalFor(assessment, approval, capability) {
   if (!isPlainObject(approval)) return false;
   if (approval.commandFingerprint !== assessment.commandFingerprint) return false;
@@ -354,12 +372,8 @@ function broadBlastApproval(assessment, approval) {
 }
 
 export function evaluateCommandSafety({ command, contract, environment = {}, approval = null } = {}) {
-  if (!isPlainObject(contract) || !isPlainObject(contract.executionSafety)) {
-    throw new CommandSafetyError('A Development Contract with executionSafety policy is required', null);
-  }
-
+  const policy = validateExecutionPolicy(contract);
   const assessment = classifyCommand(command, environment);
-  const policy = contract.executionSafety;
   const blockers = [];
   const approvalsNeeded = [];
 
