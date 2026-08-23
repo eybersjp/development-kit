@@ -21,7 +21,9 @@ desktop.ini
 *.swo
 *~
 
-# Development Kit Autopilot
+# Development Kit runtime state
 .development-kit/workspace-id
 .development-kit/autopilot/
+.development-kit/contracts/
+.development-kit/runs/
 

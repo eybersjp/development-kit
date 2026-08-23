@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/eybersjp/development-kit/schemas/development-contract.schema.json",
+  "title": "Development Kit Development Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "contractId",
+    "projectId",
+    "taskId",
+    "createdAt",
+    "status",
+    "objective",
+    "scope",
+    "authoritativeSources",
+    "requirements",
+    "acceptanceCriteria",
+    "architectureConstraints",
+    "designConstraints",
+    "securityConstraints",
+    "executionSafety",
+    "risk",
+    "requiredVerification",
+    "requiredReviewers",
+    "correctionPolicy",
+    "approvalPolicy",
+    "sourceFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "contractId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "projectId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "taskId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "const": "approved"
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["in", "out"],
+      "properties": {
+        "in": { "$ref": "#/$defs/stringArray" },
+        "out": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "authoritativeSources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "kind", "authority", "sections", "fingerprint"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "minLength": 1 },
+          "authority": { "enum": ["required", "supporting"] },
+          "sections": { "$ref": "#/$defs/stringArray" },
+          "fingerprint": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "requirements": { "$ref": "#/$defs/constraintArray" },
+    "acceptanceCriteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "statement", "source", "verificationType", "requiredEvidence"],
+        "properties": {
+          "id": { "$ref": "#/$defs/identifier" },
+          "statement": { "type": "string", "minLength": 1 },
+          "source": { "type": ["string", "null"] },
+          "verificationType": { "$ref": "#/$defs/stringArray" },
+          "requiredEvidence": { "type": "boolean" }
+        }
+      }
+    },
+    "architectureConstraints": { "$ref": "#/$defs/constraintArray" },
+    "designConstraints": { "$ref": "#/$defs/constraintArray" },
+    "securityConstraints": { "$ref": "#/$defs/constraintArray" },
+    "executionSafety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resourceScope", "destructiveOperations", "remoteMutation"],
+      "properties": {
+        "resourceScope": { "enum": ["project-only", "declared-resources"] },
+        "destructiveOperations": { "enum": ["forbidden", "explicit-approval"] },
+        "remoteMutation": { "enum": ["forbidden", "explicit-contract", "allowed"] }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "reasons"],
+      "properties": {
+        "level": { "type": "integer", "minimum": 0, "maximum": 4 },
+        "reasons": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "requiredVerification": { "$ref": "#/$defs/stringArray" },
+    "requiredReviewers": { "$ref": "#/$defs/stringArray" },
+    "correctionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxAttempts"],
+      "properties": {
+        "maxAttempts": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "approvalPolicy": {
+      "type": "object"
+    },
+    "sourceFingerprint": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "stringArray": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "constraintArray": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          { "type": "string", "minLength": 1 },
+          { "type": "object" }
+        ]
+      }
+    }
+  }
+}

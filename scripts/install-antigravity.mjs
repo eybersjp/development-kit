@@ -23,7 +23,17 @@
  *   --help     Show help
  */
 
-import { existsSync, mkdirSync, copyFileSync, cpSync, readdirSync, statSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  copyFileSync,
+  cpSync,
+  readdirSync,
+  statSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+} from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -50,6 +60,17 @@ const KNOWN_FLAGS = new Set([
   '--dry-run',
   '--help',
   ...PLATFORM_FLAGS,
+]);
+const PLUGIN_DIRS_TO_COPY = Object.freeze([
+  'skills',
+  'agents',
+  'hooks',
+  'commands',
+  'templates',
+  'evals',
+  'runtime',
+  'schemas',
+  'scripts',
 ]);
 
 const HELP = `
@@ -78,6 +99,10 @@ Options:
 If no option is provided, you will be prompted to choose.
 `.trim();
 
+function getPackageMetadata() {
+  return JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+}
+
 function printCommands() {
   console.log('  /dk-autopilot  - Run the complete guided Development Kit lifecycle');
   console.log('  /dk-idea       - Refine a rough idea into a concrete concept');
@@ -98,7 +123,6 @@ function printCommands() {
 }
 
 function detectAntigravity() {
-  // Check for common Antigravity configuration paths
   const possiblePaths = [
     join(process.env.HOME || process.env.USERPROFILE || '~', '.gemini', 'config'),
     join(process.cwd(), '.agents'),
@@ -106,34 +130,68 @@ function detectAntigravity() {
   ];
 
   for (const p of possiblePaths) {
-    if (existsSync(p)) {
-      return p;
-    }
+    if (existsSync(p)) return p;
   }
 
   return null;
 }
 
+function verifyPluginInstallation(pluginDir, expectedVersion) {
+  const issues = [];
+  const manifestPath = join(pluginDir, 'plugin.json');
+
+  if (!existsSync(manifestPath)) {
+    issues.push('plugin.json missing');
+  } else {
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      if (manifest.version !== expectedVersion) {
+        issues.push(`plugin.json version ${manifest.version ?? 'missing'} does not match package ${expectedVersion}`);
+      }
+    } catch (error) {
+      issues.push(`plugin.json invalid: ${error.message}`);
+    }
+  }
+
+  for (const dir of PLUGIN_DIRS_TO_COPY) {
+    if (!existsSync(join(pluginDir, dir))) issues.push(`${dir}/ missing`);
+  }
+
+  const runtimeProof = [
+    'scripts/autopilot.mjs',
+    'runtime/autopilot/state-store.mjs',
+    'schemas/development-contract.schema.json',
+  ];
+  for (const relativePath of runtimeProof) {
+    if (!existsSync(join(pluginDir, relativePath))) issues.push(`${relativePath} missing`);
+  }
+
+  if (issues.length > 0) {
+    throw new Error(`Installed plugin integrity verification failed:\n  - ${issues.join('\n  - ')}`);
+  }
+
+  console.log(`  ✓ plugin integrity verified (version ${expectedVersion})`);
+}
+
 function installPlugin(targetDir, force = false) {
   const pluginDir = join(targetDir, 'plugins', 'development-kit');
+  const packageMetadata = getPackageMetadata();
 
   console.log(`Installing Development Kit plugin to: ${pluginDir}`);
-
-  // Create plugin directory
   mkdirSync(pluginDir, { recursive: true });
 
-  // Copy plugin directories to make plugin self-contained
-  const dirsToCopy = ['skills', 'agents', 'hooks', 'commands'];
-  for (const dir of dirsToCopy) {
+  // DK owns these plugin subdirectories. Replace them rather than merging so
+  // removed/stale files cannot survive an upgrade and masquerade as current.
+  for (const dir of PLUGIN_DIRS_TO_COPY) {
     const src = join(ROOT, dir);
     const dst = join(pluginDir, dir);
     if (existsSync(src)) {
+      rmSync(dst, { recursive: true, force: true });
       cpSync(src, dst, { recursive: true });
       console.log(`  ✓ ${dir}/ copied`);
     }
   }
 
-  // Link or copy plugin manifest and rewrite relative paths
   const sourcePluginJson = join(ROOT, '.agents', 'plugins', 'development-kit', 'plugin.json');
   const targetPluginJson = join(pluginDir, 'plugin.json');
 
@@ -141,25 +199,28 @@ function installPlugin(targetDir, force = false) {
     try {
       const raw = readFileSync(sourcePluginJson, 'utf-8');
       const manifest = JSON.parse(raw);
+      if (manifest.version !== packageMetadata.version) {
+        throw new Error(
+          `Source plugin manifest version ${manifest.version ?? 'missing'} does not match package version ${packageMetadata.version}`,
+        );
+      }
       if (Array.isArray(manifest.skills)) {
-        manifest.skills = manifest.skills.map(s => s.replace(/^\.\.\/\.\.\/\.\.\//, './'));
+        manifest.skills = manifest.skills.map((s) => s.replace(/^\.\.\/\.\.\/\.\.\//, './'));
       }
       if (Array.isArray(manifest.agents)) {
-        manifest.agents = manifest.agents.map(a => a.replace(/^\.\.\/\.\.\/\.\.\//, './'));
+        manifest.agents = manifest.agents.map((a) => a.replace(/^\.\.\/\.\.\/\.\.\//, './'));
       }
       if (Array.isArray(manifest.hooks)) {
-        manifest.hooks = manifest.hooks.map(h => h.replace(/^\.\.\/\.\.\/\.\.\//, './'));
+        manifest.hooks = manifest.hooks.map((h) => h.replace(/^\.\.\/\.\.\/\.\.\//, './'));
       }
-      writeFileSync(targetPluginJson, JSON.stringify(manifest, null, 2) + '\n');
+      writeFileSync(targetPluginJson, `${JSON.stringify(manifest, null, 2)}\n`);
       console.log('  ✓ plugin.json installed and relative paths rewritten');
     } catch (err) {
-      console.error(`  ✗ Failed to rewrite plugin.json paths: ${err.message}`);
-      copyFileSync(sourcePluginJson, targetPluginJson);
-      console.log('  ✓ plugin.json installed (paths unmodified)');
+      console.error(`  ✗ Failed plugin manifest integrity/rewrite: ${err.message}`);
+      throw err;
     }
   }
 
-  // Install AGENTS.md rules
   const sourceAgentsMd = join(ROOT, 'AGENTS.md');
   const targetAgentsMd = join(targetDir, 'AGENTS.md');
 
@@ -174,6 +235,8 @@ function installPlugin(targetDir, force = false) {
     }
   }
 
+  verifyPluginInstallation(pluginDir, packageMetadata.version);
+
   console.log('\nInstallation complete.');
   console.log('\nAvailable commands:');
   printCommands();
@@ -186,12 +249,9 @@ function installOpencode(dryRun = false, force = false) {
 
   console.log(`${label} Development Kit for OpenCode at: ${targetDir}\n`);
 
-  // Install skills to .opencode/skills/
   const skillsSource = join(ROOT, 'skills');
   if (existsSync(skillsSource)) {
-    if (!dryRun) {
-      mkdirSync(skillsTarget, { recursive: true });
-    }
+    if (!dryRun) mkdirSync(skillsTarget, { recursive: true });
     for (const skillDir of readdirSync(skillsSource)) {
       const src = join(skillsSource, skillDir);
       const dst = join(skillsTarget, skillDir);
@@ -200,9 +260,7 @@ function installOpencode(dryRun = false, force = false) {
         if (targetSkillExists && !force) {
           console.log(`  ${dryRun ? '→' : '-'} ${skillDir} already exists (skipped)`);
         } else {
-          if (!dryRun) {
-            cpSync(src, dst, { recursive: true });
-          }
+          if (!dryRun) cpSync(src, dst, { recursive: true });
           const mark = targetSkillExists ? ' (overwrite)' : '';
           console.log(`  ${dryRun ? '→' : '✓'} skills/${skillDir} installed${mark}`);
         }
@@ -210,7 +268,6 @@ function installOpencode(dryRun = false, force = false) {
     }
   }
 
-  // Copy opencode.json
   const opencodeJsonSource = join(ROOT, 'opencode.json');
   const opencodeJsonTarget = join(targetDir, 'opencode.json');
   if (existsSync(opencodeJsonSource)) {
@@ -218,15 +275,12 @@ function installOpencode(dryRun = false, force = false) {
     if (targetExists && !force) {
       console.log(`  ${dryRun ? '→' : '-'} opencode.json already exists (skipped)`);
     } else {
-      if (!dryRun) {
-        copyFileSync(opencodeJsonSource, opencodeJsonTarget);
-      }
+      if (!dryRun) copyFileSync(opencodeJsonSource, opencodeJsonTarget);
       const mark = targetExists ? ' (overwrite)' : '';
       console.log(`  ${dryRun ? '→' : '✓'} opencode.json installed${mark}`);
     }
   }
 
-  // Copy AGENTS.md rules
   const agentsMdSource = join(ROOT, 'AGENTS.md');
   const agentsMdTarget = join(targetDir, 'AGENTS.md');
   if (existsSync(agentsMdSource)) {
@@ -234,9 +288,7 @@ function installOpencode(dryRun = false, force = false) {
     if (targetExists && !force) {
       console.log(`  ${dryRun ? '→' : '-'} AGENTS.md already exists at project root (skipped)`);
     } else {
-      if (!dryRun) {
-        copyFileSync(agentsMdSource, agentsMdTarget);
-      }
+      if (!dryRun) copyFileSync(agentsMdSource, agentsMdTarget);
       const mark = targetExists ? ' (overwrite)' : '';
       console.log(`  ${dryRun ? '→' : '✓'} AGENTS.md installed${mark}`);
     }
@@ -257,24 +309,20 @@ function installAll(dryRun = false, force = false) {
 
   console.log(`${label} Development Kit to: ${targetDir}\n`);
 
-  const dirs = ['agents', 'skills', 'commands', 'hooks', 'templates', 'evals', 'runtime', 'scripts'];
+  const dirs = ['agents', 'skills', 'commands', 'hooks', 'templates', 'evals', 'runtime', 'schemas', 'scripts'];
   const files = ['AGENTS.md', 'README.md'];
 
-  // Copy all directories recursively
   for (const dir of dirs) {
     const source = join(ROOT, dir);
     const target = join(targetDir, dir);
     if (existsSync(source)) {
       const count = readdirSync(source).length;
       const exists = existsSync(target) ? ' (overwrite)' : '';
-      if (!dryRun) {
-        cpSync(source, target, { recursive: true });
-      }
+      if (!dryRun) cpSync(source, target, { recursive: true });
       console.log(`  ${dryRun ? '→' : '✓'} ${dir}/  (${count} files)${exists}`);
     }
   }
 
-  // Copy root files (skip package.json to avoid overwriting existing project config)
   for (const file of files) {
     const source = join(ROOT, file);
     const target = join(targetDir, file);
@@ -283,16 +331,13 @@ function installAll(dryRun = false, force = false) {
       if (targetExists && !force) {
         console.log(`  ${dryRun ? '→' : '-'} ${file} already exists (skipped)`);
       } else {
-        if (!dryRun) {
-          copyFileSync(source, target);
-        }
+        if (!dryRun) copyFileSync(source, target);
         const exists = targetExists ? ' (overwrite)' : '';
         console.log(`  ${dryRun ? '→' : '✓'} ${file} installed${exists}`);
       }
     }
   }
 
-  // Copy plugin mirror
   const pluginSource = join(ROOT, '.agents', 'plugins', 'development-kit');
   const pluginTarget = join(targetDir, '.agents', 'plugins', 'development-kit');
   if (existsSync(pluginSource)) {
@@ -360,12 +405,8 @@ function main() {
     });
     const action = dryRun ? 'Would install' : 'Installing';
     console.log(`${action} Development Kit platform adapters: ${platforms.join(', ')}`);
-    for (const result of results) {
-      console.log(`  ${result.status}: ${result.targetPath}`);
-    }
-    if (dryRun) {
-      console.log('\nDry run complete. No files were copied.');
-    }
+    for (const result of results) console.log(`  ${result.status}: ${result.targetPath}`);
+    if (dryRun) console.log('\nDry run complete. No files were copied.');
     process.exit(0);
   }
 
@@ -381,24 +422,18 @@ function main() {
 
   if (args.includes('--global')) {
     const globalDir = join(process.env.HOME || process.env.USERPROFILE || '~', '.gemini', 'config');
-    if (!existsSync(globalDir)) {
-      mkdirSync(globalDir, { recursive: true });
-    }
+    if (!existsSync(globalDir)) mkdirSync(globalDir, { recursive: true });
     installPlugin(globalDir, force);
     process.exit(0);
   }
 
   if (args.includes('--project')) {
     const projectDir = join(process.cwd(), '.agents');
-    if (!existsSync(projectDir)) {
-      mkdirSync(projectDir, { recursive: true });
-    }
+    if (!existsSync(projectDir)) mkdirSync(projectDir, { recursive: true });
     installPlugin(projectDir, force);
     process.exit(0);
   }
 
-
-  // Auto-detect or prompt
   const antigravityPath = detectAntigravity();
   if (antigravityPath) {
     installPlugin(antigravityPath, force);

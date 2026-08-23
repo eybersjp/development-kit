@@ -1,8 +1,8 @@
 {
   "name": "development-kit",
-  "version": "0.1.0",
-  "description": "Opinionated AI software-development methodology and skill collection for Antigravity.",
-  "author": "development-kit contributors",
+  "version": "0.8.1",
+  "description": "A disciplined AI software-development workflow for Antigravity and OpenCode, with lifecycle commands, specialist agents, verification gates, persistent guided automation, DKF Design Authority, and optional external capability providers.",
+  "author": "Juan-Pierre Eybers",
   "skills": [
     "../../../skills/acceptance-criteria-writing",
     "../../../skills/accessibility-review",
