@@ -59,21 +59,23 @@ function passingControlResults(count) {
   }));
 }
 
-test('ORCH-002 creates PASS only when every acceptance criterion reaches an acceptance status', () => {
-  const record = createVerificationRecord({
+function passingVerificationRecord(runId = 'run-persist-001', createdAt = '2026-08-23T12:00:00.000Z') {
+  return createVerificationRecord({
     contract: contract(),
-    runId: 'run-001',
+    runId,
     role: 'spec-verifier',
-    contextIsolation: 'fresh',
     sourceFingerprint: contract().sourceFingerprint,
-    createdAt: '2026-08-23T12:00:00.000Z',
+    createdAt,
     criteria: [
       { id: 'AC-SEC-001', status: 'PASS', evidence: testEvidence('tenant-isolation') },
       { id: 'AC-SEC-002', status: 'PASS', evidence: testEvidence('mutation-denial') },
       { id: 'AC-SEC-003', status: 'PASS', evidence: [] },
     ],
   });
+}
 
+test('ORCH-002 creates PASS only when every acceptance criterion reaches an acceptance status', () => {
+  const record = passingVerificationRecord('run-001');
   assert.equal(record.verdict, VERDICTS.PASS);
   assert.equal(record.criteria.length, 3);
 });
@@ -113,9 +115,7 @@ test('ORCH-002 rejects PASS without required evidence', () => {
       runId: 'run-004',
       role: 'spec-verifier',
       sourceFingerprint: contract().sourceFingerprint,
-      criteria: [
-        { id: 'AC-SEC-001', status: 'PASS', evidence: [] },
-      ],
+      criteria: [{ id: 'AC-SEC-001', status: 'PASS', evidence: [] }],
     }),
     /requires evidence/,
   );
@@ -257,30 +257,27 @@ test('ORCH-002 rejects results for controls outside the expected control set', (
   );
 });
 
-test('ORCH-002 evidence persistence is immutable and idempotent', (t) => {
+test('ORCH-002 evidence persistence validates computed verdicts and remains immutable/idempotent', (t) => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dk-evidence-test-'));
   t.after(() => fs.rmSync(rootDir, { recursive: true, force: true }));
 
-  const record = createVerificationRecord({
-    contract: contract(),
-    runId: 'run-persist-001',
-    role: 'spec-verifier',
-    sourceFingerprint: contract().sourceFingerprint,
-    createdAt: '2026-08-23T12:00:00.000Z',
-    criteria: [
-      { id: 'AC-SEC-001', status: 'PASS', evidence: testEvidence('tenant-isolation') },
-      { id: 'AC-SEC-002', status: 'PASS', evidence: testEvidence('mutation-denial') },
-      { id: 'AC-SEC-003', status: 'PASS', evidence: [] },
-    ],
-  });
-
+  const record = passingVerificationRecord();
   const first = persistVerificationRecord(record, rootDir);
   assert.equal(first.created, true);
   assert.equal(persistVerificationRecord(record, rootDir).created, false);
 
-  const changed = structuredClone(record);
-  changed.verdict = 'FAIL';
-  assert.throws(() => persistVerificationRecord(changed, rootDir), EvidencePersistenceError);
+  const tampered = structuredClone(record);
+  tampered.verdict = 'FAIL';
+  assert.throws(
+    () => persistVerificationRecord(tampered, rootDir),
+    EvidenceValidationError,
+  );
+
+  const validDifferentRecord = passingVerificationRecord('run-persist-001', '2026-08-23T12:01:00.000Z');
+  assert.throws(
+    () => persistVerificationRecord(validDifferentRecord, rootDir),
+    EvidencePersistenceError,
+  );
 
   const manifest = evaluateControlCoverage({
     contractId: record.contractId,
@@ -291,4 +288,8 @@ test('ORCH-002 evidence persistence is immutable and idempotent', (t) => {
   });
   assert.equal(persistControlManifest(manifest, rootDir).created, true);
   assert.equal(persistControlManifest(manifest, rootDir).created, false);
+
+  const tamperedManifest = structuredClone(manifest);
+  tamperedManifest.coverage.percent = 1000;
+  assert.throws(() => persistControlManifest(tamperedManifest, rootDir), EvidenceValidationError);
 });
