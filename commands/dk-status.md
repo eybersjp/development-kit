@@ -1,83 +1,60 @@
 ---
 name: dk-status
 description: >-
-  Show the current workflow state: active lifecycle stage, current task,
-  completed tasks, pending reviews, and any blocked items.
+  Show the current lifecycle and contract-driven orchestration state, including active contract, verification, correction, review and acceptance gates.
 ---
 
 # /dk-status
 
 ## Purpose
 
-Shows the current workflow state: active lifecycle stage, current task, completed tasks, pending reviews, and any blocked items. Useful for checking progress and determining what to do next.
+Shows concise Development Kit progress without hiding unresolved control-plane state.
 
 ## Workflow
 
-### 1. Gather State & Verify Project Bootstrap
-Verify project-local runtime state (.development-kit/):
-- If .development-kit/ is missing or uninitialized, report status as Uninitialized and note that running any lifecycle command will bootstrap the project.
-- Collect persistent state information from .development-kit/ when present:
-  - Active lifecycle stage (UNDERSTAND, DEFINE, DESIGN, PLAN, IMPLEMENT, VERIFY, REVIEW, SIMPLIFY, COMPLETE)
-  - Current task (if any)
-  - Completed tasks with gate results
-  - Pending tasks from the task plan
-  - Blocked items with reasons
-  - Pending reviews (spec compliance, code quality, security, accessibility, design, simplicity)
-  - Unresolved issues from previous reviews
+1. Inspect project-local `.development-kit/` state. If absent, report `Uninitialized` and explain that a lifecycle command will bootstrap the project.
+2. Read the current Autopilot state when present.
+3. If `state.orchestration` exists, report its compact references and use the run manifest/evidence files under `.development-kit/runs/` for detail rather than treating agent summaries as truth.
+4. Check whether the active Development Contract is stale before reporting it as executable.
+5. Report only persisted/computed gate states.
 
-### 2. Report
-Present a clear status summary showing:
-- Where you are in the lifecycle
-- What's currently being worked on
-- What's done
-- What's next
-- What's blocked
+## Output
+
+```text
+## Status Report
+Lifecycle stage: <stage>
+Current task: <task>
+Workflow status: <status>
+
+Contract-driven orchestration, when active:
+- Contract: <activeContractId>
+- Run: <activeRunId>
+- Source fingerprint: <fingerprint>
+- Risk: <0-4>
+- Correction attempt: <n>
+- Verification: PASS / FAIL / INCOMPLETE / pending
+- Acceptance: ACCEPTED / PENDING / BLOCKED
+- Required gates: <list>
+- Completed gates: <list>
+- Contract stale: yes / no
+
+Pending reviews/controls/approvals: <list>
+Blocked items: <exact reasons>
+Design Authority when applicable: <state/version/last verification>
+Suggested next action: <command>
+```
+
+## Rules
+
+- Never call a task Done solely because implementation/tests reported success.
+- Surface PARTIAL/UNVERIFIED required controls explicitly.
+- If no contract-driven state exists, remain backward-compatible with the existing lifecycle status view.
 
 ## Skills Activated
 
-- `skill-routing` — Determines which workflow stage is active and which skills are loaded
-- `using-development-kit` — Methodology context for interpreting the workflow state
+- `skill-routing`
+- `using-development-kit`
 
 ## Sub-Agents
 
 None. This command is informational only.
-
-## Output
-
-```
-## Status Report
-
-### Lifecycle Stage
-[Current stage: UNDERSTAND, DEFINE, DESIGN, PLAN, IMPLEMENT, VERIFY, REVIEW, SIMPLIFY, COMPLETE]
-
-### Current Task
-[Task name and status]
-
-### Completed Tasks
-- [Task 1] ✓ — All gates passed
-- [Task 2] ✓ — All gates passed
-
-### Pending Tasks
-- [Task 3]
-- [Task 4]
-
-### Blocked Items
-- [Item] — [reason]
-
-### Pending Reviews
-- [Type of review needed]
-
-### Design Authority (when applicable)
-- Status: [approved / draft / deferred / not_required]
-- Version: [version e.g. 1.0.0]
-- Authority: [design.md]
-- References: [reference count and roles]
-- Pending amendments: [count]
-- Last verification: [PASS / FAIL / null]
-- Same Design Team: [PASS / PARTIAL / FAIL / null]
-- Frontend work: [allowed / blocked]
-
-### Workflow State
-- Skills active: [active skill names]
-- Waiting on: [user input / implementation / review / tests]
-```

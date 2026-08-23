@@ -1,80 +1,56 @@
 ---
 name: dk-build-auto
 description: >-
-  Process the entire approved task plan automatically, running each task
-  through every gate sequentially. Pauses automatically on failures.
+  Process the validated approved task plan automatically through contract-driven implementation, verification, bounded correction, review, and acceptance.
 ---
 
 # /dk-build-auto
 
 ## Purpose
 
-Processes the entire approved task plan automatically. For each task, runs the complete task loop (repository scout, task readiness check, fresh implementation sub-agent, tests, specification compliance review, code quality review, simplicity review, and final verification). Pauses automatically when a test fails, a review fails, a requirement is ambiguous, a security-sensitive decision appears, or the implementation would deviate from the approved design.
+Processes the approved PLAN sequentially while preserving the same v0.9 control plane as `/dk-build`. Automation may remove repetitive handoffs, but it may not weaken evidence, safety, review, or human approval gates.
 
 ## Workflow
 
-### For Each Task (Sequentially)
+For each task:
+1. Select the next approved task from the deterministically validated PLAN.
+2. Resolve/create its Development Contract and run manifest.
+3. Rehydrate authoritative sources and choose the host execution strategy. Use native isolated sub-agents when available; otherwise use sequential fresh-context execution.
+4. Implement in a fresh implementation context. Implementation output is non-authoritative evidence.
+5. Preflight consequential commands through execution safety before execution.
+6. Independently verify every acceptance criterion and required control.
+7. Run the risk/impact-selected structured reviews.
+8. Ask the runtime acceptance engine for `ACCEPTED`, `PENDING`, or `BLOCKED`.
+9. On a correctable implementation failure, use the correction engine. Continue automatically only when the decision is `CORRECT`; persist the failure signature and exact correction scope.
+10. Reverify after every correction. Stop correction on repeat failure, maximum attempts, high-risk/security/architecture/design ambiguity, source staleness, scope expansion, or a consequential human gate.
+11. Continue to the next task only after acceptance is `ACCEPTED`.
 
-1. **Select next task** — Choose the next uncompleted task from the approved plan
-2. **Repository scout** — Gather task context using the repository-orientation skill
-3. **Validate readiness** — Run the task-readiness-check before spawning an implementation agent
-4. **Apply restraint principles** — Load existing-code-first, native-platform-first, dependency-restraint, and minimal-diff
-5. **Spawn fresh implementation agent** — Create a new sub-agent with the full task package
-6. **Run tests** — Execute verification suite (unit, integration, browser)
-7. **Spec review** — Check specification compliance (first review stage)
-8. **Code quality review** — Assess code correctness and conventions (second review stage)
-9. **Simplicity review** — Apply the Ponytail ladder
-10. **Run tests again** — Final verification after simplification
-11. **Task complete** — Proceed to next task
+## Auto-Pause Conditions
 
-### Auto-Pause Conditions
-
-Pause automatically and report to the user when:
-- A test fails
-- A review fails (spec, code quality, or simplicity)
-- A requirement is ambiguous
-- A security-sensitive decision appears
-- The implementation would deviate from the approved design
-- A dependency cannot be justified
-
-After pausing, wait for user input to continue or abort.
+Pause and surface the precise gate when:
+- verification is PARTIAL, UNVERIFIED, or blocked by stale sources;
+- correction engine returns `PAUSE`;
+- a required reviewer/control manifest is incomplete or failed;
+- architecture drift is unauthorized or needs a decision;
+- Design Authority or required visual evidence is unresolved;
+- a destructive/remote action requires approval;
+- the host cannot provide mandatory independent verification capability;
+- the Product Owner must approve a consequential decision.
 
 ## Skills Activated
 
-Primary:
-- `subagent-driven-implementation` — Dispatches a fresh implementation sub-agent per task
-
-Supporting:
-- `incremental-implementation` — Implements one thin vertical slice at a time
-- `test-driven-development` — Red-green-refactor discipline
-- `existing-code-first` — Search for reusable code before writing new code
-- `native-platform-first` — Prefer built-in capabilities before adding dependencies
-- `dependency-restraint` — Justify every new dependency
-- `minimal-diff` — Keep changes tightly scoped to the task
-- `context-packing` — Gathers only relevant context for the fresh sub-agent
-- `test-strategy` — Defines how the feature will be proven correct
-- `task-readiness-check` — Verifies each task is clear enough to implement
-- `dependency-ordering` — Ensures correct execution order
-- `verification-before-completion` — Requires evidence before claiming success
-- `regression-testing` — Verify existing behaviour remains intact
-
-Review gates:
-- `specification-compliance-review` — First review: did we build the right thing?
-- `code-quality-review` — Second review: did we build it well?
-- `simplicity-review` — Can we remove anything?
-
-## Sub-Agents
-
-- repository-scout-agent
-- implementation-agent (fresh per task)
-- spec-reviewer
-- code-reviewer
-- simplicity-reviewer
+- `subagent-driven-implementation`
+- `incremental-implementation`
+- `test-driven-development`
+- `existing-code-first`
+- `native-platform-first`
+- `dependency-restraint`
+- `minimal-diff`
+- `task-readiness-check`
+- `dependency-ordering`
+- `verification-before-completion`
+- `regression-testing`
 
 ## Output
 
-Progress report showing:
-- Tasks completed
-- Current task
-- Remaining tasks
-- Any paused tasks with reason and recommended action
+Cumulative progress by contract/run, current correction attempt, verification/control coverage, outstanding gates, accepted tasks, and the exact reason for any pause.

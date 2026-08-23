@@ -1,86 +1,51 @@
 ---
 name: dk-review
 description: >-
-  Run the full review cycle: specification compliance, code quality,
-  and conditional specialist reviews (security, accessibility, design
-  quality). Specification compliance is always reviewed before code quality.
+  Run independent specification verification and structured technical reviews, then feed verified findings into deterministic acceptance.
 ---
 
 # /dk-review
 
 ## Purpose
 
-Runs the full review cycle over the current implementation. The review is always a two-stage process: specification compliance first, then code quality. Conditional specialist reviews (security, accessibility, design quality) are added when applicable. Simplicity review is a separate command (`/dk-simplify`).
+Runs the independent review cycle for the active Development Contract. Specification verification and technical review remain separate responsibilities. Reviewer prose cannot override authoritative sources or runtime evidence.
 
 ## Workflow
 
-### Stage 1: Specification Compliance Review
-Spawn the **spec-reviewer** to answer:
-- Does the implementation satisfy the specification?
-- Are all acceptance criteria met?
-- Are exclusions respected?
-- Is there scope creep?
+1. Resolve the active contract/run and independently rehydrate authoritative sources, current repository state, actual diff, test evidence, dependency delta, and relevant design/security constraints.
+2. Run specification verification first. Every acceptance criterion must have a structured evidence-backed status.
+3. Run `code-reviewer` using contract scope and actual diff.
+4. Select conditional reviewers from risk and impact: `security-reviewer`, `accessibility-reviewer`, `design-reviewer`, `architecture-reviewer`, and later simplicity review as applicable.
+5. Reviewer findings must use structured severity INFO / WARNING / MAJOR / CRITICAL and disposition OPEN / RESOLVED / ACCEPTED_RISK / NOT_APPLICABLE.
+6. MAJOR/CRITICAL findings require evidence. ACCEPTED_RISK requires approval provenance.
+7. Run architecture-drift detection for new dependencies, services, storage, top-level patterns, API surfaces, environment requirements, migration strategies, and auth patterns. Classify EXPECTED / AUTHORIZED / UNAUTHORIZED / REQUIRES_DECISION.
+8. For UI work, independently bind authoritative `design.md` and require design/runtime evidence; do not accept the implementer's statement that the design system was followed.
+9. Submit the verification records, structured reviews, control manifests, architecture drift, and approvals to the deterministic acceptance engine.
 
-Use the specification-compliance-review skill to check every acceptance criterion.
+## Acceptance Rule
 
-### Stage 2: Code Quality Review
-Spawn the **code-reviewer** to assess:
-- Correctness and edge case handling
-- Readability and maintainability
-- Error handling
-- Project conventions
-- Unnecessary complexity
-- Duplication
-
-Use the code-quality-review skill for structured assessment.
-
-### Stage 3: Conditional Specialist Reviews
-
-**Security Review** (when applicable):
-- Authentication, authorisation, input handling
-- Secrets, file handling, database access
-- External APIs, payments, PII
-- Activate the security-review skill and spawn the **security-reviewer** agent
-
-**Accessibility Review** (for UI tasks):
-- Semantic HTML, keyboard navigation, screen reader support
-- Colour contrast, focus indicators, motion preferences
-- Activate the accessibility-review skill and spawn the **accessibility-reviewer** agent
-
-**Design Quality & Design Authority Review** (for UI tasks):
-- Visual hierarchy, spacing, typography, design tokens, visual invariants
-- Evaluates compliance against `design.md` and assigns stable issue IDs (`DS-001`, `DS-002`)
-- Issues mandatory verdict: `Same Design Team Test: PASS | PARTIAL | FAIL` (FAIL blocks acceptance)
-- Activate the design-quality-review skill and spawn the **design-reviewer** agent
-
-### Stage 4: Report
-Provide a structured review report with verdicts for each stage, Same Design Team Test status, and a go/no-go recommendation.
+The review command may recommend action but may not mark the increment accepted. Runtime acceptance is:
+- `ACCEPTED` only when all required inputs pass;
+- `PENDING` when required evidence/reviews/controls/approvals are incomplete;
+- `BLOCKED` for failed verification/review, stale context, or unauthorized architecture drift.
 
 ## Skills Activated
 
-Primary:
-- `specification-compliance-review` — First gate: did we build the right thing?
-
-Supporting:
-- `code-quality-review` — Second gate: did we build it well?
-
-Conditional:
-- `security-review` — Security vulnerability assessment (for auth, input, payments, PII)
-- `accessibility-review` — Accessibility assessment (for UI changes)
-- `design-quality-review` — Visual design quality assessment (for UI changes)
+- `specification-compliance-review`
+- `code-quality-review`
+- conditional `security-review`
+- conditional `accessibility-review`
+- conditional `design-quality-review`
 
 ## Sub-Agents
 
-- spec-reviewer (Stage 1 — always required)
-- code-reviewer (Stage 2 — always required)
-- security-reviewer (conditional — for security-sensitive work)
-- accessibility-reviewer (conditional — for UI changes)
-- design-reviewer (conditional — for UI changes)
+- `spec-reviewer`
+- `code-reviewer`
+- conditional `security-reviewer`
+- conditional `accessibility-reviewer`
+- conditional `design-reviewer`
+- conditional `architecture-reviewer` capability
 
 ## Output
 
-A structured review report with:
-- Verdict for each review stage (PASS / FAIL / PASS WITH ISSUES)
-- Detailed findings with file references
-- Categorised issues (Critical, Major, Minor)
-- Go/no-go recommendation
+Structured verification/reviewer verdicts, evidence-backed findings, architecture-drift status, unresolved gate list, and deterministic acceptance state.
