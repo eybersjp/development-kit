@@ -221,6 +221,8 @@
 * [v0.7 Architecture Decisions (Planned v0.7)](04-architecture/v0.7-architecture-decisions.md)
 * [v0.7 Intelligence & Control Center Implementation Plan (Planned v0.7)](04-architecture/v0.7-intelligence-control-center-implementation-plan.md)
 * [DK Design Authority Feature Specification (v0.8)](04-architecture/dk-design-authority-v0.8-feature-spec.md)
+* [DK Contract-Driven Agent Orchestration Implementation Plan (Planned v0.9)](04-architecture/dk-contract-driven-agent-orchestration-implementation-plan.md)
+* [DK Reliability Control-Plane Amendment (Planned v0.9)](04-architecture/dk-reliability-control-plane-amendment.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)
