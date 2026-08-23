@@ -12,9 +12,19 @@ const BLAST_RADIUS = Object.freeze({
   PROJECT: 'project',
   DECLARED_RESOURCE: 'declared-resource',
   REMOTE_PROJECT: 'remote-project',
-  HOST_WIDE: 'host-wide',
-  EXTERNAL_FILESYSTEM: 'external-filesystem',
   UNKNOWN: 'unknown',
+  EXTERNAL_FILESYSTEM: 'external-filesystem',
+  HOST_WIDE: 'host-wide',
+});
+
+const BLAST_RANK = Object.freeze({
+  [BLAST_RADIUS.NONE]: 0,
+  [BLAST_RADIUS.DECLARED_RESOURCE]: 1,
+  [BLAST_RADIUS.PROJECT]: 2,
+  [BLAST_RADIUS.REMOTE_PROJECT]: 3,
+  [BLAST_RADIUS.UNKNOWN]: 4,
+  [BLAST_RADIUS.EXTERNAL_FILESYSTEM]: 5,
+  [BLAST_RADIUS.HOST_WIDE]: 6,
 });
 
 const ENVIRONMENT_MODES = new Set([
@@ -24,7 +34,6 @@ const ENVIRONMENT_MODES = new Set([
   'staging',
   'production',
 ]);
-
 const REMOTE_ENVIRONMENTS = new Set(['remote-development', 'staging', 'production']);
 
 export class CommandSafetyError extends Error {
@@ -49,8 +58,7 @@ function normalizeCommand(command) {
 }
 
 export function fingerprintCommand(command) {
-  const normalized = normalizeCommand(command);
-  return `sha256:${createHash('sha256').update(normalized).digest('hex')}`;
+  return `sha256:${createHash('sha256').update(normalizeCommand(command)).digest('hex')}`;
 }
 
 function normalizeProjectRoot(projectRoot) {
@@ -69,14 +77,18 @@ function looksAbsolutePortable(value) {
   return path.isAbsolute(normalized) || /^[A-Za-z]:\//.test(normalized) || normalized.startsWith('//');
 }
 
+function hasUnresolvedShellExpansion(value) {
+  return /^(?:~|\$|%[A-Za-z_][A-Za-z0-9_]*%)/.test(value)
+    || /\$\{[^}]+\}/.test(value)
+    || /\$[A-Za-z_][A-Za-z0-9_]*/.test(value);
+}
+
 function isWithinProject(projectRoot, candidate) {
   if (!candidate || typeof candidate !== 'string') return false;
   const root = normalizeProjectRoot(projectRoot);
   const portable = portablePath(candidate.trim().replace(/^['"]|['"]$/g, ''));
 
-  // Windows absolute paths cannot be meaningfully resolved against a POSIX root,
-  // so fail closed unless the runtime itself is on Windows and path.resolve can
-  // establish containment.
+  if (hasUnresolvedShellExpansion(portable)) return false;
   if (/^[A-Za-z]:\//.test(portable) && process.platform !== 'win32') return false;
 
   const resolved = path.resolve(root, portable);
@@ -118,6 +130,13 @@ export function createExecutionEnvironment({
   });
 }
 
+function raiseBlastRadius(result, blastRadius, projectOwnershipProvable) {
+  if ((BLAST_RANK[blastRadius] ?? BLAST_RANK[BLAST_RADIUS.UNKNOWN]) > (BLAST_RANK[result.blastRadius] ?? 0)) {
+    result.blastRadius = blastRadius;
+  }
+  result.projectOwnershipProvable = result.projectOwnershipProvable && projectOwnershipProvable;
+}
+
 function extractDockerRmTargets(command) {
   const match = command.match(/(?:^|[;&|]\s*)docker\s+(?:container\s+)?rm\b([^;&|]*)/i);
   if (!match) return [];
@@ -133,24 +152,137 @@ function extractFilesystemTargets(command) {
   const targets = [];
 
   for (const match of command.matchAll(/(?:^|[;&|]\s*)rm\s+(?:-[A-Za-z]*[rRfF][A-Za-z]*\s+)+([^;&|]+)/gi)) {
-    const tokens = match[1].trim().split(/\s+/).filter(Boolean);
-    targets.push(...tokens);
+    targets.push(...match[1].trim().split(/\s+/).filter(Boolean));
   }
 
   for (const match of command.matchAll(/(?:^|[;&|]\s*)Remove-Item\b([^;&|]*)/gi)) {
     const body = match[1];
     if (!/(?:-Recurse|-Force)/i.test(body)) continue;
-    const tokens = body
-      .split(/\s+/)
-      .filter(Boolean)
-      .filter((token) => !token.startsWith('-'));
+    const tokens = body.split(/\s+/).filter(Boolean).filter((token) => !token.startsWith('-'));
     targets.push(...tokens);
   }
 
   return targets.map((target) => target.replace(/^['"]|['"]$/g, ''));
 }
 
-function detectRemoteMutation(command, environment) {
+function classifyDocker(command, environment, result) {
+  if (!/\bdocker\b/i.test(command)) return;
+
+  if (/\bdocker\s+(?:system|container|image|volume|network)\s+prune\b/i.test(command)) {
+    result.destructive = true;
+    result.family ??= 'docker';
+    raiseBlastRadius(result, BLAST_RADIUS.HOST_WIDE, false);
+    result.reasons.push('Docker prune can affect resources outside the active project');
+  }
+
+  if (/\bdocker\s+(?:compose|compose\s+-[^;&|]+)\s+down\b/i.test(command)) {
+    result.destructive = true;
+    result.family ??= 'docker';
+    const projectName = command.match(/(?:--project-name|-p)\s+([^\s;&|]+)/i)?.[1] ?? null;
+    const declared = projectName && environment.declaredResources.dockerProjects.includes(projectName);
+    raiseBlastRadius(result, declared ? BLAST_RADIUS.DECLARED_RESOURCE : BLAST_RADIUS.UNKNOWN, Boolean(declared));
+    result.reasons.push(declared
+      ? 'Docker Compose teardown targets a declared project'
+      : 'Docker Compose teardown project ownership was not explicit');
+  }
+
+  const rmTargets = extractDockerRmTargets(command);
+  if (rmTargets.length === 0) return;
+
+  result.destructive = true;
+  result.family ??= 'docker';
+  if (rmTargets.includes('*ALL_RUNNING_OR_EXISTING*')) {
+    raiseBlastRadius(result, BLAST_RADIUS.HOST_WIDE, false);
+    result.reasons.push('Docker remove command expands to all host containers');
+    return;
+  }
+
+  const declared = new Set(environment.declaredResources.dockerContainers);
+  const allDeclared = rmTargets.every((target) => declared.has(target));
+  result.targets.push(...rmTargets.map((target) => ({ type: 'docker-container', value: target })));
+  raiseBlastRadius(result, allDeclared ? BLAST_RADIUS.DECLARED_RESOURCE : BLAST_RADIUS.UNKNOWN, allDeclared);
+  if (!allDeclared) result.reasons.push('Docker remove targets are not fully declared as project resources');
+}
+
+function classifyFilesystem(command, environment, result) {
+  const targets = extractFilesystemTargets(command);
+  if (targets.length === 0) return;
+
+  result.destructive = true;
+  result.family ??= 'filesystem';
+  result.targets.push(...targets.map((target) => ({ type: 'filesystem-path', value: target })));
+
+  let external = false;
+  let unknown = false;
+  for (const target of targets) {
+    const normalized = portablePath(target);
+    if (['/', '/*', '~', '~/', '..', '../'].includes(normalized) || hasUnresolvedShellExpansion(normalized)) {
+      external = true;
+      continue;
+    }
+    if (looksAbsolutePortable(normalized) && !isWithinProject(environment.projectRoot, target)) {
+      external = true;
+      continue;
+    }
+    if (!isWithinProject(environment.projectRoot, target)) unknown = true;
+  }
+
+  if (external) {
+    raiseBlastRadius(result, BLAST_RADIUS.EXTERNAL_FILESYSTEM, false);
+    result.reasons.push('Recursive filesystem deletion targets a path outside the active project');
+  } else if (unknown) {
+    raiseBlastRadius(result, BLAST_RADIUS.UNKNOWN, false);
+    result.reasons.push('Filesystem deletion target ownership could not be proven');
+  } else {
+    raiseBlastRadius(result, BLAST_RADIUS.PROJECT, true);
+  }
+}
+
+function classifyGit(command, result) {
+  if (/\bgit\s+reset\s+--hard\b/i.test(command) || /\bgit\s+clean\b[^\n]*(?:-f|-x|-d)/i.test(command)) {
+    result.destructive = true;
+    result.family ??= 'git';
+    raiseBlastRadius(result, BLAST_RADIUS.PROJECT, true);
+    result.reasons.push('Git command can irreversibly discard local work');
+  }
+}
+
+function classifyDatabase(command, environment, result) {
+  const dbReset = /\b(?:npx\s+)?supabase\s+db\s+reset\b/i.test(command);
+  const destructiveSql = /\b(?:drop\s+(?:database|schema|table)|truncate\s+table)\b/i.test(command);
+  if (!dbReset && !destructiveSql) return;
+
+  result.destructive = true;
+  result.family ??= 'database';
+  if (environment.linkedRemote || REMOTE_ENVIRONMENTS.has(environment.mode)) {
+    result.remoteMutation = true;
+    const ownership = environment.declaredResources.supabaseProjectRefs.length > 0;
+    raiseBlastRadius(result, BLAST_RADIUS.REMOTE_PROJECT, ownership);
+    result.reasons.push('Destructive database operation is associated with a remote environment');
+  } else {
+    raiseBlastRadius(result, BLAST_RADIUS.PROJECT, true);
+    result.reasons.push('Destructive database operation is scoped to the local project environment');
+  }
+}
+
+function classifyInfrastructure(command, result) {
+  if (/\bterraform\s+destroy\b/i.test(command)) {
+    result.destructive = true;
+    result.remoteMutation = true;
+    result.family ??= 'infrastructure';
+    raiseBlastRadius(result, BLAST_RADIUS.REMOTE_PROJECT, true);
+    result.reasons.push('Terraform destroy removes managed infrastructure');
+  }
+  if (/\bkubectl\s+delete\b/i.test(command)) {
+    result.destructive = true;
+    result.remoteMutation = true;
+    result.family ??= 'infrastructure';
+    raiseBlastRadius(result, BLAST_RADIUS.REMOTE_PROJECT, true);
+    result.reasons.push('kubectl delete removes cluster resources');
+  }
+}
+
+function commandHasRemoteMutation(command) {
   const patterns = [
     /\bgit\s+push\b/i,
     /\bnpm\s+publish\b/i,
@@ -164,129 +296,15 @@ function detectRemoteMutation(command, environment) {
     /\bterraform\s+(?:apply|destroy)\b/i,
     /\bkubectl\s+(?:apply|delete|replace|patch|scale)\b/i,
   ];
-
-  return patterns.some((pattern) => pattern.test(command)) || environment.linkedRemote || REMOTE_ENVIRONMENTS.has(environment.mode);
-}
-
-function classifyDocker(command, environment, result) {
-  if (!/\bdocker\b/i.test(command)) return;
-
-  if (/\bdocker\s+(?:system|container|image|volume|network)\s+prune\b/i.test(command)) {
-    result.destructive = true;
-    result.family = result.family ?? 'docker';
-    result.blastRadius = BLAST_RADIUS.HOST_WIDE;
-    result.projectOwnershipProvable = false;
-    result.reasons.push('Docker prune can affect resources outside the active project');
-  }
-
-  const rmTargets = extractDockerRmTargets(command);
-  if (rmTargets.length === 0) return;
-
-  result.destructive = true;
-  result.family = result.family ?? 'docker';
-  if (rmTargets.includes('*ALL_RUNNING_OR_EXISTING*')) {
-    result.blastRadius = BLAST_RADIUS.HOST_WIDE;
-    result.projectOwnershipProvable = false;
-    result.reasons.push('Docker remove command expands to all host containers');
-    return;
-  }
-
-  const declared = new Set(environment.declaredResources.dockerContainers);
-  const allDeclared = rmTargets.every((target) => declared.has(target));
-  result.targets.push(...rmTargets.map((target) => ({ type: 'docker-container', value: target })));
-  result.projectOwnershipProvable = allDeclared;
-  result.blastRadius = allDeclared ? BLAST_RADIUS.DECLARED_RESOURCE : BLAST_RADIUS.UNKNOWN;
-  if (!allDeclared) result.reasons.push('Docker remove targets are not fully declared as project resources');
-}
-
-function classifyFilesystem(command, environment, result) {
-  const targets = extractFilesystemTargets(command);
-  if (targets.length === 0) return;
-
-  result.destructive = true;
-  result.family = result.family ?? 'filesystem';
-  result.targets.push(...targets.map((target) => ({ type: 'filesystem-path', value: target })));
-
-  let external = false;
-  let unknown = false;
-  for (const target of targets) {
-    const normalized = portablePath(target);
-    if (['/', '/*', '~', '~/', '.', '..', '../'].includes(normalized) && normalized !== '.') {
-      external = true;
-      continue;
-    }
-    if (looksAbsolutePortable(normalized) && !isWithinProject(environment.projectRoot, target)) {
-      external = true;
-      continue;
-    }
-    if (!isWithinProject(environment.projectRoot, target)) unknown = true;
-  }
-
-  if (external) {
-    result.blastRadius = BLAST_RADIUS.EXTERNAL_FILESYSTEM;
-    result.projectOwnershipProvable = false;
-    result.reasons.push('Recursive filesystem deletion targets a path outside the active project');
-  } else if (unknown) {
-    result.blastRadius = BLAST_RADIUS.UNKNOWN;
-    result.projectOwnershipProvable = false;
-    result.reasons.push('Filesystem deletion target ownership could not be proven');
-  } else {
-    result.blastRadius = BLAST_RADIUS.PROJECT;
-    result.projectOwnershipProvable = true;
-  }
-}
-
-function classifyGit(command, result) {
-  if (/\bgit\s+reset\s+--hard\b/i.test(command) || /\bgit\s+clean\b[^\n]*(?:-f|-x|-d)/i.test(command)) {
-    result.destructive = true;
-    result.family = result.family ?? 'git';
-    if (result.blastRadius === BLAST_RADIUS.NONE) result.blastRadius = BLAST_RADIUS.PROJECT;
-    result.projectOwnershipProvable = true;
-    result.reasons.push('Git command can irreversibly discard local work');
-  }
-}
-
-function classifyDatabase(command, environment, result) {
-  const dbReset = /\b(?:npx\s+)?supabase\s+db\s+reset\b/i.test(command);
-  const destructiveSql = /\b(?:drop\s+(?:database|schema|table)|truncate\s+table)\b/i.test(command);
-  if (!dbReset && !destructiveSql) return;
-
-  result.destructive = true;
-  result.family = result.family ?? 'database';
-  if (environment.linkedRemote || REMOTE_ENVIRONMENTS.has(environment.mode)) {
-    result.blastRadius = BLAST_RADIUS.REMOTE_PROJECT;
-    result.remoteMutation = true;
-    result.projectOwnershipProvable = environment.declaredResources.supabaseProjectRefs.length > 0;
-    result.reasons.push('Destructive database operation is associated with a remote environment');
-  } else if (result.blastRadius === BLAST_RADIUS.NONE) {
-    result.blastRadius = BLAST_RADIUS.PROJECT;
-    result.projectOwnershipProvable = true;
-    result.reasons.push('Destructive database operation is scoped to the local project environment');
-  }
-}
-
-function classifyInfrastructure(command, result) {
-  if (/\bterraform\s+destroy\b/i.test(command)) {
-    result.destructive = true;
-    result.remoteMutation = true;
-    result.family = result.family ?? 'infrastructure';
-    result.blastRadius = BLAST_RADIUS.REMOTE_PROJECT;
-    result.reasons.push('Terraform destroy removes managed infrastructure');
-  }
-  if (/\bkubectl\s+delete\b/i.test(command)) {
-    result.destructive = true;
-    result.remoteMutation = true;
-    result.family = result.family ?? 'infrastructure';
-    result.blastRadius = BLAST_RADIUS.REMOTE_PROJECT;
-    result.reasons.push('kubectl delete removes cluster resources');
-  }
+  return patterns.some((pattern) => pattern.test(command));
 }
 
 export function classifyCommand(command, environmentInput = {}) {
   const normalized = normalizeCommand(command);
-  const environment = environmentInput?.projectRoot
-    ? createExecutionEnvironment(environmentInput)
-    : createExecutionEnvironment({ ...environmentInput, projectRoot: process.cwd() });
+  const environment = createExecutionEnvironment({
+    ...environmentInput,
+    projectRoot: environmentInput?.projectRoot ?? process.cwd(),
+  });
 
   const result = {
     command: normalized,
@@ -307,14 +325,17 @@ export function classifyCommand(command, environmentInput = {}) {
   classifyDatabase(normalized, environment, result);
   classifyInfrastructure(normalized, result);
 
-  if (detectRemoteMutation(normalized, environment)) {
+  if (commandHasRemoteMutation(normalized)) {
     result.remoteMutation = true;
-    if (result.blastRadius === BLAST_RADIUS.NONE) result.blastRadius = BLAST_RADIUS.REMOTE_PROJECT;
-    if (!result.family) result.family = 'remote-mutation';
+    result.family ??= 'remote-mutation';
+    raiseBlastRadius(result, BLAST_RADIUS.REMOTE_PROJECT, true);
     result.reasons.push('Command mutates or publishes to a remote system');
   }
 
-  if (result.destructive && result.blastRadius === BLAST_RADIUS.NONE) result.blastRadius = BLAST_RADIUS.UNKNOWN;
+  if (result.destructive && result.blastRadius === BLAST_RADIUS.NONE) {
+    raiseBlastRadius(result, BLAST_RADIUS.UNKNOWN, false);
+  }
+
   return result;
 }
 
@@ -326,18 +347,13 @@ function validApprovalFor(assessment, approval, capability) {
   return true;
 }
 
-function hostWideApproval(assessment, approval) {
+function broadBlastApproval(assessment, approval) {
   return validApprovalFor(assessment, approval, 'destructive')
     && Array.isArray(approval.allowedBlastRadii)
     && approval.allowedBlastRadii.includes(assessment.blastRadius);
 }
 
-export function evaluateCommandSafety({
-  command,
-  contract,
-  environment = {},
-  approval = null,
-} = {}) {
+export function evaluateCommandSafety({ command, contract, environment = {}, approval = null } = {}) {
   if (!isPlainObject(contract) || !isPlainObject(contract.executionSafety)) {
     throw new CommandSafetyError('A Development Contract with executionSafety policy is required', null);
   }
@@ -347,11 +363,14 @@ export function evaluateCommandSafety({
   const blockers = [];
   const approvalsNeeded = [];
 
-  const broadBlast = [BLAST_RADIUS.HOST_WIDE, BLAST_RADIUS.EXTERNAL_FILESYSTEM, BLAST_RADIUS.UNKNOWN].includes(assessment.blastRadius);
-  if (broadBlast && policy.resourceScope === 'project-only') {
-    if (!hostWideApproval(assessment, approval)) {
-      blockers.push(`Blast radius ${assessment.blastRadius} exceeds project-only resource scope`);
-    }
+  const broadBlast = [
+    BLAST_RADIUS.HOST_WIDE,
+    BLAST_RADIUS.EXTERNAL_FILESYSTEM,
+    BLAST_RADIUS.UNKNOWN,
+  ].includes(assessment.blastRadius);
+
+  if (broadBlast && policy.resourceScope === 'project-only' && !broadBlastApproval(assessment, approval)) {
+    blockers.push(`Blast radius ${assessment.blastRadius} exceeds project-only resource scope`);
   }
 
   if (assessment.destructive) {
@@ -380,12 +399,7 @@ export function evaluateCommandSafety({
       ? DECISIONS.REQUIRE_APPROVAL
       : DECISIONS.ALLOW;
 
-  return {
-    ...assessment,
-    decision,
-    blockers,
-    approvalsNeeded,
-  };
+  return { ...assessment, decision, blockers, approvalsNeeded };
 }
 
 export function assertCommandAllowed(options) {
