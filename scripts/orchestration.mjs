@@ -8,7 +8,9 @@ import {
   decideAcceptance,
   decideCorrection,
   evaluateCommandSafety,
-  loadRunManifest,
+  evaluateRun,
+  loadCurrentRunState,
+  planCorrection,
   prepareTaskRun,
   validatePlanModel,
   verifyFromContext,
@@ -62,12 +64,12 @@ function main() {
     case 'prepare-run': return output(prepareTaskRun({ ...payload, rootDir }));
     case 'context': return output(createRoleContext({ ...payload, rootDir }));
     case 'verify': return output(verifyFromContext(payload));
-    case 'acceptance': return output(decideAcceptance({ ...payload, rootDir }));
-    case 'correction': return output(decideCorrection(payload));
+    case 'acceptance': return output(payload.run ? evaluateRun({ ...payload, rootDir }) : decideAcceptance({ ...payload, rootDir }));
+    case 'correction': return output(payload.run ? planCorrection({ ...payload, rootDir }) : decideCorrection(payload));
     case 'safety': return output(evaluateCommandSafety(payload));
     case 'reconcile': return output(reconcileCanonicalArtifact({ ...payload, rootDir }));
     case 'plan-validate': return output(validatePlanModel(payload));
-    case 'run-status': return output(loadRunManifest(payload.contractId, payload.runId, rootDir));
+    case 'run-status': return output(loadCurrentRunState(payload.contractId, payload.runId, rootDir));
     default: throw new Error(`Unsupported orchestration operation: ${operation}`);
   }
 }
