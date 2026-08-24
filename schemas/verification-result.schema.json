@@ -23,6 +23,7 @@
           "id": { "type": "string", "minLength": 1 },
           "statement": { "type": "string", "minLength": 1 },
           "requiredEvidence": { "type": "boolean" },
+          "verificationType": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
           "status": { "enum": ["PASS", "FAIL", "PARTIAL", "UNVERIFIED", "NOT_APPLICABLE"] },
           "evidence": { "type": "array", "items": { "$ref": "evidence-record.schema.json" } },
           "reason": { "type": ["string", "null"] }
