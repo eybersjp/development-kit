@@ -1,46 +1,41 @@
 # Development Kit Documentation System
 
-Welcome to the official documentation for **Development Kit v0.8.1** (`development-kit@0.8.1`).
+Welcome to the official documentation for **Development Kit v0.9.0** (`development-kit@0.9.0`).
 
 Development Kit is a disciplined AI software-development workflow for Antigravity, OpenCode, Claude Code, Cursor, VS Code (GitHub Copilot), Cline, and Windsurf. It installs lifecycle commands, specialist agents, reusable skills, verification gates, Next-Step Guidance, DK Intelligence, DK Control Center, DKF Design Authority, and the persistent `/dk-autopilot` guided workflow into supported coding-agent environments.
 
 ## Current release highlights
 
-| Package Version | 0.8.1 |
+| Package Version | 0.9.0 |
 | Lifecycle Stages | 9 (UNDERSTAND through COMPLETE) |
 | Workflow Commands | 16 |
 | Specialist Agents | 18 |
 | Engineering Skills | 47 |
 | Native Workflow Adapters | 16 |
 
-- Includes **DKF Design Authority** (enforcing `design.md` as the single authoritative source of truth for frontend UI styling, token architecture, and visual consistency).
-- Includes **native Antigravity slash-workflow discovery** for all 16 `/dk-*` workflows while retaining `commands/*.md` as the authoritative workflow definitions.
-- Includes **DK Intelligence** (durable local-first engineering memory, provenance, and lifecycle context assembly).
-- Includes **DK Control Center** (integrated local browser UI and secure loopback Runtime API).
-- The framework includes 16 workflow commands, 18 specialist agents, 47 engineering skills, 16 workflow-entry adapters, and 4 hooks.
-- Next-Step Guidance automatically computes and appends context-aware recommendations across the full 9-stage lifecycle.
-- Standalone installation (`installAll`) includes `runtime/` for standalone operation without repository fallbacks.
-- Multi-platform adapters provide native project integration for Claude Code, Cursor, VS Code, Cline, and Windsurf.
-- `/dk-research` provides provider-neutral, source-backed external research with provenance, uncertainty handling, and explicit trust boundaries.
-- Skill frontmatter parsing and canonical plugin-mirror checks treat equivalent CRLF and LF content consistently across operating systems.
-- OpenCode configuration uses the official schema declaration and automatically loads the root `AGENTS.md` file.
-- The release validation suite covers Antigravity workflow discovery and upgrade regressions, OpenCode configuration, external research integration, platform templates, next-step guidance, standalone packaging regressions, DKF Design Authority, and intelligence tests.
+- Introduces the **v0.9 Reliability Control Plane**: approved tasks become fingerprinted Development Contracts before execution.
+- Independent verifier/reviewer contexts are rehydrated from authoritative sources; implementation reports are non-authoritative evidence inputs and cannot self-certify completion.
+- Acceptance is computed from acceptance criteria, evidence, required reviews, risk-derived security/architecture gates, control manifests, source freshness, Design Authority, architecture drift, and approvals.
+- Correction loops are bounded by task scope, risk, attempt limits, and repeated-failure detection.
+- Destructive and remote commands are evaluated against contract scope and blast radius before execution; project-local work cannot silently perform host-wide cleanup.
+- Canonical artifact amendments require an expected source fingerprint, exact delta anchors, write/read-back verification, and refuse stale replay.
+- PLAN validation computes task counts, dependencies, cycles, ownership, and acceptance-criterion coverage instead of trusting prose summaries.
+- Includes **DKF Design Authority** with `design.md` as the single authoritative source of truth for frontend UI styling, token architecture, and visual consistency.
+- Includes native Antigravity slash-workflow discovery for all 16 `/dk-*` workflows while retaining `commands/*.md` as the authoritative workflow definitions.
+- Includes **DK Intelligence** and **DK Control Center** for durable engineering context and local workflow inspection.
+- Standalone and project installation validation confirms `runtime/`, `schemas/`, commands, agents, skills, and plugin assets are self-contained and version-aligned.
+- `/dk-research` remains provider-neutral and source-backed, with provenance, uncertainty handling, and explicit trust boundaries.
+- The release validation suite now includes orchestration contracts, execution safety, evidence/control coverage, core orchestration, command integration, Proposal Builder adversarial regressions, version consistency, Design Authority, Intelligence, installer, documentation, platform, research, and Autopilot validation.
 
 Projects installed with earlier versions should follow the [Migration Guide](08-maintenance-release/migration-guide.md).
 
-## v0.7 architecture
+## v0.9 reliability architecture
 
-The following documents define the architecture for **DK Intelligence and DK Control Center**:
+The v0.9 control-plane design is defined by:
 
-* [DK Intelligence and Memory Architecture](04-architecture/dk-intelligence-memory-architecture.md)
-* [DK Control Center Product Specification](04-architecture/dk-control-center-product-specification.md)
-* [DK Runtime API](04-architecture/dk-runtime-api.md)
-* [DK Memory Provider Contract](04-architecture/dk-memory-provider-contract.md)
-* [v0.7 Architecture Decisions](04-architecture/v0.7-architecture-decisions.md)
-* [v0.7 Security Threat Model](07-testing-quality-security/v0.7-intelligence-control-center-threat-model.md)
-* [v0.7 Implementation Plan](04-architecture/v0.7-intelligence-control-center-implementation-plan.md)
-
----
+* [Contract-Driven Agent Orchestration Implementation Plan](04-architecture/dk-contract-driven-agent-orchestration-implementation-plan.md)
+* [Reliability Control-Plane Amendment](04-architecture/dk-reliability-control-plane-amendment.md)
+* [Orchestration Runtime CLI](03-reference/scripts/orchestration.md)
 
 ## Documentation quick links
 
