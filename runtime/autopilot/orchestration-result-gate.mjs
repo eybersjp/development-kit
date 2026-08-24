@@ -17,7 +17,12 @@ function requiredString(value, label) {
 export function enforceAutopilotOrchestrationGate(state, result) {
   if (!state || !result) throw new AutopilotOrchestrationGateError('Autopilot state and result are required');
   const orchestration = result.orchestration;
-  if (orchestration === undefined || orchestration === null) return { legacy: true, enforced: false };
+  if (orchestration === undefined || orchestration === null) {
+    if (state.orchestration?.activeContractId) {
+      throw new AutopilotOrchestrationGateError('Contract-aware Autopilot state cannot omit orchestration evidence or downgrade to legacy mode');
+    }
+    return { legacy: true, enforced: false };
+  }
   if (!object(orchestration)) throw new AutopilotOrchestrationGateError('result.orchestration must be an object');
 
   const activeContractId = requiredString(orchestration.activeContractId, 'orchestration.activeContractId');
