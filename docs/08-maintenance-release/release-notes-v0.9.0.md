@@ -13,6 +13,8 @@ Development Kit `v0.9.0` introduces the **Reliability Control Plane**, a contrac
 
 The release was driven by a real Proposal Builder development session that exposed task-count drift, stale artifact amendments, incomplete security verification, unsafe host-level command scope, version/installer drift, and overly trusting completion claims. Those failures are now preserved as executable regression fixtures.
 
+A final independent review of the release candidate also found and fixed four additional control-plane weaknesses before release: criterion verification types were not enforced against evidence kinds; independent parallel tasks could be falsely labelled invalid; a contract-aware Autopilot run could omit orchestration metadata and fall back to legacy behavior; and orchestration restart/resume loaded only the initial run snapshot instead of the latest governed state. All four are now regression-gated.
+
 ---
 
 ## Key Highlights
@@ -27,6 +29,8 @@ The release was driven by a real Proposal Builder development session that expos
    - Implementation reports are explicitly non-authoritative.
    - Implementation roles cannot produce authoritative verification records.
    - PASS evidence is validated and immutable/idempotent when persisted.
+   - A PASS criterion that declares a verification type must prove that verification type with matching evidence; browser-required behavior cannot pass on unrelated unit-test evidence.
+   - Contract-level `requiredVerification` is checked independently before acceptance.
 
 3. **Deterministic Acceptance**
    - Acceptance state is computed as `ACCEPTED`, `PENDING`, or `BLOCKED`.
@@ -40,6 +44,7 @@ The release was driven by a real Proposal Builder development session that expos
    - Retry counts are bounded.
    - Repeated failure signatures stop endless correction loops.
    - High-risk or non-correctable failures route to review instead of blind retries.
+   - A `NONE` correction decision preserves the current run state rather than manufacturing a paused revision.
 
 5. **Execution Safety and Blast-Radius Control**
    - Commands are classified for project scope, destructive behavior, remote mutation, and host-wide impact.
@@ -57,6 +62,7 @@ The release was driven by a real Proposal Builder development session that expos
    - Dependencies are validated and checked for cycles.
    - Resource ownership detects missing and duplicate ownership.
    - Acceptance-criterion coverage is computed rather than inferred from prose.
+   - Legitimate independent/parallel tasks are allowed when the deterministic invariants are satisfied.
    - The original `20 tasks` vs `22 actual tasks` Proposal Builder failure is retained as a regression.
 
 8. **Canonical Artifact Reconciliation**
@@ -83,8 +89,17 @@ The release was driven by a real Proposal Builder development session that expos
     - `/dk-build`, `/dk-build-auto`, `/dk-test`, `/dk-review`, `/dk-tasks`, `/dk-status`, and `/dk-autopilot` are bound to the reliability runtime.
     - Contract-aware VERIFY, REVIEW, and COMPLETE stages cannot advance when runtime evidence/acceptance remains unresolved.
     - Legacy projects remain backward compatible until a Development Contract exists.
+    - Once a Development Contract is active, later results cannot omit orchestration evidence to downgrade the run to legacy mode.
+    - Material fresh-evidence work remains explicitly routed through `/dk-research` and retains the external-content trust boundary.
 
-13. **Installer and Version Integrity**
+13. **Revisioned Restart/Resume State**
+    - The initial run `manifest.json` remains immutable.
+    - Every governed state transition is stored as an append-only state revision.
+    - `current-state.json` atomically points to the latest immutable revision.
+    - Terminal `ACCEPTED` or `BLOCKED` state is persisted separately.
+    - `/dk-status`/orchestration run status resumes from the latest governed state instead of reverting to the initial `READY` snapshot.
+
+14. **Installer and Version Integrity**
     - Standalone/project installation tests verify runtime and schema assets are present without repository fallbacks.
     - Stale owned files are removed during upgrade while guarded user files such as `AGENTS.md` remain preserved.
     - `package.json`, the committed plugin manifest, and Autopilot `frameworkVersion` are now release-aligned and regression-tested.
@@ -106,7 +121,12 @@ The v0.9 release gate explicitly tests the field failures that triggered this re
 - stale canonical amendment replay;
 - incomplete installed runtime/schema assets;
 - package/plugin/Autopilot version drift;
-- sparse caller reviewer arrays that would otherwise omit risk-derived security or architecture gates.
+- sparse caller reviewer arrays that would otherwise omit risk-derived security or architecture gates;
+- criterion PASS using the wrong evidence kind;
+- contract-level required verification not represented in evidence;
+- contract-aware Autopilot downgrade by omitting orchestration metadata;
+- restart/resume reverting to the initial run snapshot;
+- false rejection of valid independent/parallel tasks.
 
 ---
 
@@ -121,7 +141,9 @@ The v0.9 release gate explicitly tests the field failures that triggered this re
 - `orchestration-integration:validate`
 - `v09-reliability:validate`
 
-The v0.9 reliability gate includes the Proposal Builder regression fixture, fail-closed derived-gate tests, mandatory amendment fingerprint tests, and version-consistency validation.
+The v0.9 reliability gate includes the Proposal Builder regression fixture, fail-closed derived-gate tests, verification-evidence-type tests, PLAN parallel-task tests, Autopilot continuity tests, revisioned restart/resume tests, mandatory amendment fingerprint tests, and version-consistency validation.
+
+The pull-request CI also executes the literal `npm run release:validate` command as its final step, matching the command used by the controlled release workflow.
 
 ---
 
