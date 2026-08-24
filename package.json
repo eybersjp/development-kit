@@ -26,7 +26,7 @@
     "evidence:validate": "node --test scripts/evidence-coverage.test.mjs",
     "orchestration-core:validate": "node --test scripts/orchestration-core.test.mjs",
     "orchestration-integration:validate": "node --test scripts/orchestration-integration.test.mjs",
-    "v09-reliability:validate": "node --test scripts/v09-reliability-regression.test.mjs scripts/orchestration-failclosed.test.mjs scripts/verification-evidence-type.test.mjs scripts/plan-validator-independence.test.mjs scripts/v09-version-consistency.test.mjs",
+    "v09-reliability:validate": "node --test scripts/v09-reliability-regression.test.mjs scripts/orchestration-failclosed.test.mjs scripts/verification-evidence-type.test.mjs scripts/plan-validator-independence.test.mjs scripts/autopilot-orchestration-continuity.test.mjs scripts/v09-version-consistency.test.mjs",
     "next-step:test": "node --test scripts/next-step.test.mjs",
     "installer:validate:test": "node --test scripts/install-antigravity.test.mjs",
     "research:validate": "node --test scripts/research-contract.test.mjs",
