@@ -38,6 +38,42 @@ function normalizeEvidence(value = []) {
   });
 }
 
+function normalizeFindings(findings = []) {
+  if (!Array.isArray(findings)) throw new ReviewResultError('findings must be an array');
+  const ids = new Set();
+  return findings.map((finding, index) => {
+    if (!object(finding)) throw new ReviewResultError('findings must contain objects');
+    const id = text(finding.id ?? `F-${String(index + 1).padStart(3, '0')}`, 'finding id');
+    if (ids.has(id)) throw new ReviewResultError(`Duplicate finding id: ${id}`);
+    ids.add(id);
+    const severity = text(finding.severity, `finding ${id} severity`).toUpperCase();
+    const disposition = text(finding.disposition ?? 'OPEN', `finding ${id} disposition`).toUpperCase();
+    if (!FINDING_SEVERITIES.includes(severity)) throw new ReviewResultError(`Unsupported finding severity: ${severity}`);
+    if (!FINDING_DISPOSITIONS.includes(disposition)) throw new ReviewResultError(`Unsupported finding disposition: ${disposition}`);
+    const evidence = normalizeEvidence(finding.evidence ?? []);
+    if (['MAJOR', 'CRITICAL'].includes(severity) && evidence.length === 0) {
+      throw new ReviewResultError(`${severity} finding ${id} requires evidence`);
+    }
+    const approvalId = finding.approvalId === undefined || finding.approvalId === null
+      ? null
+      : text(finding.approvalId, `finding ${id} approvalId`);
+    if (disposition === 'ACCEPTED_RISK' && !approvalId) {
+      throw new ReviewResultError(`Accepted-risk finding ${id} requires approvalId`);
+    }
+    return {
+      id,
+      title: text(finding.title, `finding ${id} title`),
+      severity,
+      disposition,
+      evidence,
+      approvalId,
+      criterionIds: Array.isArray(finding.criterionIds)
+        ? [...new Set(finding.criterionIds.map((value) => text(value, `finding ${id} criterion id`)))]
+        : [],
+    };
+  });
+}
+
 function computedVerdict(findings) {
   const open = findings.filter((finding) => finding.disposition === 'OPEN');
   if (open.some((finding) => ['CRITICAL', 'MAJOR'].includes(finding.severity))) return 'FAIL';
@@ -59,36 +95,9 @@ export function createReviewResult({
   if (!REVIEW_ROLES.has(normalizedRole)) throw new ReviewResultError(`Unsupported review role: ${normalizedRole}`);
   if (sourceFingerprint !== contract.sourceFingerprint) throw new ReviewResultError('Review source fingerprint does not match Development Contract');
   if (!['fresh', 'rehydrated'].includes(contextIsolation)) throw new ReviewResultError('Review context must be fresh or rehydrated');
-  if (!Array.isArray(findings)) throw new ReviewResultError('findings must be an array');
+  if (typeof createdAt !== 'string' || Number.isNaN(Date.parse(createdAt))) throw new ReviewResultError('createdAt must be a valid timestamp');
 
-  const ids = new Set();
-  const normalizedFindings = findings.map((finding, index) => {
-    if (!object(finding)) throw new ReviewResultError('findings must contain objects');
-    const id = text(finding.id ?? `F-${String(index + 1).padStart(3, '0')}`, 'finding id');
-    if (ids.has(id)) throw new ReviewResultError(`Duplicate finding id: ${id}`);
-    ids.add(id);
-    const severity = text(finding.severity, `finding ${id} severity`).toUpperCase();
-    const disposition = text(finding.disposition ?? 'OPEN', `finding ${id} disposition`).toUpperCase();
-    if (!FINDING_SEVERITIES.includes(severity)) throw new ReviewResultError(`Unsupported finding severity: ${severity}`);
-    if (!FINDING_DISPOSITIONS.includes(disposition)) throw new ReviewResultError(`Unsupported finding disposition: ${disposition}`);
-    const evidence = normalizeEvidence(finding.evidence ?? []);
-    if (['MAJOR', 'CRITICAL'].includes(severity) && evidence.length === 0) {
-      throw new ReviewResultError(`${severity} finding ${id} requires evidence`);
-    }
-    if (disposition === 'ACCEPTED_RISK' && !finding.approvalId) {
-      throw new ReviewResultError(`Accepted-risk finding ${id} requires approvalId`);
-    }
-    return {
-      id,
-      title: text(finding.title, `finding ${id} title`),
-      severity,
-      disposition,
-      evidence,
-      approvalId: finding.approvalId ?? null,
-      criterionIds: Array.isArray(finding.criterionIds) ? [...new Set(finding.criterionIds.map((value) => text(value, `finding ${id} criterion id`)))] : [],
-    };
-  });
-
+  const normalizedFindings = normalizeFindings(findings);
   const result = {
     schemaVersion: '1.0.0',
     contractId: contract.contractId,
@@ -111,8 +120,9 @@ export function validateReviewResult(result) {
   if (!REVIEW_ROLES.has(result.role)) throw new ReviewResultError(`Unsupported review role: ${result.role}`);
   if (!['fresh', 'rehydrated'].includes(result.contextIsolation)) throw new ReviewResultError('Review context must be fresh or rehydrated');
   if (typeof result.sourceFingerprint !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(result.sourceFingerprint)) throw new ReviewResultError('Review source fingerprint is invalid');
-  if (!Array.isArray(result.findings)) throw new ReviewResultError('Review findings must be an array');
-  const expected = computedVerdict(result.findings);
+  if (typeof result.createdAt !== 'string' || Number.isNaN(Date.parse(result.createdAt))) throw new ReviewResultError('Review createdAt must be a valid timestamp');
+  const normalizedFindings = normalizeFindings(result.findings);
+  const expected = computedVerdict(normalizedFindings);
   if (!REVIEW_VERDICTS.includes(result.verdict) || result.verdict !== expected) {
     throw new ReviewResultError(`Review verdict must equal computed verdict ${expected}`);
   }
