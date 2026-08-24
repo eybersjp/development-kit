@@ -35,6 +35,27 @@ function stable(value) {
   return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stable(value[key])]));
 }
 
+function stableContent(value) {
+  return `${JSON.stringify(stable(value), null, 2)}\n`;
+}
+
+function atomicWrite(filePath, content) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tempPath, content, 'utf8');
+  fs.renameSync(tempPath, filePath);
+}
+
+function persistImmutable(filePath, value, label) {
+  const content = stableContent(value);
+  if (fs.existsSync(filePath)) {
+    if (fs.readFileSync(filePath, 'utf8') === content) return { created: false, path: filePath };
+    throw new OrchestrationRunError(`Refusing to overwrite ${label}: ${filePath}`);
+  }
+  atomicWrite(filePath, content);
+  return { created: true, path: filePath };
+}
+
 export function createOrchestrationRun({
   contract,
   runId,
@@ -60,6 +81,8 @@ export function createOrchestrationRun({
     runId: normalizedRunId,
     sourceFingerprint: contract.sourceFingerprint,
     createdAt,
+    updatedAt: createdAt,
+    stateRevision: 1,
     state: 'READY',
     executionStrategy: strategy.strategy,
     hostCapabilities: strategy.capabilities,
@@ -75,8 +98,9 @@ export function createOrchestrationRun({
   return run;
 }
 
-export function updateRun(run, patch = {}) {
+export function updateRun(run, patch = {}, updatedAt = new Date().toISOString()) {
   validateOrchestrationRun(run);
+  if (typeof updatedAt !== 'string' || Number.isNaN(Date.parse(updatedAt))) throw new OrchestrationRunError('updatedAt must be a valid timestamp');
   const next = structuredClone(run);
   const allowed = new Set([
     'state',
@@ -90,6 +114,8 @@ export function updateRun(run, patch = {}) {
     if (!allowed.has(key)) throw new OrchestrationRunError(`Run field is immutable or unsupported: ${key}`);
     next[key] = structuredClone(value);
   }
+  next.stateRevision = run.stateRevision + 1;
+  next.updatedAt = updatedAt;
   validateOrchestrationRun(next);
   return next;
 }
@@ -109,6 +135,9 @@ export function validateOrchestrationRun(run) {
   id(run.taskId, 'taskId');
   id(run.runId, 'runId');
   if (!RUN_STATES.includes(run.state)) throw new OrchestrationRunError(`Unsupported run state: ${run.state}`);
+  if (!Number.isInteger(run.stateRevision) || run.stateRevision < 1) throw new OrchestrationRunError('stateRevision must be a positive integer');
+  if (typeof run.createdAt !== 'string' || Number.isNaN(Date.parse(run.createdAt))) throw new OrchestrationRunError('createdAt must be a valid timestamp');
+  if (typeof run.updatedAt !== 'string' || Number.isNaN(Date.parse(run.updatedAt))) throw new OrchestrationRunError('updatedAt must be a valid timestamp');
   if (!Number.isInteger(run.correctionAttempt) || run.correctionAttempt < 0) throw new OrchestrationRunError('correctionAttempt must be a non-negative integer');
   if (!Array.isArray(run.failureSignatures) || !Array.isArray(run.completedGates)) throw new OrchestrationRunError('run arrays are invalid');
   if (!run.requiredGates || typeof run.requiredGates !== 'object') throw new OrchestrationRunError('requiredGates are required');
@@ -118,31 +147,33 @@ export function validateOrchestrationRun(run) {
 
 export function persistRunManifest(run, rootDir = process.cwd()) {
   validateOrchestrationRun(run);
+  if (run.stateRevision !== 1) throw new OrchestrationRunError('Initial run manifest may only persist stateRevision 1');
   const runDir = getRunDirectory(rootDir, run.contractId, run.runId);
-  fs.mkdirSync(runDir, { recursive: true });
-  const filePath = path.join(runDir, 'manifest.json');
-  const content = `${JSON.stringify(stable(run), null, 2)}\n`;
-  if (fs.existsSync(filePath)) {
-    if (fs.readFileSync(filePath, 'utf8') === content) return { created: false, path: filePath };
-    throw new OrchestrationRunError(`Refusing to overwrite orchestration run manifest: ${run.runId}`);
-  }
-  fs.writeFileSync(filePath, content, 'utf8');
-  return { created: true, path: filePath };
+  return persistImmutable(path.join(runDir, 'manifest.json'), run, 'orchestration run manifest');
+}
+
+export function persistRunStateRevision(run, rootDir = process.cwd()) {
+  validateOrchestrationRun(run);
+  const runDir = getRunDirectory(rootDir, run.contractId, run.runId);
+  const revisionName = `${String(run.stateRevision).padStart(8, '0')}.json`;
+  const revisionPath = path.join(runDir, 'state-revisions', revisionName);
+  const persisted = persistImmutable(revisionPath, run, 'orchestration run state revision');
+  const pointer = {
+    schemaVersion: '1.0.0',
+    contractId: run.contractId,
+    runId: run.runId,
+    stateRevision: run.stateRevision,
+    revisionPath: `state-revisions/${revisionName}`,
+  };
+  atomicWrite(path.join(runDir, 'current-state.json'), stableContent(pointer));
+  return { ...persisted, pointerPath: path.join(runDir, 'current-state.json') };
 }
 
 export function persistFinalRunState(run, rootDir = process.cwd()) {
   validateOrchestrationRun(run);
   if (!['ACCEPTED', 'BLOCKED'].includes(run.state)) throw new OrchestrationRunError('Final run state requires ACCEPTED or BLOCKED');
   const runDir = getRunDirectory(rootDir, run.contractId, run.runId);
-  fs.mkdirSync(runDir, { recursive: true });
-  const filePath = path.join(runDir, 'final-state.json');
-  const content = `${JSON.stringify(stable(run), null, 2)}\n`;
-  if (fs.existsSync(filePath)) {
-    if (fs.readFileSync(filePath, 'utf8') === content) return { created: false, path: filePath };
-    throw new OrchestrationRunError(`Refusing to overwrite final run state: ${run.runId}`);
-  }
-  fs.writeFileSync(filePath, content, 'utf8');
-  return { created: true, path: filePath };
+  return persistImmutable(path.join(runDir, 'final-state.json'), run, 'final run state');
 }
 
 export function loadRunManifest(contractId, runId, rootDir = process.cwd()) {
@@ -150,6 +181,26 @@ export function loadRunManifest(contractId, runId, rootDir = process.cwd()) {
   if (!fs.existsSync(filePath)) return null;
   const run = JSON.parse(fs.readFileSync(filePath, 'utf8'));
   validateOrchestrationRun(run);
+  return run;
+}
+
+export function loadCurrentRunState(contractId, runId, rootDir = process.cwd()) {
+  const runDir = getRunDirectory(rootDir, contractId, runId);
+  const pointerPath = path.join(runDir, 'current-state.json');
+  if (!fs.existsSync(pointerPath)) return loadRunManifest(contractId, runId, rootDir);
+  const pointer = JSON.parse(fs.readFileSync(pointerPath, 'utf8'));
+  if (pointer.contractId !== contractId || pointer.runId !== runId || !Number.isInteger(pointer.stateRevision) || pointer.stateRevision < 1) {
+    throw new OrchestrationRunError('Current run state pointer is invalid');
+  }
+  const expectedRevisionPath = `state-revisions/${String(pointer.stateRevision).padStart(8, '0')}.json`;
+  if (pointer.revisionPath !== expectedRevisionPath) throw new OrchestrationRunError('Current run state pointer path is invalid');
+  const revisionPath = path.join(runDir, expectedRevisionPath);
+  if (!fs.existsSync(revisionPath)) throw new OrchestrationRunError('Current run state revision is missing');
+  const run = JSON.parse(fs.readFileSync(revisionPath, 'utf8'));
+  validateOrchestrationRun(run);
+  if (run.contractId !== contractId || run.runId !== runId || run.stateRevision !== pointer.stateRevision) {
+    throw new OrchestrationRunError('Current run state revision does not match pointer identity');
+  }
   return run;
 }
 
