@@ -5,7 +5,13 @@ import {
 } from './development-contract.mjs';
 import { bindAuthoritativeSources, createPolicyBoundDevelopmentContract } from './contract-policy.mjs';
 import { buildContextPackage } from './context-package.mjs';
-import { createOrchestrationRun, persistRunManifest, updateRun } from './orchestration-run.mjs';
+import {
+  createOrchestrationRun,
+  persistFinalRunState,
+  persistRunManifest,
+  persistRunStateRevision,
+  updateRun,
+} from './orchestration-run.mjs';
 import { decideAcceptance } from './acceptance-engine.mjs';
 import { decideCorrection } from './correction-engine.mjs';
 
@@ -48,6 +54,7 @@ export function prepareTaskRun({
   validateDevelopmentContract(contract);
   const run = createOrchestrationRun({ contract, runId, capabilities, impacts, createdAt });
   persistRunManifest(run, rootDir);
+  persistRunStateRevision(run, rootDir);
   return { contract, run };
 }
 
@@ -73,17 +80,17 @@ export function evaluateRun({ run, contract, verification, reviews, controlManif
     architectureDrift,
     rootDir,
   });
-  return {
-    acceptance,
-    run: updateRun(run, {
-      verificationVerdict: verification?.verdict ?? null,
-      acceptanceState: acceptance.state,
-      state: acceptance.state === 'ACCEPTED' ? 'ACCEPTED' : acceptance.state === 'BLOCKED' ? 'BLOCKED' : 'PAUSED',
-    }),
-  };
+  const updatedRun = updateRun(run, {
+    verificationVerdict: verification?.verdict ?? null,
+    acceptanceState: acceptance.state,
+    state: acceptance.state === 'ACCEPTED' ? 'ACCEPTED' : acceptance.state === 'BLOCKED' ? 'BLOCKED' : 'PAUSED',
+  });
+  persistRunStateRevision(updatedRun, rootDir);
+  if (['ACCEPTED', 'BLOCKED'].includes(updatedRun.state)) persistFinalRunState(updatedRun, rootDir);
+  return { acceptance, run: updatedRun };
 }
 
-export function planCorrection({ run, contract, verification, blockers = [] } = {}) {
+export function planCorrection({ run, contract, verification, blockers = [], rootDir = process.cwd() } = {}) {
   const decision = decideCorrection({
     contract,
     verification,
@@ -91,15 +98,22 @@ export function planCorrection({ run, contract, verification, blockers = [] } = 
     priorFailureSignatures: run.failureSignatures,
     blockers,
   });
-  if (decision.action !== 'CORRECT') return { decision, run: updateRun(run, { state: 'PAUSED' }) };
-  return {
-    decision,
-    run: updateRun(run, {
-      state: 'CORRECTING',
-      correctionAttempt: decision.request.attempt,
-      failureSignatures: [...run.failureSignatures, decision.failureSignature],
-    }),
-  };
+
+  if (decision.action === 'NONE') return { decision, run };
+
+  if (decision.action === 'PAUSE') {
+    const pausedRun = updateRun(run, { state: 'PAUSED' });
+    persistRunStateRevision(pausedRun, rootDir);
+    return { decision, run: pausedRun };
+  }
+
+  const correctingRun = updateRun(run, {
+    state: 'CORRECTING',
+    correctionAttempt: decision.request.attempt,
+    failureSignatures: [...run.failureSignatures, decision.failureSignature],
+  });
+  persistRunStateRevision(correctingRun, rootDir);
+  return { decision, run: correctingRun };
 }
 
 export * from './development-contract.mjs';
