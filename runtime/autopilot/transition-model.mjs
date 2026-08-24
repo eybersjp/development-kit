@@ -56,7 +56,7 @@ export function createInitialState(options = {}, rootDir = process.cwd()) {
     stateRevision: 1,
     createdAt: now,
     updatedAt: now,
-    frameworkVersion: '0.4.0'
+    frameworkVersion: '0.9.0'
   };
 }
 
