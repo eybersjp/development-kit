@@ -4,7 +4,7 @@
   "title": "Development Kit Orchestration Run",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "contractId", "taskId", "runId", "sourceFingerprint", "createdAt", "state", "executionStrategy", "hostCapabilities", "manualEvidenceRequired", "requiredGates", "completedGates", "correctionAttempt", "failureSignatures", "verificationVerdict", "acceptanceState"],
+  "required": ["schemaVersion", "contractId", "taskId", "runId", "sourceFingerprint", "createdAt", "updatedAt", "stateRevision", "state", "executionStrategy", "hostCapabilities", "manualEvidenceRequired", "requiredGates", "completedGates", "correctionAttempt", "failureSignatures", "verificationVerdict", "acceptanceState"],
   "properties": {
     "schemaVersion": { "const": "1.0.0" },
     "contractId": { "type": "string", "minLength": 1 },
@@ -12,6 +12,8 @@
     "runId": { "type": "string", "minLength": 1 },
     "sourceFingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
     "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "stateRevision": { "type": "integer", "minimum": 1 },
     "state": { "enum": ["READY", "IMPLEMENTING", "VERIFYING", "REVIEWING", "CORRECTING", "PAUSED", "ACCEPTED", "BLOCKED"] },
     "executionStrategy": { "enum": ["native-multi-agent", "sequential-fresh-context"] },
     "hostCapabilities": { "$ref": "host-capabilities.schema.json" },
