@@ -87,9 +87,12 @@ export function decideAcceptance({
   createdAt = new Date().toISOString(),
 } = {}) {
   validateDevelopmentContract(contract);
+  if (!Array.isArray(approvals)) throw new AcceptanceEngineError('approvals must be an array');
+  const validApprovals = new Set(approvals.filter((approval) => validApproval(approval, contract)).map((approval) => approval.id));
   const blockers = [];
   const pending = [];
   const requiredGates = deriveRequiredGates(contract);
+  let evidenceRunId = null;
 
   const staleness = checkContractStaleness(contract, rootDir);
   if (staleness.stale) blockers.push({ code: 'STALE_CONTRACT', detail: staleness.changes });
@@ -98,6 +101,7 @@ export function decideAcceptance({
     pending.push({ code: 'MISSING_VERIFICATION' });
   } else {
     validateVerificationRecord(verification);
+    evidenceRunId = verification.runId;
     if (verification.contractId !== contract.contractId) blockers.push({ code: 'VERIFICATION_CONTRACT_MISMATCH' });
     if (verification.sourceFingerprint !== contract.sourceFingerprint) blockers.push({ code: 'VERIFICATION_SOURCE_MISMATCH' });
     if (verification.verdict === 'FAIL') blockers.push({ code: 'VERIFICATION_FAILED' });
@@ -112,10 +116,24 @@ export function decideAcceptance({
       blockers.push({ code: 'REVIEW_CONTEXT_MISMATCH', role: review.role });
       continue;
     }
+    if (evidenceRunId && review.runId !== evidenceRunId) {
+      blockers.push({ code: 'REVIEW_RUN_MISMATCH', role: review.role, expectedRunId: evidenceRunId, actualRunId: review.runId });
+      continue;
+    }
     if (reviewByRole.has(review.role)) throw new AcceptanceEngineError(`Duplicate review role result: ${review.role}`);
     reviewByRole.set(review.role, review);
     if (review.verdict === 'FAIL') blockers.push({ code: 'REVIEW_FAILED', role: review.role });
     if (review.verdict === 'INCOMPLETE') pending.push({ code: 'REVIEW_INCOMPLETE', role: review.role });
+    for (const finding of review.findings) {
+      if (finding.disposition === 'ACCEPTED_RISK' && !validApprovals.has(finding.approvalId)) {
+        pending.push({
+          code: 'MISSING_ACCEPTED_RISK_APPROVAL',
+          role: review.role,
+          findingId: finding.id,
+          approvalId: finding.approvalId,
+        });
+      }
+    }
   }
   for (const role of requiredGates.reviewers) {
     if (!reviewByRole.has(role)) pending.push({ code: 'MISSING_REQUIRED_REVIEW', role });
@@ -126,6 +144,10 @@ export function decideAcceptance({
   for (const manifest of controlManifests) {
     validateControlManifest(manifest);
     if (manifest.contractId !== contract.contractId) blockers.push({ code: 'CONTROL_CONTRACT_MISMATCH', domain: manifest.domain });
+    if (evidenceRunId && manifest.runId !== evidenceRunId) {
+      blockers.push({ code: 'CONTROL_RUN_MISMATCH', domain: manifest.domain, expectedRunId: evidenceRunId, actualRunId: manifest.runId });
+      continue;
+    }
     if (controlsByDomain.has(manifest.domain)) throw new AcceptanceEngineError(`Duplicate control manifest domain: ${manifest.domain}`);
     controlsByDomain.set(manifest.domain, manifest);
     if (manifest.verdict === 'FAIL') blockers.push({ code: 'CONTROL_FAILED', domain: manifest.domain });
@@ -148,8 +170,6 @@ export function decideAcceptance({
     pending.push({ code: 'MISSING_ARCHITECTURE_DRIFT_REVIEW' });
   }
 
-  if (!Array.isArray(approvals)) throw new AcceptanceEngineError('approvals must be an array');
-  const validApprovals = new Set(approvals.filter((approval) => validApproval(approval, contract)).map((approval) => approval.id));
   for (const approvalId of requiredGates.humanApprovals) {
     if (!validApprovals.has(approvalId)) pending.push({ code: 'MISSING_REQUIRED_APPROVAL', approvalId });
   }
@@ -159,6 +179,7 @@ export function decideAcceptance({
     schemaVersion: '1.0.0',
     contractId: contract.contractId,
     taskId: contract.taskId,
+    runId: evidenceRunId,
     sourceFingerprint: contract.sourceFingerprint,
     createdAt,
     state,
@@ -177,6 +198,7 @@ export function decideAcceptance({
 export function validateAcceptanceRecord(record) {
   if (!object(record)) throw new AcceptanceEngineError('acceptance record is required');
   if (!ACCEPTANCE_STATES.includes(record.state)) throw new AcceptanceEngineError(`Unsupported acceptance state: ${record.state}`);
+  if (record.runId !== null && (typeof record.runId !== 'string' || !record.runId.trim())) throw new AcceptanceEngineError('Acceptance record runId must be a non-empty string or null');
   if (!Array.isArray(record.blockers) || !Array.isArray(record.pending)) throw new AcceptanceEngineError('Acceptance record requires blocker and pending arrays');
   if (!object(record.requiredGates)
       || !Array.isArray(record.requiredGates.reviewers)
