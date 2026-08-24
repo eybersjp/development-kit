@@ -26,7 +26,17 @@
           "evidence": { "type": "array", "items": { "$ref": "evidence-record.schema.json" } },
           "approvalId": { "type": ["string", "null"] },
           "criterionIds": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
-        }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "severity": { "enum": ["MAJOR", "CRITICAL"] } }, "required": ["severity"] },
+            "then": { "properties": { "evidence": { "minItems": 1 } } }
+          },
+          {
+            "if": { "properties": { "disposition": { "const": "ACCEPTED_RISK" } }, "required": ["disposition"] },
+            "then": { "properties": { "approvalId": { "type": "string", "minLength": 1 } } }
+          }
+        ]
       }
     },
     "verdict": { "enum": ["PASS", "FAIL", "INCOMPLETE"] }
