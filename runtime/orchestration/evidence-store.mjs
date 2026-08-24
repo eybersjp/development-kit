@@ -110,6 +110,57 @@ function normalizeEvidenceList(value = []) {
   return value.map(normalizeEvidenceItem);
 }
 
+function normalizeVerificationType(value, label = 'verification type') {
+  return nonEmptyString(value, label).toLowerCase().replace(/[\s_]+/g, '-');
+}
+
+function normalizeVerificationTypeList(value = []) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new EvidenceValidationError('verificationType must be an array');
+  return [...new Set(value.map((item) => normalizeVerificationType(item)))];
+}
+
+function evidenceMatchesVerificationType(requirement, evidence) {
+  const normalized = normalizeVerificationType(requirement);
+  if (evidence.some((item) => typeof item.verificationType === 'string'
+    && normalizeVerificationType(item.verificationType) === normalized)) return true;
+
+  const typeAliases = new Map([
+    ['test', 'test'],
+    ['tests', 'test'],
+    ['unit', 'test'],
+    ['unit-test', 'test'],
+    ['unit-tests', 'test'],
+    ['integration', 'test'],
+    ['integration-test', 'test'],
+    ['integration-tests', 'test'],
+    ['regression', 'test'],
+    ['regression-test', 'test'],
+    ['regression-tests', 'test'],
+    ['browser', 'browser'],
+    ['runtime', 'runtime'],
+    ['visual', 'visual'],
+    ['schema', 'schema'],
+    ['migration', 'migration'],
+    ['configuration', 'configuration'],
+    ['config', 'configuration'],
+    ['manual', 'manual'],
+    ['command', 'command'],
+  ]);
+
+  const expectedEvidenceType = typeAliases.get(normalized);
+  return Boolean(expectedEvidenceType) && evidence.some((item) => item.type === expectedEvidenceType);
+}
+
+function validateVerificationTypeEvidence(entry, label) {
+  if (entry.status !== 'PASS' || entry.requiredEvidence === false) return;
+  for (const verificationType of entry.verificationType ?? []) {
+    if (!evidenceMatchesVerificationType(verificationType, entry.evidence)) {
+      throw new EvidenceValidationError(`PASS ${label} requires ${verificationType} verification evidence`);
+    }
+  }
+}
+
 function normalizeExpectedControls(expectedControls) {
   if (!Array.isArray(expectedControls) || expectedControls.length === 0) {
     throw new EvidenceValidationError('expectedControls must contain at least one control');
@@ -234,6 +285,7 @@ function normalizeVerificationCriteria(contract, criteria = []) {
       id,
       statement: nonEmptyString(criterion.statement, `criterion ${id} statement`),
       requiredEvidence: criterion.requiredEvidence !== false,
+      verificationType: normalizeVerificationTypeList(criterion.verificationType),
     });
   }
 
@@ -249,6 +301,7 @@ function normalizeVerificationCriteria(contract, criteria = []) {
     const reason = criterion.reason === undefined || criterion.reason === null ? null : nonEmptyString(criterion.reason, `criterion ${id} reason`);
     const normalized = { ...expected.get(id), status, evidence, reason };
     validateEvidenceBearingStatus(normalized, `criterion ${id}`);
+    validateVerificationTypeEvidence(normalized, `criterion ${id}`);
     observed.set(id, normalized);
   }
 
@@ -327,11 +380,13 @@ export function validateVerificationRecord(record) {
     if (!CRITERION_STATUSES.includes(criterion.status)) throw new EvidenceValidationError(`Unsupported criterion status for ${id}: ${criterion.status}`);
     const normalized = {
       ...criterion,
+      verificationType: normalizeVerificationTypeList(criterion.verificationType),
       evidence: normalizeEvidenceList(criterion.evidence ?? []),
       reason: criterion.reason ?? null,
       requiredEvidence: criterion.requiredEvidence !== false,
     };
     validateEvidenceBearingStatus(normalized, `criterion ${id}`);
+    validateVerificationTypeEvidence(normalized, `criterion ${id}`);
   }
 
   const expectedVerdict = computeVerdict(record.criteria);
