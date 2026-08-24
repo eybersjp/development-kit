@@ -73,3 +73,6 @@ jobs:
 
       - name: Validate Autopilot runtime and evaluations
         run: npm run autopilot:validate
+
+      - name: Validate exact release command
+        run: npm run release:validate
