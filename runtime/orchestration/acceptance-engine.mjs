@@ -25,6 +25,48 @@ function validApproval(approval, contract) {
     && approval.sourceFingerprint === contract.sourceFingerprint;
 }
 
+function normalizeVerificationRequirement(value) {
+  if (typeof value !== 'string' || !value.trim()) throw new AcceptanceEngineError('requiredVerification entries must be non-empty strings');
+  return value.trim().toLowerCase().replace(/[\s_]+/g, '-');
+}
+
+function canonicalVerificationClass(value) {
+  const normalized = normalizeVerificationRequirement(value);
+  const aliases = new Map([
+    ['tests', 'test'],
+    ['unit', 'test'],
+    ['unit-test', 'test'],
+    ['unit-tests', 'test'],
+    ['integration', 'test'],
+    ['integration-test', 'test'],
+    ['integration-tests', 'test'],
+    ['regression', 'test'],
+    ['regression-test', 'test'],
+    ['regression-tests', 'test'],
+    ['browser-test', 'browser'],
+    ['browser-tests', 'browser'],
+    ['typecheck', 'command'],
+    ['type-check', 'command'],
+    ['type-checking', 'command'],
+    ['lint', 'command'],
+    ['linting', 'command'],
+    ['config', 'configuration'],
+  ]);
+  return aliases.get(normalized) ?? normalized;
+}
+
+function verificationRequirementCovered(requirement, verification, controlsByDomain) {
+  const normalized = normalizeVerificationRequirement(requirement);
+  if (normalized === 'security') return controlsByDomain.get('security')?.verdict === 'PASS';
+  if (normalized === 'specification') return verification?.verdict === 'PASS';
+  if (!verification || verification.verdict !== 'PASS') return false;
+
+  const requiredClass = canonicalVerificationClass(normalized);
+  return verification.criteria.some((criterion) => criterion.status === 'PASS'
+    && Array.isArray(criterion.verificationType)
+    && criterion.verificationType.some((type) => canonicalVerificationClass(type) === requiredClass));
+}
+
 function deriveRequiredGates(contract) {
   return selectRequiredGates(contract, {
     touchesUi: contract.designConstraints.length > 0
@@ -93,6 +135,12 @@ export function decideAcceptance({
     if (!controlsByDomain.has(domain)) pending.push({ code: 'MISSING_CONTROL_DOMAIN', domain });
   }
 
+  for (const requirement of contract.requiredVerification) {
+    if (!verificationRequirementCovered(requirement, verification, controlsByDomain)) {
+      pending.push({ code: 'MISSING_REQUIRED_VERIFICATION', verification: requirement });
+    }
+  }
+
   if (architectureDrift) {
     validateArchitectureDrift(architectureDrift);
     if (architectureDrift.verdict !== 'PASS') blockers.push({ code: 'ARCHITECTURE_DRIFT_BLOCKED', findings: architectureDrift.findings });
@@ -116,6 +164,7 @@ export function decideAcceptance({
     state,
     verificationVerdict: verification?.verdict ?? null,
     requiredGates,
+    requiredVerification: [...contract.requiredVerification],
     requiredReviewers: [...requiredGates.reviewers],
     completedReviewers: [...reviewByRole.entries()].filter(([, review]) => review.verdict === 'PASS').map(([role]) => role).sort(),
     blockers,
@@ -135,6 +184,7 @@ export function validateAcceptanceRecord(record) {
       || !Array.isArray(record.requiredGates.humanApprovals)) {
     throw new AcceptanceEngineError('Acceptance record requires derived gate metadata');
   }
+  if (!Array.isArray(record.requiredVerification)) throw new AcceptanceEngineError('Acceptance record requires requiredVerification metadata');
   const expected = record.blockers.length > 0 ? 'BLOCKED' : record.pending.length > 0 ? 'PENDING' : 'ACCEPTED';
   if (record.state !== expected) throw new AcceptanceEngineError(`Acceptance state must equal computed state ${expected}`);
   if (record.state === 'ACCEPTED' && (record.blockers.length || record.pending.length)) throw new AcceptanceEngineError('Accepted record may not contain unresolved gates');
