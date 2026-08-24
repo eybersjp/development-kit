@@ -100,12 +100,6 @@ export function validatePlanModel({
     }
   }
 
-  const incoming = new Set(normalizedTasks.flatMap((task) => task.dependsOn));
-  const orphanTasks = normalizedTasks
-    .filter((task) => task.dependsOn.length === 0 && !incoming.has(task.id) && normalizedTasks.length > 1)
-    .map((task) => task.id);
-  if (orphanTasks.length) issues.push({ code: 'ORPHAN_TASKS', taskIds: orphanTasks });
-
   const ownerMap = new Map();
   for (const task of normalizedTasks) {
     for (const resource of task.owns) {
