@@ -1,0 +1,11 @@
+{
+  "skill": "autopilot-lifecycle",
+  "scenario": "Execute Stage 8 SIMPLIFY applying the Ponytail simplicity ladder",
+  "input": {
+    "currentStage": "SIMPLIFY"
+  },
+  "expected": {
+    "nextActionType": "APPLY_SIMPLICITY_LADDER",
+    "preserveExclusions": true
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "skill": "autopilot-lifecycle",
+  "scenario": "Reject unapproved execution of mandatory non-bypassable gates across all autonomy levels",
+  "input": {
+    "gateId": "gate_git_push",
+    "autonomy": "high-autonomy"
+  },
+  "expected": {
+    "requiresApproval": true,
+    "cannotBeBypassed": true
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "skill": "dependency-restraint",
+  "scenario": "Evaluate a pull request that adds unnecessary dependencies",
+  "implementation": {
+    "dependencies_added": [
+      "lodash",
+      "moment",
+      "axios",
+      "uuid"
+    ],
+    "code_changes": [
+      "import { debounce } from 'lodash' // used once, setTimeout works",
+      "import moment from 'moment' // used for one date format",
+      "import axios from 'axios' // replacing native fetch with wrapper",
+      "import { v4 } from 'uuid' // used once, crypto.randomUUID() available"
+    ],
+    "existing_codebase": {
+      "node_version": "20.0.0",
+      "native_apis_available": [
+        "fetch",
+        "crypto.randomUUID",
+        "Intl.DateTimeFormat"
+      ]
+    }
+  },
+  "expected": {
+    "should_reject": [
+      "lodash (native setTimeout suffices for debounce)",
+      "moment (Intl.DateTimeFormat or native Date methods suffice)",
+      "axios (native fetch is available and standard)",
+      "uuid (crypto.randomUUID is available in Node 20)"
+    ],
+    "should_accept": [],
+    "verdict_contains": "FAIL",
+    "must_not": [
+      "approve any of the four dependencies",
+      "accept 'everyone uses it' as justification"
+    ]
+  }
+}

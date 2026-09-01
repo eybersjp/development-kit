@@ -1,0 +1,21 @@
+{
+  "skill": "design-authority",
+  "scenario": "Ask early for visual references when project has a UI",
+  "input": {
+    "command": "/dk-idea",
+    "project_type": "New web application dashboard with user interface"
+  },
+  "expected": {
+    "asks_for_references": true,
+    "presents_options": [
+      "Attach design references",
+      "Use an existing design.md",
+      "Derive the design system from an existing application",
+      "Create a new design direction without references",
+      "Defer for now"
+    ],
+    "must_not_do": [
+      "Invent arbitrary visual styles without checking for references or design authority"
+    ]
+  }
+}

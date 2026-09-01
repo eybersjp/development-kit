@@ -1,0 +1,13 @@
+{
+  "skill": "autopilot-lifecycle",
+  "scenario": "Require explicit scope acceptance approval before exiting DEFINE stage",
+  "input": {
+    "gateId": "gate_scope_acceptance",
+    "autonomy": "guided-autopilot"
+  },
+  "expected": {
+    "requiresApproval": true,
+    "hasSecurityToken": true,
+    "storedTokenHashOnly": true
+  }
+}

@@ -27,7 +27,11 @@ Read the user's request. Identify what is clearly stated and what needs clarific
 ### 2. Requirements Interview & Design System Discovery
 Spawn the **product-discovery-agent** to conduct the requirements interview. Surface requirements, preferences, assumptions, and constraints.
 
-Record structured candidate requirements and questions in `.development-kit/idea/discovery.json` using `IDEA-REQ-xxx` and `IDEA-Q-xxx` identifiers.
+Record structured candidate requirements and questions deterministically using the CLI operations rather than editing discovery state directly:
+```bash
+node scripts/orchestration.mjs --operation=idea-record-candidate --input-json='{"id":"IDEA-REQ-001","statement":"...","origin":"USER_CONFIRMED","resolutionState":"CONFIRMED","confirmedBy":"PRODUCT_OWNER"}'
+node scripts/orchestration.mjs --operation=idea-record-question --input-json='{"id":"IDEA-Q-001","question":"...","materiality":"MATERIAL","resolution":"ANSWERED","resolvedBy":"PRODUCT_OWNER"}'
+```
 Preserve candidate origin (`USER_STATED`, `USER_CONFIRMED`, `AI_PROPOSED`, `RESEARCH_DERIVED`, `ASSUMED`). Note: external research is evidence only; any `RESEARCH_DERIVED` item intended for Must requires explicit Product Owner adoption before approval.
 
 If the project includes a visual user interface, prompt early for visual references:
@@ -60,10 +64,15 @@ Test assumptions. Is this the real problem? Does it need to exist? Is there a si
 
 ### 4. Scope Definition
 Separate into:
-- Must have
+- Must have (1-to-1 bound to active `IDEA-REQ-xxx` candidates)
 - Should have
 - Could have
 - Explicitly excluded
+
+Evaluate discovery readiness before writing the brief:
+```bash
+node scripts/orchestration.mjs --operation=idea-discovery-eval
+```
 
 ### 5. Determine Artifact Level
 Spawn the **artifact-selector-agent** to determine whether a full idea brief is needed or a lighter artifact suffices (small, standard, or comprehensive).
@@ -85,6 +94,18 @@ Persist canonical `idea-brief.md` to project root and register in `.development-
 ```bash
 node scripts/orchestration.mjs --operation=idea-persist --input-json='{"content":"..."}'
 ```
+
+### 7. Evaluation & Explicit Approval Gate
+Compute the current lifecycle state:
+```bash
+node scripts/orchestration.mjs --operation=idea-state
+```
+When `READY_FOR_APPROVAL`, present the canonical Idea Brief to the user and request explicit Product Owner approval.
+Only after the user explicitly approves, record the approval:
+```bash
+node scripts/orchestration.mjs --operation=idea-approve --input-json='{"approvingAuthority":"PRODUCT_OWNER"}'
+```
+Re-run `node scripts/orchestration.mjs --operation=idea-state` to verify transition to `APPROVED`. Only an `APPROVED` Idea Brief allows progressing to `/dk-spec`.
 
 ## Skills Activated
 

@@ -1,0 +1,22 @@
+{
+  "skill": "design-authority",
+  "scenario": "Propose explicit amendment when requirements conflict with approved design system",
+  "input": {
+    "command": "/dk-build",
+    "conflict": "Requirement requests purple primary buttons, but design.md specifies neutral slate with amber accent",
+    "design_authority_state": "approved"
+  },
+  "expected": {
+    "silent_override_blocked": true,
+    "produces_amendment_proposal": true,
+    "proposal_fields_included": [
+      "Current rule",
+      "Proposed rule",
+      "Reason",
+      "Affected components/screens",
+      "Risk of visual inconsistency",
+      "Recommendation"
+    ],
+    "requires_user_approval": true
+  }
+}

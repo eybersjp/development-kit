@@ -1,0 +1,45 @@
+{
+  "skill": "subagent-driven-implementation",
+  "scenario": "Break down a complex task into sub-agent assignments",
+  "task": {
+    "objective": "Implement a user registration feature with email verification",
+    "requirements": [
+      "User submits email and password",
+      "Server validates input format",
+      "Server checks for duplicate email",
+      "Server sends verification email",
+      "User clicks link to verify",
+      "Server confirms verification"
+    ],
+    "technical_context": "Express.js backend with PostgreSQL, nodemailer for emails"
+  },
+  "expected": {
+    "should_assign_sub_agents": true,
+    "minimum_sub_agents": 3,
+    "tasks_should_include": [
+      {
+        "type": "database",
+        "scope": "user schema, migration, unique constraint on email"
+      },
+      {
+        "type": "backend",
+        "scope": "registration endpoint, input validation, duplicate check"
+      },
+      {
+        "type": "backend or integration",
+        "scope": "email sending, verification token, confirmation endpoint"
+      }
+    ],
+    "each_task_should_have": [
+      "clear scope boundaries",
+      "acceptance criteria",
+      "exclusions",
+      "verification requirements"
+    ],
+    "must_not": [
+      "assign everything to a single agent",
+      "skip acceptance criteria for any task",
+      "include frontend work in scope (not requested)"
+    ]
+  }
+}

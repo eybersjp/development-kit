@@ -1,0 +1,11 @@
+{
+  "skill": "autopilot-lifecycle",
+  "scenario": "Execute Stage 4 PLAN with risk-first task decomposition",
+  "input": {
+    "currentStage": "PLAN"
+  },
+  "expected": {
+    "nextActionType": "DECOMPOSE_TASKS",
+    "mustOrderDependencies": true
+  }
+}

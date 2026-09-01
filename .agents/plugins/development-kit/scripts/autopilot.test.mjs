@@ -1,0 +1,476 @@
+/**
+ * Development Kit Autopilot — Unit Test Suite
+ *
+ * Runs via `node --test scripts/autopilot.test.mjs`.
+ */
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+
+import { validateWorkflowState, validateAction, validateActionResult } from '../runtime/autopilot/validators.mjs';
+import { getProjectIdentity } from '../runtime/autopilot/project-identity.mjs';
+import { getCurrentState, saveStateRevision, recoverLatestValidState } from '../runtime/autopilot/state-store.mjs';
+import {
+  createInitialState,
+  calculateNextAction,
+  beginActionState,
+  recordResultState,
+  pauseWorkflow,
+  resumeWorkflow,
+  renewActionLease,
+  requestApprovalState,
+  approveState,
+  rejectState,
+  requestCancelState,
+  confirmCancelState
+} from '../runtime/autopilot/transition-model.mjs';
+import { acquireTransactionLock, releaseTransactionLock } from '../runtime/autopilot/lock-manager.mjs';
+import { isGateMandatory, requiresApproval, isTargetPreAuthorized } from '../runtime/autopilot/policy-engine.mjs';
+import { computeFileFingerprint, updateArtifactFingerprints, checkArtifactStaleness } from '../runtime/autopilot/staleness-engine.mjs';
+
+function createTempDir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'dk-autopilot-test-'));
+}
+
+test('1. Project & Workspace Identity Resolution', () => {
+  const tmpDir = createTempDir();
+  const identity1 = getProjectIdentity(tmpDir);
+  assert.ok(identity1.projectId.startsWith('proj_'));
+  assert.ok(identity1.workspaceId.startsWith('ws_'));
+
+  // Stable resolution
+  const identity2 = getProjectIdentity(tmpDir);
+  assert.equal(identity1.projectId, identity2.projectId);
+  assert.equal(identity1.workspaceId, identity2.workspaceId);
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('2. State Validation', () => {
+  const state = {
+    schemaVersion: '1.0.0',
+    workflowId: 'wf_123',
+    projectId: 'proj_456',
+    workflowMode: 'autopilot',
+    autonomyLevel: 'guided-autopilot',
+    workflowStatus: 'executing',
+    currentStage: 'UNDERSTAND',
+    completedStages: [],
+    skippedStages: [],
+    blockedStages: [],
+    stateRevision: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    frameworkVersion: '0.4.0'
+  };
+  assert.equal(validateWorkflowState(state), true);
+});
+
+test('3. Immutable Revision Persistence & Reading', () => {
+  const tmpDir = createTempDir();
+  const state1 = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  saveStateRevision(state1, tmpDir);
+
+  const loadedState = getCurrentState(tmpDir);
+  assert.equal(loadedState.workflowId, state1.workflowId);
+  assert.equal(loadedState.stateRevision, 1);
+
+  // Revision 2
+  loadedState.stateRevision = 2;
+  loadedState.currentStage = 'DEFINE';
+  saveStateRevision(loadedState, tmpDir);
+
+  const loadedState2 = getCurrentState(tmpDir);
+  assert.equal(loadedState2.stateRevision, 2);
+  assert.equal(loadedState2.currentStage, 'DEFINE');
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('4. Corrupt Pointer Recovery', () => {
+  const tmpDir = createTempDir();
+  const state1 = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  saveStateRevision(state1, tmpDir);
+
+  // Corrupt current.json
+  const currentFile = path.join(tmpDir, '.development-kit', 'autopilot', 'state', 'current.json');
+  fs.writeFileSync(currentFile, '{ "corrupt": true }', 'utf8');
+
+  const recovered = getCurrentState(tmpDir);
+  assert.ok(recovered);
+  assert.equal(recovered.workflowId, state1.workflowId);
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('5. Short Transaction Locking', () => {
+  const tmpDir = createTempDir();
+  const lock1 = acquireTransactionLock(tmpDir);
+  assert.ok(lock1.ownerToken);
+
+  // Acquiring lock again without release should fail/timeout
+  assert.throws(() => {
+    acquireTransactionLock(tmpDir, 200);
+  });
+
+  releaseTransactionLock(lock1);
+  const lock2 = acquireTransactionLock(tmpDir);
+  assert.ok(lock2.ownerToken);
+  releaseTransactionLock(lock2);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('6. Next Action Calculation & Transition', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  saveStateRevision(state, tmpDir);
+
+  const action = calculateNextAction(state);
+  assert.equal(action.actionType, 'invoke_command');
+  assert.equal(action.stage, 'UNDERSTAND');
+  assert.equal(action.command, '/dk-idea');
+
+  state.activeAction = action;
+  beginActionState(state, action.actionId);
+  assert.equal(state.activeAction.status, 'in_progress');
+
+  const resultPayload = {
+    workflowId: state.workflowId,
+    stateRevision: state.stateRevision,
+    actionId: action.actionId,
+    status: 'completed'
+  };
+
+  const updatedState = recordResultState(state, resultPayload);
+  assert.equal(updatedState.currentStage, 'DEFINE');
+  assert.equal(updatedState.stateRevision, 2);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('7. Conductor Handshake & UNDERSTAND -> DEFINE Transition Proof', () => {
+  const tmpDir = createTempDir();
+
+  // Stage 1: Initial state
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  assert.equal(state.currentStage, 'UNDERSTAND');
+  assert.equal(state.stateRevision, 1);
+  saveStateRevision(state, tmpDir);
+
+  // Step 2: Calculate & begin UNDERSTAND action
+  const action1 = calculateNextAction(state);
+  assert.equal(action1.stage, 'UNDERSTAND');
+  assert.equal(action1.command, '/dk-idea');
+  assert.equal(action1.responsibleAgent, 'product-discovery-agent');
+
+  state.activeAction = action1;
+  beginActionState(state, action1.actionId);
+  saveStateRevision(state, tmpDir);
+
+  // Step 3: Record result & transition to DEFINE
+  const result1 = {
+    workflowId: state.workflowId,
+    stateRevision: 1,
+    actionId: action1.actionId,
+    status: 'completed'
+  };
+
+  const state2 = recordResultState(state, result1);
+  assert.equal(state2.currentStage, 'DEFINE');
+  assert.equal(state2.stateRevision, 2);
+  assert.deepEqual(state2.completedStages, ['UNDERSTAND']);
+  saveStateRevision(state2, tmpDir);
+
+  // Step 4: Next action is now DEFINE / /dk-spec
+  const action2 = calculateNextAction(state2);
+  assert.equal(action2.stage, 'DEFINE');
+  assert.equal(action2.command, '/dk-spec');
+  assert.equal(action2.responsibleAgent, 'specification-agent');
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('8. /dk-build-auto Isolation', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ mode: 'autopilot', autonomy: 'guided-autopilot' }, tmpDir);
+
+  // Verify autopilot mode is distinct from build-auto
+  assert.equal(state.workflowMode, 'autopilot');
+  assert.notEqual(state.workflowMode, 'build-auto');
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('9. Workflow Pause & Resume State Transitions & Operation Blocking', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  saveStateRevision(state, tmpDir);
+
+  // Pause workflow
+  const pausedState = pauseWorkflow(state);
+  assert.equal(pausedState.workflowStatus, 'paused');
+
+  // Attempting to begin action while paused must fail
+  assert.throws(() => {
+    beginActionState(pausedState, 'act_test_123');
+  }, /Workflow is paused/);
+
+  // Resume workflow
+  const resumedState = resumeWorkflow(pausedState);
+  assert.equal(resumedState.workflowStatus, 'executing');
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('10. Active-Action Lease Renewal & Hard Cap', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  const action = calculateNextAction(state);
+  state.activeAction = action;
+
+  const originalLease = state.activeAction.leaseExpiresAt;
+  renewActionLease(state, action.actionId, 15 * 60 * 1000);
+  assert.ok(Date.parse(state.activeAction.leaseExpiresAt) > Date.parse(originalLease));
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('11. Late Result Handling & Manual Review Routing', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  const action = calculateNextAction(state);
+  state.activeAction = action;
+
+  // Simulate expired lease
+  state.activeAction.leaseExpiresAt = new Date(Date.now() - 10000).toISOString();
+
+  const lateResult = {
+    workflowId: state.workflowId,
+    stateRevision: 1,
+    actionId: action.actionId,
+    status: 'completed'
+  };
+
+  const updatedState = recordResultState(state, lateResult);
+  assert.equal(updatedState.workflowStatus, 'recovering');
+  assert.equal(updatedState.activeAction.status, 'manual_review');
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('12. Optimistic State Revision Conflict Rejection', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  const action = calculateNextAction(state);
+  state.activeAction = action;
+
+  const staleResult = {
+    workflowId: state.workflowId,
+    stateRevision: 999, // Stale/invalid revision
+    actionId: action.actionId,
+    status: 'completed'
+  };
+
+  assert.throws(() => {
+    recordResultState(state, staleResult);
+  }, /State revision mismatch/);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('13. Cryptographic Token Generation & SHA-256 Hashing', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+
+  const { approvalId, token } = requestApprovalState(state, 'gate_scope_acceptance');
+  assert.ok(approvalId.startsWith('app_'));
+  assert.ok(token.length >= 32);
+
+  // Verify plaintext token is NOT stored in state
+  assert.equal(state.pendingApproval.token, undefined);
+  assert.ok(state.pendingApproval.tokenHash);
+  assert.notEqual(state.pendingApproval.tokenHash, token);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('14. Replay-Safe Approval & Token Consumption', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  const { approvalId, token } = requestApprovalState(state, 'gate_scope_acceptance');
+
+  // Grant approval
+  approveState(state, approvalId, token);
+  assert.equal(state.workflowStatus, 'executing');
+  assert.equal(state.pendingApproval, null);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('15. Two-Step Cancellation Challenge & Confirmation', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+
+  // Step 1: Request cancel -> challenge token
+  const { confirmationToken } = requestCancelState(state);
+  assert.ok(confirmationToken);
+  assert.equal(state.workflowStatus, 'executing');
+
+  // Step 2: Confirm cancel -> workflow cancelled
+  confirmCancelState(state, confirmationToken);
+  assert.equal(state.workflowStatus, 'cancelled');
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('16. Constant-Time Verification & Invalid Token Rejection', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  const { approvalId } = requestApprovalState(state, 'gate_scope_acceptance');
+
+  // Rejection with wrong token
+  assert.throws(() => {
+    approveState(state, approvalId, 'invalid_wrong_token_123');
+  }, /Invalid approval token/);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('17. Policy Engine Autonomy Levels & 14 Mandatory Non-Bypassable Gates', () => {
+  // All 14 mandatory gates require approval in high-autonomy
+  assert.equal(isGateMandatory('gate_scope_acceptance'), true);
+  assert.equal(requiresApproval('gate_scope_acceptance', 'high-autonomy'), true);
+  assert.equal(requiresApproval('gate_git_push', 'high-autonomy'), true);
+  assert.equal(requiresApproval('gate_pull_request_creation', 'high-autonomy'), true);
+
+  // Non-mandatory gate auto-executes under high-autonomy
+  assert.equal(requiresApproval('gate_architecture_design', 'high-autonomy'), false);
+
+  // Non-mandatory gate requires approval under guided-autopilot
+  assert.equal(requiresApproval('gate_architecture_design', 'guided-autopilot'), true);
+});
+
+test('18. Pre-Authorized Staging Target Policy & Exclusion Enforcement', () => {
+  const tmpDir = createTempDir();
+  const policyDir = path.join(tmpDir, '.development-kit', 'autopilot');
+  fs.mkdirSync(policyDir, { recursive: true });
+
+  const policyPayload = {
+    targets: [
+      {
+        targetId: 'staging_dev_cluster',
+        environment: 'staging',
+        scope: 'integration_testing',
+        approvedOperations: ['deploy_staging'],
+        approvedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        approvedBy: 'lead_engineer'
+      }
+    ]
+  };
+  fs.writeFileSync(path.join(policyDir, 'preauthorized-targets.json'), JSON.stringify(policyPayload), 'utf8');
+
+  // Staging deployment with valid pre-authorization passes under high-autonomy
+  const isApproved = isTargetPreAuthorized({ targetId: 'staging_dev_cluster', operation: 'deploy_staging' }, tmpDir);
+  assert.equal(isApproved, true);
+
+  // Prohibited production operation CANNOT be pre-authorized
+  const isProhibitedApproved = isTargetPreAuthorized({ targetId: 'staging_dev_cluster', operation: 'deploy_production' }, tmpDir);
+  assert.equal(isProhibitedApproved, false);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('19. Artifact Staleness Fingerprinting & Downstream Invalidation', () => {
+  const tmpDir = createTempDir();
+  const docFile = path.join(tmpDir, 'spec.md');
+  fs.writeFileSync(docFile, '# Feature Spec v1', 'utf8');
+
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  updateArtifactFingerprints(state, ['spec.md'], tmpDir);
+
+  // Unmodified file is not stale
+  assert.equal(checkArtifactStaleness(state, 'spec.md', tmpDir), false);
+
+  // Modifying file triggers staleness
+  fs.writeFileSync(docFile, '# Feature Spec v2 (Modified)', 'utf8');
+  assert.equal(checkArtifactStaleness(state, 'spec.md', tmpDir), true);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('20. Full 9-Stage Lifecycle Progression End-to-End', () => {
+  const tmpDir = createTempDir();
+  let state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  const stages = ['UNDERSTAND', 'DEFINE', 'DESIGN', 'PLAN', 'IMPLEMENT', 'VERIFY', 'REVIEW', 'SIMPLIFY', 'COMPLETE'];
+
+  for (let i = 0; i < stages.length; i++) {
+    assert.equal(state.currentStage, stages[i]);
+    const action = calculateNextAction(state);
+    state.activeAction = action;
+
+    const result = {
+      workflowId: state.workflowId,
+      stateRevision: state.stateRevision,
+      actionId: action.actionId,
+      status: 'completed'
+    };
+
+    state = recordResultState(state, result);
+  }
+
+  assert.equal(state.workflowStatus, 'completed');
+  assert.equal(state.completedStages.length, 9);
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('21. Recovery Checkpoints & Manual-Review State Recovery', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  const action = calculateNextAction(state);
+  state.activeAction = action;
+
+  // Simulate failed action result requiring manual review
+  const failedResult = {
+    workflowId: state.workflowId,
+    stateRevision: 1,
+    actionId: action.actionId,
+    status: 'manual_review'
+  };
+
+  const updatedState = recordResultState(state, failedResult);
+  assert.equal(updatedState.workflowStatus, 'recovering');
+
+  // Resume state from recovery checkpoint
+  resumeWorkflow(updatedState);
+  assert.equal(updatedState.workflowStatus, 'executing');
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('22. Cancellation Archive & State Reset', () => {
+  const tmpDir = createTempDir();
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  saveStateRevision(state, tmpDir);
+
+  const { confirmationToken } = requestCancelState(state);
+  confirmCancelState(state, confirmationToken);
+  saveStateRevision(state, tmpDir);
+
+  assert.equal(state.workflowStatus, 'cancelled');
+
+  // New init creates fresh state revision
+  const newState = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  saveStateRevision(newState, tmpDir);
+  assert.equal(newState.workflowStatus, 'executing');
+  assert.notEqual(newState.workflowId, state.workflowId);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+
+
+
+

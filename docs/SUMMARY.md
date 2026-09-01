@@ -187,6 +187,7 @@
 * [lifecycle](03-reference/scripts/lifecycle.md)
 * [next-step](03-reference/scripts/next-step.md)
 * [orchestration](03-reference/scripts/orchestration.md)
+* [run](03-reference/scripts/run.md)
 * [sync-plugin](03-reference/scripts/sync-plugin.md)
 * [validate-skills](03-reference/scripts/validate-skills.md)
 * [validate-docs](03-reference/scripts/validate-docs.md)

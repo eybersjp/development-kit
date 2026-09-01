@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://development-kit.dev/schemas/idea-brief.schema.json",
+  "title": "Development Kit Idea Brief Artifact Schema",
+  "type": "object",
+  "required": [
+    "title",
+    "problem",
+    "intendedUsers",
+    "successCriteria",
+    "requirementsMust",
+    "preferencesShould",
+    "assumptions",
+    "constraints",
+    "risks",
+    "openQuestions",
+    "futureIdeas"
+  ],
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "problem": {
+      "type": "string"
+    },
+    "intendedUsers": {
+      "type": "string"
+    },
+    "successCriteria": {
+      "type": "string"
+    },
+    "requirementsMust": {
+      "type": "string"
+    },
+    "preferencesShould": {
+      "type": "string"
+    },
+    "assumptions": {
+      "type": "string"
+    },
+    "constraints": {
+      "type": "string"
+    },
+    "risks": {
+      "type": "string"
+    },
+    "openQuestions": {
+      "type": "string"
+    },
+    "futureIdeas": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}
