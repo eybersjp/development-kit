@@ -54,5 +54,6 @@ The v0.9 control-plane design is defined by:
 * [Contributing Guidelines](09-contributing/contribution-overview.md)
 * [Real-World Examples and Tutorials](10-examples/README.md)
 * [Appendices and Traceability](11-appendices/glossary.md)
+* [Product Evidence and Public Demonstration](../marketing/README.md)
 
 For the complete page tree, see [SUMMARY.md](SUMMARY.md).
