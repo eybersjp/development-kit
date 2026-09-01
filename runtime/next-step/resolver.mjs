@@ -389,8 +389,20 @@ export class NextStepResolver {
     let ideaState;
     try {
       ideaState = computeIdeaStageState(ctx.rootDir);
-    } catch (_) {
-      ideaState = { state: 'DISCOVERY_IN_PROGRESS' };
+    } catch (err) {
+      recommendations.push({
+        command: '/dk-debug',
+        description: `Investigate runtime framework error during IDEA stage evaluation: ${err.message}`,
+        priority: RECOMMENDATION_PRIORITIES.PRIMARY,
+        reason: 'Corrupted project state or runtime framework error halted lifecycle progression.'
+      });
+      recommendations.push({
+        command: '/dk-status',
+        description: 'Inspect current corrupted project artifacts and diagnostic logs.',
+        priority: RECOMMENDATION_PRIORITIES.SECONDARY,
+        reason: 'Review failure context.'
+      });
+      return;
     }
 
     switch (ideaState.state) {
@@ -415,6 +427,21 @@ export class NextStepResolver {
           description: 'Inspect discovery state and requirement provenance.',
           priority: RECOMMENDATION_PRIORITIES.SECONDARY,
           reason: 'Review readiness details.'
+        });
+        break;
+
+      case 'RECONCILIATION_REQUIRED':
+        recommendations.push({
+          command: '/dk-idea',
+          description: 'Reconcile unbound Idea Brief artifact with project discovery state.',
+          priority: RECOMMENDATION_PRIORITIES.PRIMARY,
+          reason: 'Idea Brief requires discovery binding and reconciliation.'
+        });
+        recommendations.push({
+          command: '/dk-status',
+          description: 'Inspect artifact registry and discovery revision mismatch.',
+          priority: RECOMMENDATION_PRIORITIES.SECONDARY,
+          reason: 'Review reconciliation requirements.'
         });
         break;
 

@@ -14,6 +14,7 @@ export const IDEA_STAGE_STATES = Object.freeze([
   'DRAFT_READY',
   'READY_FOR_APPROVAL',
   'APPROVED',
+  'RECONCILIATION_REQUIRED',
   'BLOCKED',
 ]);
 
@@ -33,6 +34,9 @@ export function getApprovalsFilePath(rootDir = process.cwd()) {
 export function validateApprovalsHistoryStructure(data) {
   if (!data || typeof data !== 'object') {
     throw new IdeaStateError('Approvals history must be an object', 'DK_APPROVALS_CORRUPT');
+  }
+  if (data.schemaVersion !== '1.0.0') {
+    throw new IdeaStateError(`Invalid approvals schemaVersion: ${data.schemaVersion}`, 'DK_APPROVALS_CORRUPT');
   }
   if (!Array.isArray(data.approvals)) {
     throw new IdeaStateError('Approvals data is malformed: approvals must be an array', 'DK_APPROVALS_CORRUPT');
@@ -196,8 +200,9 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
   }
 
   const hasDiscovery = discoveryState.requirements.length > 0 || discoveryState.openQuestions.length > 0;
+  const artifactExists = fs.existsSync(artifact.absolutePath);
 
-  if (!artifact.registered && !hasDiscovery) {
+  if (!artifact.registered && !hasDiscovery && !artifactExists) {
     return {
       state: 'NOT_STARTED',
       bootstrapped: true,
@@ -205,11 +210,23 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
     };
   }
 
-  if (!artifact.registered && hasDiscovery) {
+  if (!artifact.registered && hasDiscovery && !artifactExists) {
     return {
       state: 'DISCOVERY_IN_PROGRESS',
       bootstrapped: true,
       issues: [{ code: 'ARTIFACT_UNREGISTERED', message: 'Discovery is underway but canonical idea-brief.md is not yet written' }],
+    };
+  }
+
+  if (!artifact.registered && artifactExists) {
+    return {
+      state: 'RECONCILIATION_REQUIRED',
+      bootstrapped: true,
+      issues: [{
+        code: 'DISCOVERY_BINDING_REQUIRED',
+        message: 'Unregistered Idea Brief exists on disk. An explicit idea-persist / reconciliation is required to register and bind to discovery.',
+      }],
+      artifact,
     };
   }
 
@@ -288,10 +305,10 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
       continue;
     }
 
-    // Verify content / statement alignment
+    // Exact normalized statement equality required
     const normLine = normalizeStatementText(statementText);
     const normCand = normalizeStatementText(matchedCand.statement);
-    if (!normLine || (!normLine.includes(normCand) && !normCand.includes(normLine))) {
+    if (normLine !== normCand) {
       reqIssues.push({
         code: 'REQUIREMENT_CONTENT_MISMATCH',
         message: `Must item ${candId} statement does not match discovery candidate statement. Expected: "${matchedCand.statement}", found: "${statementText}"`,
@@ -371,9 +388,10 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
       continue;
     }
 
+    // Exact normalized question equality required
     const normQLine = normalizeStatementText(qText);
     const normQCand = normalizeStatementText(matchedQ.question);
-    if (!normQLine || (!normQLine.includes(normQCand) && !normQCand.includes(normQLine))) {
+    if (normQLine !== normQCand) {
       reqIssues.push({
         code: 'QUESTION_CONTENT_MISMATCH',
         message: `Open question ${qId} text does not match discovery question text. Expected: "${matchedQ.question}", found: "${qText}"`,

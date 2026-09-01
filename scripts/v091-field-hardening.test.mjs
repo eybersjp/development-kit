@@ -12,13 +12,17 @@ import { resolveScriptPath } from './run.mjs';
 import {
   resolveCanonicalIdeaArtifact,
   persistCanonicalIdeaBrief,
+  reconcileCanonicalIdeaBrief,
   computeSha256,
   loadArtifactRegistry,
+  persistArtifactRegistry,
   registerArtifact,
 } from '../runtime/artifacts/artifact-registry.mjs';
 import {
   recordRequirementCandidate,
+  supersedeRequirementCandidate,
   recordOpenQuestion,
+  supersedeOpenQuestion,
   evaluateDiscoveryReadiness,
   loadDiscoveryState,
 } from '../runtime/orchestration/idea-discovery.mjs';
@@ -487,14 +491,14 @@ test('Restored: Direct-edit fingerprint mismatch blocks approval state', () => {
     bootstrapProject(tempDir);
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-001',
-      statement: 'Capture inverter DC string voltages',
+      statement: 'Capture inverter DC string voltages and insulation resistance measurements.',
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
-      statement: 'Support offline checklist completion',
+      statement: 'Support offline checklist completion.',
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
@@ -531,7 +535,7 @@ test('Restored: Conflicting duplicate canonical artifacts fail closed with DK_AR
   }
 });
 
-test('Restored: Identical duplicate canonical artifacts normalize to root', () => {
+test('Pure read-only: Identical duplicate canonical artifacts resolve root without deleting legacy file', () => {
   const tempDir = createTempDir();
   try {
     bootstrapProject(tempDir);
@@ -543,7 +547,8 @@ test('Restored: Identical duplicate canonical artifacts normalize to root', () =
 
     const resolved = resolveCanonicalIdeaArtifact(tempDir);
     assert.equal(resolved.relativePath, 'idea-brief.md');
-    assert.equal(fs.existsSync(path.join(docsDir, 'idea-brief.md')), false, 'legacy duplicate should be removed');
+    assert.equal(fs.existsSync(path.join(docsDir, 'idea-brief.md')), true, 'read-only resolver must NOT mutate filesystem');
+    assert.equal(resolved.condition, 'IDENTICAL_DUPLICATE_DETECTED');
   } finally {
     cleanupTempDir(tempDir);
   }
@@ -760,6 +765,187 @@ test('Legacy Unbound: Auto-discovered Idea Brief without discovery binding retur
     const stage = computeIdeaStageState(tempDir);
     assert.equal(stage.state, 'RECONCILIATION_REQUIRED');
     assert.ok(stage.issues.some(i => i.code === 'DISCOVERY_BINDING_REQUIRED'));
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 6: run.mjs resolves sibling only and fails closed if missing', () => {
+  // Test resolveScriptPath directly
+  const siblingPath = resolveScriptPath('lifecycle.mjs');
+  assert.ok(siblingPath.endsWith(path.join('scripts', 'lifecycle.mjs')));
+
+  // Deleting or asking for nonexistent sibling in allowlist fails closed
+  assert.throws(() => {
+    resolveScriptPath('non-existent-sibling.mjs');
+  });
+});
+
+test('Candidate 6: Exact statement and question normalization equality enforced', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Capture inverter DC string voltages and insulation resistance measurements.',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-002',
+      statement: 'Support offline checklist completion.',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+
+    // Substring or prefix statement should fail REQUIREMENT_CONTENT_MISMATCH
+    const subBrief = VALID_BRIEF.replace(
+      '- [IDEA-REQ-001] Capture inverter DC string voltages and insulation resistance measurements.',
+      '- [IDEA-REQ-001] Capture inverter DC string voltages.'
+    );
+    persistCanonicalIdeaBrief({ rootDir: tempDir, content: subBrief });
+    const subStage = computeIdeaStageState(tempDir);
+    assert.equal(subStage.state, 'DISCOVERY_IN_PROGRESS');
+    assert.ok(subStage.issues.some(i => i.code === 'REQUIREMENT_CONTENT_MISMATCH'));
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 6: Identity immutability and explicit supersession for requirements and questions', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    // 1. Requirements immutability
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Original statement text',
+      materiality: 'MATERIAL',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+
+    // Attempting to mutate statement text under same ID fails
+    assert.throws(() => {
+      recordRequirementCandidate(tempDir, {
+        id: 'IDEA-REQ-001',
+        statement: 'Mutated statement text',
+        materiality: 'MATERIAL',
+        origin: 'USER_CONFIRMED',
+        resolutionState: 'CONFIRMED',
+        confirmedBy: 'PRODUCT_OWNER',
+      });
+    }, (err) => err.code === 'DK_STATEMENT_IMMUTABLE');
+
+    // Attempting to mutate materiality under same ID fails
+    assert.throws(() => {
+      recordRequirementCandidate(tempDir, {
+        id: 'IDEA-REQ-001',
+        statement: 'Original statement text',
+        materiality: 'NON_MATERIAL',
+        origin: 'USER_CONFIRMED',
+        resolutionState: 'CONFIRMED',
+        confirmedBy: 'PRODUCT_OWNER',
+      });
+    }, (err) => err.code === 'DK_MATERIALITY_IMMUTABLE');
+
+    // Explicit supersession succeeds
+    const superRes = supersedeRequirementCandidate(tempDir, 'IDEA-REQ-001', {
+      id: 'IDEA-REQ-002',
+      statement: 'Refined statement text',
+      materiality: 'MATERIAL',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    assert.equal(superRes.superseded.resolutionState, 'SUPERSEDED');
+    assert.equal(superRes.superseded.supersededBy, 'IDEA-REQ-002');
+    assert.equal(superRes.created.supersedes, 'IDEA-REQ-001');
+
+    // 2. Questions immutability
+    recordOpenQuestion(tempDir, {
+      id: 'IDEA-Q-001',
+      question: 'Original question text?',
+      materiality: 'MATERIAL',
+    });
+
+    assert.throws(() => {
+      recordOpenQuestion(tempDir, {
+        id: 'IDEA-Q-001',
+        question: 'Mutated question text?',
+        materiality: 'MATERIAL',
+      });
+    }, (err) => err.code === 'DK_QUESTION_IMMUTABLE');
+
+    // Question supersession succeeds
+    const superQ = supersedeOpenQuestion(tempDir, 'IDEA-Q-001', {
+      id: 'IDEA-Q-002',
+      question: 'Refined question text?',
+      materiality: 'MATERIAL',
+    });
+    assert.equal(superQ.superseded.resolution, 'SUPERSEDED');
+    assert.equal(superQ.superseded.supersededBy, 'IDEA-Q-002');
+    assert.equal(superQ.created.supersedes, 'IDEA-Q-001');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 6: Purity regression check: resolveCanonicalIdeaArtifact does not mutate disk or registry', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    fs.writeFileSync(path.join(tempDir, 'idea-brief.md'), VALID_BRIEF, 'utf8');
+    const docsDir = path.join(tempDir, 'docs');
+    fs.mkdirSync(docsDir, { recursive: true });
+    fs.writeFileSync(path.join(docsDir, 'idea-brief.md'), VALID_BRIEF, 'utf8');
+
+    // Persist registry to create initial artifacts.json
+    const initialRegObj = loadArtifactRegistry(tempDir);
+    persistArtifactRegistry(initialRegObj, tempDir);
+    const regFile = path.join(tempDir, '.development-kit', 'artifacts.json');
+    const initialReg = fs.readFileSync(regFile, 'utf8');
+
+    // Run pure read resolution
+    const resolved = resolveCanonicalIdeaArtifact(tempDir);
+    assert.equal(resolved.relativePath, 'idea-brief.md');
+
+    // Verify disk byte-for-byte unmodified
+    const afterReg = fs.readFileSync(regFile, 'utf8');
+    assert.equal(initialReg, afterReg);
+    assert.equal(fs.existsSync(path.join(docsDir, 'idea-brief.md')), true);
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 6: NextStepResolver fails closed and routes corrupt state to /dk-debug', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    // Write corrupted discovery.json
+    const discPath = path.join(tempDir, '.development-kit', 'idea', 'discovery.json');
+    fs.mkdirSync(path.dirname(discPath), { recursive: true });
+    fs.writeFileSync(discPath, '{ "schemaVersion": "invalid" }', 'utf8');
+
+    const resolver = new NextStepResolver();
+    const recs = resolver.resolve({
+      stage: 'UNDERSTAND',
+      rootDir: tempDir,
+      projectState: { bootstrapped: true },
+      taskState: null,
+      verificationState: null,
+      blockers: [],
+    });
+
+    assert.ok(recs.length >= 1);
+    assert.equal(recs[0].command, '/dk-debug');
+    assert.equal(recs[0].priority, 'primary');
+    assert.equal(recs[1].command, '/dk-status');
+    assert.equal(recs[1].priority, 'secondary');
   } finally {
     cleanupTempDir(tempDir);
   }

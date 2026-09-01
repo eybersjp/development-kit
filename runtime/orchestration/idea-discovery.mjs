@@ -14,8 +14,6 @@ export const REQUIREMENT_ORIGINS = Object.freeze([
   'AI_PROPOSED',
   'RESEARCH_DERIVED',
   'ASSUMED',
-  'REJECTED',
-  'SUPERSEDED',
 ]);
 
 export const RESOLUTION_STATES = Object.freeze([
@@ -31,7 +29,8 @@ export const QUESTION_RESOLUTIONS = Object.freeze([
   'UNRESOLVED',
   'ANSWERED',
   'DEFERRED',
-  'REJECTED'
+  'REJECTED',
+  'SUPERSEDED',
 ]);
 
 export const MATERIALITY_LEVELS = Object.freeze([
@@ -68,6 +67,8 @@ export function computeDiscoveryFingerprint(state) {
       resolution: q.resolution,
       resolvedBy: q.resolvedBy,
       deferredTarget: q.deferredTarget || null,
+      supersedes: q.supersedes || null,
+      supersededBy: q.supersededBy || null,
     })),
   };
   return `sha256:${crypto.createHash('sha256').update(JSON.stringify(normalized), 'utf8').digest('hex')}`;
@@ -95,6 +96,7 @@ export function validateDiscoveryStateStructure(data) {
     throw new DiscoveryStateError('Discovery requirements and openQuestions must be arrays', 'DK_DISCOVERY_CORRUPT');
   }
 
+  const reqIdSet = new Set();
   for (const r of data.requirements) {
     if (!r || typeof r !== 'object') {
       throw new DiscoveryStateError('Requirement entry must be an object', 'DK_DISCOVERY_CORRUPT');
@@ -102,6 +104,11 @@ export function validateDiscoveryStateStructure(data) {
     if (!r.id || !/^IDEA-REQ-\d+$/i.test(r.id)) {
       throw new DiscoveryStateError(`Requirement ID invalid: ${r.id}`, 'DK_DISCOVERY_CORRUPT');
     }
+    if (reqIdSet.has(r.id)) {
+      throw new DiscoveryStateError(`Duplicate requirement ID: ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+    }
+    reqIdSet.add(r.id);
+
     if (!r.statement || typeof r.statement !== 'string') {
       throw new DiscoveryStateError(`Requirement statement invalid for ${r.id}`, 'DK_DISCOVERY_CORRUPT');
     }
@@ -117,8 +124,30 @@ export function validateDiscoveryStateStructure(data) {
     if ((r.resolutionState === 'CONFIRMED' || r.resolutionState === 'ADOPTED') && r.confirmedBy !== 'PRODUCT_OWNER') {
       throw new DiscoveryStateError(`Confirmed/Adopted requirement ${r.id} must be confirmedBy PRODUCT_OWNER (got ${r.confirmedBy})`, 'DK_DISCOVERY_CORRUPT');
     }
+    if (r.linkedPodId !== null && r.linkedPodId !== undefined) {
+      if (!/^POD-IDEA-REQ-\d+$/i.test(r.linkedPodId)) {
+        throw new DiscoveryStateError(`Invalid linkedPodId ${r.linkedPodId} in ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+      }
+    }
+    if (r.supersedes !== null && r.supersedes !== undefined) {
+      if (!/^IDEA-REQ-\d+$/i.test(r.supersedes) || r.supersedes === r.id) {
+        throw new DiscoveryStateError(`Invalid supersedes reference ${r.supersedes} in ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+      }
+    }
+    if (r.supersededBy !== null && r.supersededBy !== undefined) {
+      if (!/^IDEA-REQ-\d+$/i.test(r.supersededBy) || r.supersededBy === r.id) {
+        throw new DiscoveryStateError(`Invalid supersededBy reference ${r.supersededBy} in ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+      }
+    }
+    if (r.createdAt && isNaN(Date.parse(r.createdAt))) {
+      throw new DiscoveryStateError(`Invalid createdAt timestamp in ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+    }
+    if (r.updatedAt && isNaN(Date.parse(r.updatedAt))) {
+      throw new DiscoveryStateError(`Invalid updatedAt timestamp in ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+    }
   }
 
+  const qIdSet = new Set();
   for (const q of data.openQuestions) {
     if (!q || typeof q !== 'object') {
       throw new DiscoveryStateError('Question entry must be an object', 'DK_DISCOVERY_CORRUPT');
@@ -126,6 +155,11 @@ export function validateDiscoveryStateStructure(data) {
     if (!q.id || !/^IDEA-Q-\d+$/i.test(q.id)) {
       throw new DiscoveryStateError(`Question ID invalid: ${q.id}`, 'DK_DISCOVERY_CORRUPT');
     }
+    if (qIdSet.has(q.id)) {
+      throw new DiscoveryStateError(`Duplicate question ID: ${q.id}`, 'DK_DISCOVERY_CORRUPT');
+    }
+    qIdSet.add(q.id);
+
     if (!q.question || typeof q.question !== 'string') {
       throw new DiscoveryStateError(`Question text invalid for ${q.id}`, 'DK_DISCOVERY_CORRUPT');
     }
@@ -135,8 +169,27 @@ export function validateDiscoveryStateStructure(data) {
     if (!QUESTION_RESOLUTIONS.includes(q.resolution)) {
       throw new DiscoveryStateError(`Invalid question resolution ${q.resolution} in ${q.id}`, 'DK_DISCOVERY_CORRUPT');
     }
-    if (q.materiality === 'MATERIAL' && q.resolution !== 'UNRESOLVED' && q.resolvedBy !== 'PRODUCT_OWNER') {
+    if (q.materiality === 'MATERIAL' && q.resolution !== 'UNRESOLVED' && q.resolution !== 'SUPERSEDED' && q.resolvedBy !== 'PRODUCT_OWNER') {
       throw new DiscoveryStateError(`Material question ${q.id} disposition ${q.resolution} requires explicit resolvedBy = 'PRODUCT_OWNER'`, 'DK_DISCOVERY_CORRUPT');
+    }
+    if (q.resolution === 'DEFERRED' && (!q.deferredTarget || typeof q.deferredTarget !== 'string')) {
+      throw new DiscoveryStateError(`DEFERRED question ${q.id} requires valid deferredTarget`, 'DK_DISCOVERY_CORRUPT');
+    }
+    if (q.supersedes !== null && q.supersedes !== undefined) {
+      if (!/^IDEA-Q-\d+$/i.test(q.supersedes) || q.supersedes === q.id) {
+        throw new DiscoveryStateError(`Invalid supersedes reference ${q.supersedes} in ${q.id}`, 'DK_DISCOVERY_CORRUPT');
+      }
+    }
+    if (q.supersededBy !== null && q.supersededBy !== undefined) {
+      if (!/^IDEA-Q-\d+$/i.test(q.supersededBy) || q.supersededBy === q.id) {
+        throw new DiscoveryStateError(`Invalid supersededBy reference ${q.supersededBy} in ${q.id}`, 'DK_DISCOVERY_CORRUPT');
+      }
+    }
+    if (q.createdAt && isNaN(Date.parse(q.createdAt))) {
+      throw new DiscoveryStateError(`Invalid createdAt timestamp in ${q.id}`, 'DK_DISCOVERY_CORRUPT');
+    }
+    if (q.updatedAt && isNaN(Date.parse(q.updatedAt))) {
+      throw new DiscoveryStateError(`Invalid updatedAt timestamp in ${q.id}`, 'DK_DISCOVERY_CORRUPT');
     }
   }
   return true;
@@ -234,10 +287,23 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
 
   if (existingIdx >= 0) {
     const existing = state.requirements[existingIdx];
+    // Enforce full identity immutability on existing candidates
     if (existing.origin !== origin) {
       throw new DiscoveryStateError(
         `Requirement provenance origin is immutable for ${id} (existing: ${existing.origin}, attempted: ${origin})`,
         'DK_PROVENANCE_IMMUTABLE'
+      );
+    }
+    if (existing.statement.trim() !== statement.trim()) {
+      throw new DiscoveryStateError(
+        `Requirement statement is immutable for ${id}. Use supersedeRequirementCandidate to alter statement.`,
+        'DK_STATEMENT_IMMUTABLE'
+      );
+    }
+    if (existing.materiality !== materiality) {
+      throw new DiscoveryStateError(
+        `Requirement materiality is immutable for ${id}. Use supersedeRequirementCandidate to reclassify.`,
+        'DK_MATERIALITY_IMMUTABLE'
       );
     }
   }
@@ -282,6 +348,65 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
   return reqObj;
 }
 
+export function supersedeRequirementCandidate(rootDir = process.cwd(), oldId, newCandidateData = {}) {
+  const state = loadDiscoveryState(rootDir);
+  const oldIdx = state.requirements.findIndex((r) => r.id === oldId);
+  if (oldIdx < 0) {
+    throw new DiscoveryStateError(`Cannot supersede: candidate ${oldId} does not exist`, 'DK_CANDIDATE_NOT_FOUND');
+  }
+
+  const oldReq = state.requirements[oldIdx];
+  if (oldReq.resolutionState === 'SUPERSEDED') {
+    throw new DiscoveryStateError(`Candidate ${oldId} is already superseded`, 'DK_ALREADY_SUPERSEDED');
+  }
+
+  const newId = newCandidateData.id;
+  if (!newId || !/^IDEA-REQ-\d+$/i.test(newId)) {
+    throw new DiscoveryStateError(`Invalid new candidate ID: ${newId}`, 'DK_INVALID_REQ_ID');
+  }
+  if (newId === oldId) {
+    throw new DiscoveryStateError('New candidate ID must differ from old candidate ID for supersession', 'DK_INVALID_SUPERSEDED_ID');
+  }
+  if (state.requirements.some((r) => r.id === newId)) {
+    throw new DiscoveryStateError(`Candidate with ID ${newId} already exists`, 'DK_CANDIDATE_EXISTS');
+  }
+
+  // Atomically update old candidate
+  oldReq.resolutionState = 'SUPERSEDED';
+  oldReq.supersededBy = newId;
+  oldReq.updatedAt = new Date().toISOString();
+
+  // Create new candidate with supersedes link
+  const newStatement = newCandidateData.statement || oldReq.statement;
+  const newOrigin = newCandidateData.origin || oldReq.origin;
+  const newMateriality = newCandidateData.materiality || oldReq.materiality;
+  const newResolution = newCandidateData.resolutionState || 'UNRESOLVED';
+  const newConfirmedBy = newCandidateData.confirmedBy || null;
+
+  const newReq = {
+    id: newId,
+    statement: newStatement.trim(),
+    materiality: newMateriality,
+    origin: newOrigin,
+    resolutionState: newResolution,
+    confirmedBy: (newResolution === 'CONFIRMED' || newResolution === 'ADOPTED') ? newConfirmedBy : null,
+    linkedPodId: null,
+    supersedes: oldId,
+    supersededBy: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  state.requirements.push(newReq);
+  state.revision = (state.revision || 0) + 1;
+  persistDiscoveryState(state, rootDir);
+
+  return {
+    superseded: oldReq,
+    created: newReq,
+  };
+}
+
 export function recordOpenQuestion(rootDir = process.cwd(), {
   id,
   question,
@@ -290,6 +415,8 @@ export function recordOpenQuestion(rootDir = process.cwd(), {
   deferredTarget = null,
   resolvedBy = null,
   notes = null,
+  supersedes = null,
+  supersededBy = null,
 } = {}) {
   if (!id || !/^IDEA-Q-\d+$/i.test(id)) {
     throw new DiscoveryStateError(`Invalid question ID: ${id}. Must match IDEA-Q-xxx`, 'DK_INVALID_QUESTION_ID');
@@ -304,20 +431,39 @@ export function recordOpenQuestion(rootDir = process.cwd(), {
     throw new DiscoveryStateError(`Invalid question resolution: ${resolution}`, 'DK_INVALID_QUESTION_RESOLUTION');
   }
 
-  if (materiality === 'MATERIAL' && resolution !== 'UNRESOLVED' && resolvedBy !== 'PRODUCT_OWNER') {
+  if (materiality === 'MATERIAL' && resolution !== 'UNRESOLVED' && resolution !== 'SUPERSEDED' && resolvedBy !== 'PRODUCT_OWNER') {
     throw new DiscoveryStateError(`Material question ${resolution} resolution requires explicit resolvedBy = 'PRODUCT_OWNER'`, 'DK_UNAUTHORIZED_RESOLUTION');
   }
 
   const state = loadDiscoveryState(rootDir);
   const existingIdx = state.openQuestions.findIndex((q) => q.id === id);
+
+  if (existingIdx >= 0) {
+    const existing = state.openQuestions[existingIdx];
+    if (existing.question.trim() !== question.trim()) {
+      throw new DiscoveryStateError(
+        `Question text is immutable for ${id}. Use supersedeOpenQuestion to alter question text.`,
+        'DK_QUESTION_IMMUTABLE'
+      );
+    }
+    if (existing.materiality !== materiality) {
+      throw new DiscoveryStateError(
+        `Question materiality is immutable for ${id}. Use supersedeOpenQuestion to reclassify.`,
+        'DK_MATERIALITY_IMMUTABLE'
+      );
+    }
+  }
+
   const qObj = {
     id,
     question: question.trim(),
     materiality,
     resolution,
     deferredTarget: resolution === 'DEFERRED' ? (deferredTarget || 'Future Ideas (Explicitly Deferred)') : null,
-    resolvedBy: resolution !== 'UNRESOLVED' ? resolvedBy : null,
+    resolvedBy: resolution !== 'UNRESOLVED' && resolution !== 'SUPERSEDED' ? resolvedBy : null,
     notes,
+    supersedes: supersedes || (existingIdx >= 0 ? state.openQuestions[existingIdx].supersedes : null),
+    supersededBy: supersededBy || (existingIdx >= 0 ? state.openQuestions[existingIdx].supersededBy : null),
     createdAt: existingIdx >= 0 ? state.openQuestions[existingIdx].createdAt : new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -331,6 +477,62 @@ export function recordOpenQuestion(rootDir = process.cwd(), {
   state.revision = (state.revision || 0) + 1;
   persistDiscoveryState(state, rootDir);
   return qObj;
+}
+
+export function supersedeOpenQuestion(rootDir = process.cwd(), oldId, newQuestionData = {}) {
+  const state = loadDiscoveryState(rootDir);
+  const oldIdx = state.openQuestions.findIndex((q) => q.id === oldId);
+  if (oldIdx < 0) {
+    throw new DiscoveryStateError(`Cannot supersede: question ${oldId} does not exist`, 'DK_QUESTION_NOT_FOUND');
+  }
+
+  const oldQ = state.openQuestions[oldIdx];
+  if (oldQ.resolution === 'SUPERSEDED') {
+    throw new DiscoveryStateError(`Question ${oldId} is already superseded`, 'DK_ALREADY_SUPERSEDED');
+  }
+
+  const newId = newQuestionData.id;
+  if (!newId || !/^IDEA-Q-\d+$/i.test(newId)) {
+    throw new DiscoveryStateError(`Invalid new question ID: ${newId}`, 'DK_INVALID_QUESTION_ID');
+  }
+  if (newId === oldId) {
+    throw new DiscoveryStateError('New question ID must differ from old question ID for supersession', 'DK_INVALID_SUPERSEDED_ID');
+  }
+  if (state.openQuestions.some((q) => q.id === newId)) {
+    throw new DiscoveryStateError(`Question with ID ${newId} already exists`, 'DK_QUESTION_EXISTS');
+  }
+
+  oldQ.resolution = 'SUPERSEDED';
+  oldQ.supersededBy = newId;
+  oldQ.updatedAt = new Date().toISOString();
+
+  const newQuestion = newQuestionData.question || oldQ.question;
+  const newMateriality = newQuestionData.materiality || oldQ.materiality;
+  const newResolution = newQuestionData.resolution || 'UNRESOLVED';
+  const newResolvedBy = newQuestionData.resolvedBy || null;
+
+  const newQ = {
+    id: newId,
+    question: newQuestion.trim(),
+    materiality: newMateriality,
+    resolution: newResolution,
+    deferredTarget: newResolution === 'DEFERRED' ? (newQuestionData.deferredTarget || 'Future Ideas (Explicitly Deferred)') : null,
+    resolvedBy: newResolution !== 'UNRESOLVED' && newResolution !== 'SUPERSEDED' ? newResolvedBy : null,
+    notes: newQuestionData.notes || null,
+    supersedes: oldId,
+    supersededBy: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  state.openQuestions.push(newQ);
+  state.revision = (state.revision || 0) + 1;
+  persistDiscoveryState(state, rootDir);
+
+  return {
+    superseded: oldQ,
+    created: newQ,
+  };
 }
 
 export function evaluateDiscoveryReadiness(rootDir = process.cwd()) {

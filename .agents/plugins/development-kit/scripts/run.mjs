@@ -27,7 +27,7 @@ export const ALLOWED_SCRIPTS = Object.freeze([
   'validate-evals.mjs',
 ]);
 
-export function resolveScriptPath(scriptName, cwd = process.cwd()) {
+export function resolveScriptPath(scriptName) {
   if (!scriptName || typeof scriptName !== 'string') {
     throw new Error('Script name must be a non-empty string');
   }
@@ -41,24 +41,13 @@ export function resolveScriptPath(scriptName, cwd = process.cwd()) {
     throw new Error(`Script is not in allowlist: ${scriptName}`);
   }
 
-  const candidates = [
-    // 1. Project local plugin directory relative to CWD
-    path.join(cwd, '.agents', 'plugins', 'development-kit', 'scripts', scriptName),
-    // 2. Project root relative to CWD
-    path.join(cwd, 'scripts', scriptName),
-    // 3. Same directory as run.mjs
-    path.join(__dirname, scriptName),
-    // 4. Global home directory
-    path.join(process.env.HOME || process.env.USERPROFILE || '', '.gemini', 'config', 'plugins', 'development-kit', 'scripts', scriptName),
-  ];
-
-  for (const p of candidates) {
-    if (p && fs.existsSync(p) && fs.statSync(p).isFile()) {
-      return p;
-    }
+  // Strictly bind to the sibling script belonging to this same DKF installation
+  const siblingPath = path.join(__dirname, scriptName);
+  if (fs.existsSync(siblingPath) && fs.statSync(siblingPath).isFile()) {
+    return siblingPath;
   }
 
-  throw new Error(`Unable to resolve script: ${scriptName}`);
+  throw new Error(`Unable to resolve script: ${scriptName} (sibling not found at ${siblingPath})`);
 }
 
 function main() {
