@@ -1,103 +1,47 @@
 ---
 name: dk-ship
 description: >-
-  Performs final verification and release preparation: full test suite,
-  diff inspection, documentation update, task completion gate, branch
-  completion, and release readiness assessment.
+  Perform final deterministic acceptance, full release validation, documentation/version checks, diff review and controlled release preparation.
 ---
 
 # /dk-ship
 
 ## Purpose
 
-Performs final verification and release preparation. Runs the full test suite, inspects the diff, documents completion, verifies release readiness, and prepares the commit. This is the final gate before work is considered ready to merge.
+Final release gate. Shipping is not authorized by an agent's completion claim: every active contract must be runtime-accepted and the repository's complete release validation must pass before merge/tag/publication preparation.
 
 ## Workflow
 
-### 1. Task Completion & Design Authority Gate
-Before shipping, verify every task has passed its completion gate:
-- All acceptance criteria satisfied
-- All tests pass
-- Spec review passed
-- Code review passed
-- Simplicity review passed
-- **Design Authority Gate** (for visual UI scope):
-  - `Same Design Team Test: PASS`
-  - No unresolved `DS-xxx` blocking issues
-  - `design.md` is approved and up-to-date
-  - Exempt if project is confirmed non-visual (`applicable: false`)
+1. Verify no active contract/run is PENDING or BLOCKED. For contract-aware work, acceptance must be `ACCEPTED`, source fingerprints current, required controls/reviews complete, and no unresolved architecture/design/security gate present.
+2. For UI scope verify authoritative `design.md`, Same Design Team/visual evidence requirements, and no blocking Design Authority findings.
+3. Run `npm run release:validate` from the exact candidate commit. Do not substitute a smaller test subset.
+4. Inspect the complete diff for scope, generated/stale files, dependency/architecture delta, credentials/secrets, migration history, installer/package contents and version consistency.
+5. Run the full independent spec/code/simplicity and conditional security/accessibility/design/architecture reviews required by the release risk.
+6. Verify README/docs/changelog/release notes/migration guidance and active-version references.
+7. Verify package version, plugin manifest version, release tag target and installable npm package contents agree.
+8. Prepare the PR/merge only when all gates are green.
+9. Publication/tag/npm/GitHub Release remains a consequential remote action and must use the repository's controlled maintainer release workflow after the final main commit is verified.
 
-If any task has not passed all gates, stop and report which tasks are incomplete.
+## Fail-Closed Conditions
 
-### 2. Final Test Suite
-Run the complete test suite:
-- Unit tests
-- Integration tests
-- Browser tests
-- Type checking
-- Linting
-
-### 3. Full Review Cycle
-Spawn the **spec-reviewer** and **code-reviewer** to run specification compliance and code quality review on the full diff.
-
-### 4. Documentation Check
-Verify that documentation is updated:
-- README changes
-- API documentation
-- Changelog entries
-- Migration notes (if applicable)
-
-### 5. Simplicity Review
-Spawn the **simplicity-reviewer** to run the simplicity review on the full diff. Check for unnecessary code, abstractions, and dependencies.
-
-### 6. Release Readiness Assessment
-Assess broader release readiness:
-- Dependency audit (no known vulnerabilities)
-- Secrets scan (no credentials in codebase)
-- Build process completes
-- Rollback plan exists
-- Release notes prepared
-
-### 7. Commit Preparation
-Prepare a clean commit with:
-- Descriptive commit message
-- Related task references
-- Change summary
-
-### 8. Branch Completion
-Complete the branch:
-- Final diff inspection
-- PR description prepared
-- Branch ready for merge
+Stop shipping for any PENDING/BLOCKED acceptance, stale contract, unverified required control, failed regression, docs validation error, plugin/package mismatch, install isolation failure, unresolved reviewer finding, unauthorized architecture drift, or release-validation failure.
 
 ## Skills Activated
 
-Primary:
-- `branch-completion` — Final verification, diff inspection, commit and PR preparation
-
-Supporting:
-- `task-completion-gate` — Verifies every task has passed all gates
-- `release-readiness` — Broader pre-release check (security, performance, docs, deployment)
-
-Conditional:
-- `specification-compliance-review` — Full diff spec review
-- `code-quality-review` — Full diff code review
-- `simplicity-review` — Full diff simplicity review
-- `regression-testing` — Verify existing behaviour remains intact
+- `branch-completion`
+- `task-completion-gate`
+- `release-readiness`
+- `verification-before-completion`
+- `regression-testing`
+- conditional specification/code/security/accessibility/design/simplicity review skills
 
 ## Sub-Agents
 
-- spec-reviewer
-- code-reviewer
-- simplicity-reviewer
+- `spec-reviewer`
+- `code-reviewer`
+- `simplicity-reviewer`
+- conditional specialist reviewers selected by risk
 
 ## Output
 
-Ship report including:
-- Task completion gate status
-- Test results
-- Review results
-- Documentation status
-- Release readiness assessment
-- Commit summary
-- Go/no-go recommendation
+A source-backed ship report with exact candidate commit, runtime acceptance state, full `release:validate` result, installer/package/version state, unresolved blockers, final diff/review status and controlled release recommendation.

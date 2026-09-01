@@ -1,0 +1,27 @@
+.install > * {
+  min-width: 0;
+}
+
+.terminal {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.terminal pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.pipeline,
+.card-grid,
+.pipeline > *,
+.card-grid > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 600px) {
+  .terminal {
+    width: calc(100% - 8px);
+  }
+}

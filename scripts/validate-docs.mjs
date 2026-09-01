@@ -169,6 +169,8 @@ export function validateDocs(targetRoot = DEFAULT_ROOT, options = { silent: fals
   const skillsDir = join(targetRoot, 'skills');
   const skills = existsSync(skillsDir) ? readdirSync(skillsDir).filter(d => statSync(join(skillsDir, d)).isDirectory()) : [];
   for (const skill of skills) {
+    // Antigravity /dk-* workflow skill adapters are transport adapters covered by command references
+    if (skill.startsWith('dk-')) continue;
     const refFile = join(docsDir, '03-reference', 'skills', `${skill}.md`);
     if (existsSync(refFile)) {
       pass(`Skill reference page exists: ${skill}.md`);

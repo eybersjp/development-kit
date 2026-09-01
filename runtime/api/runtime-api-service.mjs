@@ -137,6 +137,35 @@ export class RuntimeApiService {
       return this._json(res, 200, { state: state || null });
     }
 
+    if (method === 'GET' && pathname === '/v1/reliability') {
+      const dkDir = path.join(this.rootDir, '.development-kit');
+      const contractsDir = path.join(dkDir, 'contracts');
+      const runsDir = path.join(dkDir, 'runs');
+      const decisionsDir = path.join(dkDir, 'decisions');
+      const contracts = fs.existsSync(contractsDir) ? fs.readdirSync(contractsDir) : [];
+      const runs = fs.existsSync(runsDir) ? fs.readdirSync(runsDir) : [];
+      const decisions = fs.existsSync(decisionsDir) ? fs.readdirSync(decisionsDir) : [];
+
+      const workflowState = getCurrentState(this.rootDir);
+
+      return this._json(res, 200, {
+        reliabilityControlPlane: true,
+        lifecycleStage: workflowState?.stage ?? 'UNDERSTAND',
+        currentRevision: workflowState?.revision ?? 0,
+        activeTask: workflowState?.activeTask ?? null,
+        contractsCount: contracts.length,
+        contracts,
+        runsCount: runs.length,
+        runs,
+        decisionsCount: decisions.length,
+        decisions,
+        executionMediationState: {
+          guaranteedInterceptionSupported: false,
+          failClosedRequired: true,
+        },
+      });
+    }
+
     if (method === 'GET' && pathname === '/v1/memory') {
       const records = await this.memoryProvider.listAllRecords();
       return this._json(res, 200, { records });

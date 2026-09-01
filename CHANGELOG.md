@@ -6,6 +6,53 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-24
+
+### Added
+- **Reliability Control Plane**: Contract-driven orchestration that turns approved tasks into fingerprinted Development Contracts before implementation.
+- **Independent Verification Contexts**: Fresh or rehydrated verifier/reviewer contexts sourced from authoritative project artifacts; implementation reports are non-authoritative and cannot self-certify acceptance.
+- **Deterministic Acceptance Engine**: Computes `ACCEPTED`, `PENDING`, or `BLOCKED` from evidence, required reviews, risk-derived gates, control manifests, source freshness, architecture drift, Design Authority state, and approvals.
+- **Bounded Correction Engine**: Scope-locked, risk-aware correction with maximum attempts and repeated-failure detection.
+- **Execution Safety / Blast-Radius Controls**: Classifies destructive, remote, project-scope, declared-resource, and host-wide commands before execution.
+- **Evidence and Control Coverage**: Explicit required-control manifests prevent passing a gate merely because all executed tests passed; missing controls remain `INCOMPLETE`.
+- **Deterministic PLAN Validation**: Computes task counts, dependency validity/cycles, resource ownership, duplicate ownership, and acceptance-criterion coverage from machine-readable plan data.
+- **Canonical Artifact Reconciliation**: Fingerprint-bound exact amendments with anchor counts, atomic write/read-back verification, and stale-replay rejection.
+- **Structured Review and Architecture Drift Records**: Evidence-bearing review findings and explicit unauthorized architecture-change handling.
+- **Host Capability Strategy**: Native sub-agent isolation where available and sequential fresh-context fallback where it is not, without silently skipping mandatory verification.
+- **Orchestration CLI**: Runtime bridge for prepare/context/verify/acceptance/correction/safety/reconcile/plan/status operations.
+- **Proposal Builder Adversarial Regression Fixture**: Preserves the real failures that motivated v0.9 as release-blocking tests.
+- **Version Consistency Gate**: Enforces alignment between `package.json`, the committed Antigravity plugin manifest, and Autopilot `frameworkVersion`.
+
+### Changed
+- `/dk-build`, `/dk-build-auto`, `/dk-test`, `/dk-review`, `/dk-tasks`, `/dk-status`, and `/dk-autopilot` now bind to the reliability runtime while preserving their user-facing workflow purpose.
+- Implementation agents report changes and local checks but do not declare final acceptance; verification and review roles operate independently.
+- Acceptance derives security, code, and architecture review/control requirements from risk and constraints instead of trusting sparse caller-declared arrays.
+- Project and standalone installers now verify that orchestration runtime and schema assets are self-contained and version-aligned.
+- Release validation now includes orchestration contracts, execution safety, evidence/control coverage, core orchestration, command integration, fail-closed regressions, Proposal Builder regressions, and version consistency.
+
+### Fixed
+- Prevented the `20 tasks` declared vs `22 tasks` actual PLAN inconsistency from passing validation.
+- Prevented `17` passing checks against `23` required security controls from being reported as complete; the computed state is `73.91% / INCOMPLETE` until all required controls are resolved.
+- Prevented project-local tasks from silently issuing host-wide Docker cleanup such as `docker rm -f $(docker ps -aq)`.
+- Prevented implementation-agent self-certification from satisfying authoritative verification.
+- Prevented stale authoritative-source changes from being ignored by existing Development Contracts.
+- Prevented canonical amendment replay after the source fingerprint changes and now requires the expected pre-edit fingerprint on every amendment.
+- Removed stale plugin-version documentation and aligned plugin metadata with the package release.
+- Corrected new Autopilot state from the stale `frameworkVersion: 0.4.0` value to the active release version.
+
+### Security
+- High-risk and security-sensitive contracts automatically derive required security review and security-control gates.
+- Major/critical review findings require evidence; accepted-risk findings require approval provenance.
+- Destructive or remote operations fail closed when contract policy forbids them, even if runtime approval is present.
+- Host-wide operations require explicit higher-scope authorization and cannot inherit permission from project-local task approval.
+
+## [0.8.1] - 2026-08-17
+
+### Fixed
+- Restored native Antigravity slash-workflow discovery for all 16 `/dk-*` workflows through native skill adapters while retaining `commands/*.md` as the authoritative workflow definitions.
+- Preserved existing guarded `AGENTS.md` files during normal project upgrades.
+- Strengthened installer/version synchronization so package and committed plugin metadata remain aligned.
+
 ## [0.8.0] - 2026-08-17
 
 ### Added
@@ -170,7 +217,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Production-grade 12-section documentation system.
 - Documentation validation suite and installer synchronization verification.
 
-[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/eybersjp/development-kit/compare/v0.8.1...v0.9.0
+[0.8.1]: https://github.com/eybersjp/development-kit/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/eybersjp/development-kit/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/eybersjp/development-kit/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/eybersjp/development-kit/compare/v0.6.1...v0.7.0

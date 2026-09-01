@@ -1,80 +1,44 @@
 ---
 name: dk-test
 description: >-
-  Run task-specific verification: unit tests, integration tests, type checking,
-  linting, and browser tests as applicable.
+  Independently verify the active Development Contract and attach evidence to every applicable acceptance criterion and required control.
 ---
 
 # /dk-test
 
 ## Purpose
 
-Runs task-specific verification for the current task. The full verification suite includes unit tests, integration tests, browser tests, type checking, and linting. For UI work, also checks browser runtime behaviour, console errors, responsive layout, and accessibility.
+Runs verification for the active task. v0.9 distinguishes test execution from verification coverage: a green subset of tests is not a PASS when required criteria or controls remain unverified.
 
 ## Workflow
 
-### 1. Identify Test Scope
-Determine which verification types are relevant for the current task:
-- Unit tests: functions, methods, utilities
-- Integration tests: component interactions, API endpoints, database operations
-- Browser tests: user workflows, interactions, responsive layout
-- Type checking and linting
+1. Resolve the active Development Contract and run ID. Recheck the contract source fingerprint before verification.
+2. Build a fresh or rehydrated verification context from the contract, authoritative sources, actual repository state/diff, and real test/runtime evidence. Upstream implementation reports are explicitly non-authoritative.
+3. Run applicable unit, integration, type, lint, browser/runtime, regression, edge-case, schema/migration, security, accessibility, and design checks. For UI work, perform Design System Compliance verification.
+4. Attach evidence to the stable contract criterion IDs. Each criterion receives exactly one runtime status: PASS, FAIL, PARTIAL, UNVERIFIED, or NOT_APPLICABLE.
+5. PASS requires evidence unless that criterion is explicitly evidence-exempt. Evidence-exempt does not mean optional.
+6. NOT_APPLICABLE requires an explicit reason.
+7. For domains such as security, evaluate the complete required control manifest. Missing controls become UNVERIFIED. Executed-test count never defines the required control set.
+8. Create the authoritative verification record through the orchestration runtime. Implementation roles may not produce this record.
+9. Return PASS only when all required criteria are satisfied with valid evidence. PARTIAL/UNVERIFIED produce INCOMPLETE, not PASS.
 
-### 2. Run Core Verification
-Spawn the **test-engineer** to execute the verification suite:
-- Run existing tests
-- Write missing tests (TDD: RED phase if new behaviour)
-- Identify edge cases and unhappy paths
-- Run type checking and linting
+## UI Verification
 
-### 3. Apply Browser Runtime Verification & Design System Compliance (for UI tasks)
-Activate the browser-runtime-verification and design compliance checks:
-- Check for console errors and warnings
-- Verify network requests succeed with proper error handling
-- Confirm DOM behaviour and dynamic updates
-- Test responsive layout at multiple viewport sizes
-- Verify keyboard navigation and focus management
-- **Design System Compliance**: Audit usage of defined tokens (colors, typography, spacing, radius) against raw hardcoded values, Tailwind brackets, or unauthorized UI component conventions.
-
-### 4. Apply Regression Testing
-Activate regression-testing to ensure existing behaviour remains intact:
-- Run the complete test suite for affected areas
-- Confirm previously passing tests still pass
-- Check for side effects from the change
-
-### 5. Apply Edge Case Testing
-Activate edge-case-testing to actively search for failure scenarios:
-- Boundary values (min, max, just outside)
-- Invalid inputs (wrong type, malformed, injection patterns)
-- Missing values (null, undefined, empty)
-- Unexpected values (very large, unicode, control characters)
-
-### 6. Report Results
-Provide a clear pass/fail report with details for each verification area.
+For UI work, bind and re-read authoritative `design.md`; run Design System Compliance checks and use browser/visual evidence when available. If the host lacks visual capability, record the evidence gap and require manual visual evidence rather than silently skipping the gate.
 
 ## Skills Activated
 
-Primary:
-- `verification-before-completion` — Requires evidence before claiming success
-
-Supporting:
-- `browser-runtime-verification` — Checks runtime behaviour in the browser (console, network, DOM, responsive, accessibility)
-- `regression-testing` — Ensures existing behaviour remains intact after changes
-- `edge-case-testing` — Actively searches for boundary conditions and failure scenarios
-
-Conditional:
-- `test-driven-development` — If new tests need to be written for new behaviour
+- `verification-before-completion`
+- `browser-runtime-verification`
+- `regression-testing`
+- `edge-case-testing`
+- conditional `test-driven-development`
 
 ## Sub-Agents
 
-- test-engineer (primary — runs and coordinates verification)
+- `test-engineer`
+- `spec-reviewer`/verification context as required by the active contract
 
 ## Output
 
-Test report including:
-- Results per test type (unit, integration, browser, type check, lint)
-- Browser runtime checks (console, network, responsive, accessibility)
-- Regression test results
-- Edge cases covered and any failures found
-- Coverage gaps
-- New tests added
+Contract/run identity, source fingerprint, criterion-by-criterion evidence/status, required-control coverage by domain, and computed verification verdict PASS / FAIL / INCOMPLETE.

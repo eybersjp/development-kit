@@ -1,62 +1,34 @@
 {
   "name": "development-kit",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "A disciplined AI software-development workflow for Antigravity and OpenCode, with lifecycle commands, specialist agents, verification gates, persistent guided automation, DKF Design Authority, and optional external capability providers.",
   "author": "Juan-Pierre Eybers",
   "license": "MIT",
   "homepage": "https://github.com/eybersjp/development-kit#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/eybersjp/development-kit.git"
-  },
-  "bugs": {
-    "url": "https://github.com/eybersjp/development-kit/issues"
-  },
-  "keywords": [
-    "ai-coding-agent",
-    "agentic-development",
-    "antigravity",
-    "opencode",
-    "software-development-lifecycle",
-    "developer-tools",
-    "agent-skills",
-    "workflow-automation",
-    "test-driven-development",
-    "code-review",
-    "external-research",
-    "agent-reach"
-  ],
-  "bin": {
-    "development-kit": "scripts/install-antigravity.mjs"
-  },
-  "files": [
-    ".agents/",
-    "agents/",
-    "skills/",
-    "commands/",
-    "hooks/",
-    "templates/",
-    "evals/",
-    "runtime/",
-    "scripts/",
-    "AGENTS.md",
-    "README.md",
-    "LICENSE",
-    "opencode.json"
-  ],
+  "repository": { "type": "git", "url": "git+https://github.com/eybersjp/development-kit.git" },
+  "bugs": { "url": "https://github.com/eybersjp/development-kit/issues" },
+  "keywords": ["ai-coding-agent", "agentic-development", "antigravity", "opencode", "software-development-lifecycle", "developer-tools", "agent-skills", "workflow-automation", "test-driven-development", "code-review", "external-research", "agent-reach"],
+  "bin": { "development-kit": "scripts/install-antigravity.mjs" },
+  "files": [".agents/", "agents/", "skills/", "commands/", "hooks/", "templates/", "evals/", "runtime/", "schemas/", "scripts/", "AGENTS.md", "README.md", "LICENSE", "opencode.json"],
   "scripts": {
     "validate": "node scripts/validate-skills.mjs && node --test scripts/antigravity-command-discovery.test.mjs scripts/release-workflow-contract.test.mjs",
     "skills:validate:test": "node --test scripts/validate-skills.test.mjs",
     "init": "node scripts/install-antigravity.mjs",
     "doctor": "node scripts/sync-plugin.mjs --check",
     "sync:validate:test": "node --test scripts/sync-plugin.test.mjs",
-    "docs:validate": "node runtime/validation/validate-docs-antigravity.mjs",
+    "docs:validate": "node scripts/validate-docs.mjs",
     "docs:validate:test": "node --test scripts/validate-docs.test.mjs",
     "opencode:validate": "node --test scripts/validate-opencode-config.test.mjs",
     "platform:validate": "node --test scripts/validate-platform-templates.test.mjs scripts/install-platform-adapters-cli.test.mjs",
     "autopilot:test": "node --test scripts/autopilot.test.mjs",
+    "orchestration:validate": "node --test scripts/orchestration-contract.test.mjs",
+    "execution-safety:validate": "node --test scripts/execution-safety.test.mjs scripts/execution-safety-policy.test.mjs scripts/execution-broker.test.mjs",
+    "evidence:validate": "node --test scripts/evidence-coverage.test.mjs scripts/evidence-trust.test.mjs",
+    "orchestration-core:validate": "node --test scripts/orchestration-core.test.mjs scripts/verification-isolation.test.mjs",
+    "orchestration-integration:validate": "node --test scripts/orchestration-integration.test.mjs",
+    "v09-reliability:validate": "node --test scripts/v09-reliability-regression.test.mjs scripts/orchestration-failclosed.test.mjs scripts/verification-evidence-type.test.mjs scripts/plan-validator-independence.test.mjs scripts/autopilot-orchestration-continuity.test.mjs scripts/orchestration-run-resume.test.mjs scripts/review-acceptance-provenance.test.mjs scripts/v09-version-consistency.test.mjs",
     "next-step:test": "node --test scripts/next-step.test.mjs",
-    "installer:validate:test": "node --test scripts/install-antigravity.test.mjs",
+    "installer:validate:test": "node --test scripts/install-antigravity.test.mjs scripts/package-consumer.test.mjs",
     "research:validate": "node --test scripts/research-contract.test.mjs",
     "intelligence:validate": "node --test scripts/intelligence-phase1.test.mjs scripts/intelligence-phase2.test.mjs scripts/intelligence-phase3.test.mjs scripts/intelligence-phase4.test.mjs scripts/intelligence-phase5.test.mjs scripts/intelligence-phase6.test.mjs scripts/intelligence-phase7-8.test.mjs scripts/intelligence-phase9.test.mjs scripts/intelligence-phase10-11.test.mjs scripts/intelligence-phase12.test.mjs scripts/intelligence-phase13.test.mjs scripts/intelligence-phase14.test.mjs scripts/intelligence-evals.test.mjs",
     "test:intelligence": "npm run intelligence:validate",
@@ -64,9 +36,7 @@
     "design-authority:validate": "node --test scripts/design-authority.test.mjs",
     "evals:validate": "node scripts/validate-evals.mjs",
     "autopilot:validate": "npm run autopilot:test && npm run evals:validate",
-    "release:validate": "npm run validate && npm run skills:validate:test && npm run doctor && npm run sync:validate:test && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run platform:validate && npm run research:validate && npm run next-step:test && npm run installer:validate:test && npm run intelligence:validate && npm run v071:validate && npm run design-authority:validate && npm run autopilot:validate"
+    "release:validate": "npm run validate && npm run skills:validate:test && npm run doctor && npm run sync:validate:test && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run platform:validate && npm run research:validate && npm run next-step:test && npm run installer:validate:test && npm run orchestration:validate && npm run execution-safety:validate && npm run evidence:validate && npm run orchestration-core:validate && npm run orchestration-integration:validate && npm run v09-reliability:validate && npm run intelligence:validate && npm run v071:validate && npm run design-authority:validate && npm run autopilot:validate"
   },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+  "engines": { "node": ">=18.0.0" }
 }

@@ -10,10 +10,10 @@ Verify the current public version with:
 npm view development-kit version
 ```
 
-For the v0.8.1 release, the expected value is:
+For the v0.9.0 release, the expected value is:
 
 ```text
-0.8.1
+0.9.0
 ```
 
 ## Required credentials
@@ -30,13 +30,18 @@ The token must belong to an npm account authorized to publish the package. It mu
 
 The supported publication path is the maintainer issue command described in [Release Process](release-process.md).
 
-After the complete release gate passes, the workflow:
+After the complete `npm run release:validate` gate passes, the workflow:
 
-1. Checks out the release tag.
-2. Reads the package name and version from `package.json`.
-3. Checks whether that exact package version already exists.
-4. Runs `npm publish --access public` only when publication is still required and credentials are configured.
-5. Reports publication status on the release issue.
+1. Verifies the requested tag version matches `package.json`.
+2. Creates or verifies the annotated release tag on `main`.
+3. Checks out the exact release tag.
+4. Creates or verifies the GitHub Release.
+5. Checks whether that exact npm package version already exists.
+6. Runs `npm publish --access public` only when publication is still required and credentials are configured.
+7. Retries exact-version registry verification for a bounded propagation window.
+8. Reports publication status on the release issue and closes it when complete.
+
+The workflow is retry-safe: an existing valid tag, GitHub Release, or published npm version is verified rather than recreated blindly.
 
 ## Manual publication
 
@@ -70,13 +75,14 @@ The package allowlist in `package.json` includes:
 - `templates/`
 - `evals/`
 - `runtime/`
+- `schemas/`
 - `scripts/`
 - `AGENTS.md`
 - `README.md`
 - `LICENSE`
 - `opencode.json`
 
-Run `npm pack --dry-run` when the allowlist changes.
+For v0.9.0, installer/distribution tests explicitly confirm the orchestration runtime and JSON schemas are present in isolated installed copies. Run `npm pack --dry-run` when the allowlist changes.
 
 ## Credential failure and retry
 
@@ -94,4 +100,5 @@ A GitHub Release can succeed while npm publication is skipped or fails. After co
 - [Release Process](release-process.md)
 - [Pre-Release Checklist](pre-release-checklist.md)
 - [Post-Release Verification](post-release-verification.md)
+- [Release Notes v0.9.0](release-notes-v0.9.0.md)
 - [Security Policy](../../SECURITY.md)

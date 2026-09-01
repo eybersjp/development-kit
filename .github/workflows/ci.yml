@@ -11,7 +11,11 @@ permissions:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     timeout-minutes: 15
 
     steps:
@@ -28,6 +32,30 @@ jobs:
 
       - name: Check plugin manifest synchronization
         run: npm run doctor
+
+      - name: Test plugin synchronization invariants
+        run: npm run sync:validate:test
+
+      - name: Validate installer integrity
+        run: npm run installer:validate:test
+
+      - name: Validate Development Contract orchestration foundation
+        run: npm run orchestration:validate
+
+      - name: Validate execution safety foundation
+        run: npm run execution-safety:validate
+
+      - name: Validate evidence and control coverage
+        run: npm run evidence:validate
+
+      - name: Validate core orchestration runtime
+        run: npm run orchestration-core:validate
+
+      - name: Validate orchestration command integration
+        run: npm run orchestration-integration:validate
+
+      - name: Validate v0.9 reliability regressions
+        run: npm run v09-reliability:validate
 
       - name: Validate documentation
         run: npm run docs:validate
@@ -47,5 +75,11 @@ jobs:
       - name: Validate v0.7.1 regression suite
         run: npm run v071:validate
 
+      - name: Validate Design Authority governance
+        run: npm run design-authority:validate
+
       - name: Validate Autopilot runtime and evaluations
         run: npm run autopilot:validate
+
+      - name: Validate exact release command
+        run: npm run release:validate

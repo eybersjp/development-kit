@@ -4,7 +4,8 @@
  * Development Kit - Plugin Sync
  *
  * Synchronises the committed Antigravity plugin mirror with canonical root
- * content and keeps plugin.json aligned with canonical skills, agents, and hooks.
+ * content and keeps plugin.json aligned with canonical package metadata, skills,
+ * agents, and hooks.
  *
  * Usage:
  *   node scripts/sync-plugin.mjs         # Synchronise mirror + manifest
@@ -29,6 +30,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 const PLUGIN_DIR = join(ROOT, '.agents', 'plugins', 'development-kit');
 const PLUGIN_PATH = join(PLUGIN_DIR, 'plugin.json');
+const PACKAGE_PATH = join(ROOT, 'package.json');
 const MIRROR_DIRS = ['skills', 'agents', 'commands', 'hooks'];
 
 const args = process.argv.slice(2);
@@ -39,10 +41,21 @@ function getRelativePath(from, to) {
   return rel.startsWith('..') ? rel : `./${rel}`;
 }
 
-function generatePluginJson() {
+export function readPackageMetadata() {
+  const packageJson = JSON.parse(readFileSync(PACKAGE_PATH, 'utf8'));
+  return {
+    name: packageJson.name,
+    version: packageJson.version,
+    description: packageJson.description,
+    author: packageJson.author,
+  };
+}
+
+export function generatePluginJson() {
   const skillsDir = join(ROOT, 'skills');
   const agentsDir = join(ROOT, 'agents');
   const hooksDir = join(ROOT, 'hooks');
+  const metadata = readPackageMetadata();
 
   const skills = readdirSync(skillsDir)
     .filter((name) => statSync(join(skillsDir, name)).isDirectory() && existsSync(join(skillsDir, name, 'SKILL.md')))
@@ -60,10 +73,7 @@ function generatePluginJson() {
     .map((name) => getRelativePath(PLUGIN_DIR, join(hooksDir, name)));
 
   return {
-    name: 'development-kit',
-    version: '0.1.0',
-    description: 'Opinionated AI software-development methodology and skill collection for Antigravity.',
-    author: 'development-kit contributors',
+    ...metadata,
     skills,
     agents,
     hooks,
@@ -170,6 +180,7 @@ function verifyState() {
   const issues = [...manifestIssues, ...mirrorIssues];
 
   console.log('Plugin synchronization check:');
+  console.log(`  Package/manifest version: ${generated.version}`);
   console.log(`  Skills: ${generated.skills.length} canonical`);
   console.log(`  Agents: ${generated.agents.length} canonical`);
   console.log(`  Commands: ${listFiles(join(ROOT, 'commands')).length} canonical files`);
@@ -199,6 +210,7 @@ function synchronizeMirror() {
   writeFileSync(PLUGIN_PATH, `${JSON.stringify(generated, null, 2)}\n`);
 
   console.log('Plugin mirror synchronized from canonical content:');
+  console.log(`  version ${generated.version}`);
   console.log(`  ${generated.skills.length} skills`);
   console.log(`  ${generated.agents.length} agents`);
   console.log(`  ${listFiles(join(ROOT, 'commands')).length} command files`);
