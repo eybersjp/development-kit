@@ -260,25 +260,15 @@ export function registerArtifact({
   revision = 1,
   discoveryRevision = null,
   discoveryFingerprint = null,
-  _allowDirectIdeaBrief = false,
 }) {
+  // IDEA_BRIEF can never be registered through the public API.
+  // Any extra properties (e.g. _allowDirectIdeaBrief) are silently ignored
+  // and the guard below always fires.
   if (key === 'IDEA_BRIEF') {
-    if (!_allowDirectIdeaBrief) {
-      throw new ArtifactRegistryError(
-        'Direct registration of IDEA_BRIEF is prohibited. Use persistCanonicalIdeaBrief or reconcileCanonicalIdeaBrief.',
-        'DK_RAW_REGISTRATION_PROHIBITED'
-      );
-    }
-    // Validate that discovery bindings correspond to actual loaded discovery state
-    const disc = loadDiscoveryState(rootDir);
-    if (discoveryRevision !== null && discoveryRevision !== undefined) {
-      if (discoveryRevision !== disc.revision || discoveryFingerprint !== disc.fingerprint) {
-        throw new ArtifactRegistryError(
-          `Fabricated discovery binding rejected for IDEA_BRIEF (provided rev: ${discoveryRevision}, current disc rev: ${disc.revision})`,
-          'DK_DISCOVERY_BINDING_MISMATCH'
-        );
-      }
-    }
+    throw new ArtifactRegistryError(
+      'Direct registration of IDEA_BRIEF is prohibited. Use persistCanonicalIdeaBrief or reconcileCanonicalIdeaBrief.',
+      'DK_RAW_REGISTRATION_PROHIBITED'
+    );
   }
 
   const registry = loadArtifactRegistry(rootDir);
@@ -294,6 +284,44 @@ export function registerArtifact({
   };
   persistArtifactRegistry(registry, rootDir);
   return registry.artifacts[key];
+}
+
+/**
+ * Module-private IDEA_BRIEF registration helper.
+ * NOT exported. Only persistCanonicalIdeaBrief and reconcileCanonicalIdeaBrief may call this.
+ */
+function _registerIdeaBriefInternal({
+  rootDir = process.cwd(),
+  canonicalPath,
+  fingerprint,
+  revision,
+  discoveryRevision = null,
+  discoveryFingerprint = null,
+}) {
+  // Validate that discovery bindings correspond to actual loaded discovery state
+  const disc = loadDiscoveryState(rootDir);
+  if (discoveryRevision !== null && discoveryRevision !== undefined) {
+    if (discoveryRevision !== disc.revision || discoveryFingerprint !== disc.fingerprint) {
+      throw new ArtifactRegistryError(
+        `Fabricated discovery binding rejected for IDEA_BRIEF (provided rev: ${discoveryRevision}, current disc rev: ${disc.revision})`,
+        'DK_DISCOVERY_BINDING_MISMATCH'
+      );
+    }
+  }
+
+  const registry = loadArtifactRegistry(rootDir);
+  registry.artifacts['IDEA_BRIEF'] = {
+    canonicalPath,
+    fingerprint,
+    artifactType: 'idea-brief',
+    lifecycleStage: 'UNDERSTAND',
+    revision,
+    discoveryRevision,
+    discoveryFingerprint,
+    updatedAt: new Date().toISOString(),
+  };
+  persistArtifactRegistry(registry, rootDir);
+  return registry.artifacts['IDEA_BRIEF'];
 }
 
 export function persistCanonicalIdeaBrief({
@@ -320,17 +348,13 @@ export function persistCanonicalIdeaBrief({
   const fingerprint = computeSha256(content);
   const newRevision = (resolved.registered && resolved.revision) ? resolved.revision + 1 : 1;
 
-  const record = registerArtifact({
+  const record = _registerIdeaBriefInternal({
     rootDir,
-    key: 'IDEA_BRIEF',
     canonicalPath: 'idea-brief.md',
-    artifactType: 'idea-brief',
-    lifecycleStage: 'UNDERSTAND',
     fingerprint,
     revision: newRevision,
     discoveryRevision: finalDiscRev,
     discoveryFingerprint: finalDiscFp,
-    _allowDirectIdeaBrief: true,
   });
 
   return {
@@ -389,17 +413,13 @@ export function reconcileCanonicalIdeaBrief({
   // Monotonic revision increment: reconciliation creates a new artifact revision
   const newRevision = (resolved.registered && resolved.revision) ? resolved.revision + 1 : 1;
 
-  const record = registerArtifact({
+  const record = _registerIdeaBriefInternal({
     rootDir,
-    key: 'IDEA_BRIEF',
     canonicalPath: 'idea-brief.md',
-    artifactType: 'idea-brief',
-    lifecycleStage: 'UNDERSTAND',
     fingerprint,
     revision: newRevision,
     discoveryRevision: finalDiscRev,
     discoveryFingerprint: finalDiscFp,
-    _allowDirectIdeaBrief: true,
   });
 
   return {
@@ -417,3 +437,4 @@ export function reconcileCanonicalIdeaBrief({
 export function migrateLegacyIdeaBrief(rootDir = process.cwd()) {
   return reconcileCanonicalIdeaBrief({ rootDir });
 }
+

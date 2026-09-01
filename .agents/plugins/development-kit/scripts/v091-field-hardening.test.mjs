@@ -26,6 +26,7 @@ import {
   evaluateDiscoveryReadiness,
   loadDiscoveryState,
   persistDiscoveryState,
+  classifyRequirementScope,
 } from '../runtime/orchestration/idea-discovery.mjs';
 import {
   computeIdeaStageState,
@@ -143,6 +144,7 @@ test('Blocker 2: Must ↔ IDEA-REQ exact 1-to-1 binding and adversarial cases', 
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -150,6 +152,7 @@ test('Blocker 2: Must ↔ IDEA-REQ exact 1-to-1 binding and adversarial cases', 
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
     });
     persistCanonicalIdeaBrief({ rootDir: tempDir, content: untaggedBrief });
     const stageA = computeIdeaStageState(tempDir);
@@ -158,12 +161,21 @@ test('Blocker 2: Must ↔ IDEA-REQ exact 1-to-1 binding and adversarial cases', 
     assert.ok(stageA.issues.some(i => i.code === 'CANONICAL_GRAMMAR_ERROR' || i.code === 'UNBOUND_MUST_REQUIREMENT'));
 
     // Case B: Must references a REJECTED candidate -> BLOCK
+    // Create as UNRESOLVED first, then update to REJECTED (direct REJECTED birth is illegal)
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-003',
+      statement: 'Support offline checklist completion.',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'UNRESOLVED',
+      scopeDisposition: 'UNCLASSIFIED',
+    });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-003',
       statement: 'Support offline checklist completion.',
       origin: 'USER_CONFIRMED',
       resolutionState: 'REJECTED',
       confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'UNCLASSIFIED',
     });
     const rejBrief = VALID_BRIEF.replace('- [IDEA-REQ-002] Support offline checklist completion.', '- [IDEA-REQ-003] Support offline checklist completion.');
     persistCanonicalIdeaBrief({ rootDir: tempDir, content: rejBrief });
@@ -302,6 +314,7 @@ test('Blocker 5: Discovery state revision changes invalidate Idea Brief approval
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -309,6 +322,7 @@ test('Blocker 5: Discovery state revision changes invalidate Idea Brief approval
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
     });
 
     const disc1 = loadDiscoveryState(tempDir);
@@ -336,6 +350,7 @@ test('Blocker 5: Discovery state revision changes invalidate Idea Brief approval
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
     });
 
     // Re-evaluating stage state without re-persisting Idea Brief must invalidate APPROVED
@@ -364,6 +379,7 @@ test('Blocker 6: Public CLI orchestration operations for IDEA workflow execute c
         origin: 'USER_CONFIRMED',
         resolutionState: 'CONFIRMED',
         confirmedBy: 'PRODUCT_OWNER',
+        scopeDisposition: 'MUST',
       })
     ], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(candExec1.status, 0);
@@ -378,6 +394,7 @@ test('Blocker 6: Public CLI orchestration operations for IDEA workflow execute c
         origin: 'USER_CONFIRMED',
         resolutionState: 'CONFIRMED',
         confirmedBy: 'PRODUCT_OWNER',
+        scopeDisposition: 'MUST',
       })
     ], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(candExec2.status, 0);
@@ -449,6 +466,7 @@ test('True Fresh Process Restart: Child process reconstructs state accurately wi
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -456,6 +474,7 @@ test('True Fresh Process Restart: Child process reconstructs state accurately wi
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
     });
     const disc = loadDiscoveryState(tempDir);
     const p = persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF, discoveryRevision: disc.revision, discoveryFingerprint: disc.fingerprint });
@@ -509,6 +528,7 @@ test('Restored: Direct-edit fingerprint mismatch blocks approval state', () => {
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -516,6 +536,7 @@ test('Restored: Direct-edit fingerprint mismatch blocks approval state', () => {
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
     });
     const disc = loadDiscoveryState(tempDir);
     const p1 = persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF, discoveryRevision: disc.revision, discoveryFingerprint: disc.fingerprint });
@@ -713,6 +734,7 @@ test('Statement binding & tag integrity: Content mismatch and multiple tags per 
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -720,6 +742,7 @@ test('Statement binding & tag integrity: Content mismatch and multiple tags per 
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
     });
 
     // 1. Spoofed statement text under valid ID -> REQUIREMENT_CONTENT_MISMATCH
@@ -820,6 +843,7 @@ test('Candidate 6: Exact statement and question normalization equality enforced'
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -827,6 +851,7 @@ test('Candidate 6: Exact statement and question normalization equality enforced'
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
     });
 
     // Substring or prefix statement should fail REQUIREMENT_CONTENT_MISMATCH
@@ -855,6 +880,7 @@ test('Candidate 6: Identity immutability and explicit supersession for requireme
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
     });
 
     // Attempting to mutate statement text under same ID fails
@@ -1179,16 +1205,25 @@ test('Candidate 7: Legal state transitions reject resurrecting superseded and re
         origin: 'USER_CONFIRMED',
         resolutionState: 'CONFIRMED',
         confirmedBy: 'PRODUCT_OWNER',
+        scopeDisposition: 'MUST',
       });
     }, (err) => err.code === 'DK_ILLEGAL_STATE_TRANSITION');
 
-    // Create a candidate and reject it
+    // Create a candidate as UNRESOLVED then reject it with PO authority
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-003',
+      statement: 'Statement 3',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'UNRESOLVED',
+      scopeDisposition: 'UNCLASSIFIED',
+    });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-003',
       statement: 'Statement 3',
       origin: 'USER_CONFIRMED',
       resolutionState: 'REJECTED',
       confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'UNCLASSIFIED',
     });
 
     // Attempting to transition 003 from REJECTED -> CONFIRMED fails
@@ -1199,6 +1234,7 @@ test('Candidate 7: Legal state transitions reject resurrecting superseded and re
         origin: 'USER_CONFIRMED',
         resolutionState: 'CONFIRMED',
         confirmedBy: 'PRODUCT_OWNER',
+        scopeDisposition: 'UNCLASSIFIED',
       });
     }, (err) => err.code === 'DK_ILLEGAL_STATE_TRANSITION');
   } finally {
@@ -1279,4 +1315,347 @@ test('Candidate 7: Bidirectional Must ↔ Discovery requirement coverage', () =>
     cleanupTempDir(tempDir);
   }
 });
+
+test('Candidate 8 (Defect 1): idea-approve with missing authority fails with DK_UNAUTHORIZED_APPROVAL; approvals untouched; state remains READY_FOR_APPROVAL', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Capture inverter DC string voltages and insulation resistance measurements.',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
+    });
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-002',
+      statement: 'Support offline checklist completion.',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
+    });
+    persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF });
+    // Verify state is READY_FOR_APPROVAL
+    assert.equal(computeIdeaStageState(tempDir).state, 'READY_FOR_APPROVAL');
+
+    // approveCurrentIdeaBrief with no approvingAuthority must throw DK_UNAUTHORIZED_APPROVAL
+    assert.throws(() => {
+      approveCurrentIdeaBrief(tempDir, {});
+    }, (err) => err.code === 'DK_UNAUTHORIZED_APPROVAL');
+
+    // CLI idea-approve with empty payload must fail
+    const scriptPath = path.resolve('scripts/orchestration.mjs');
+    const cliRes = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-approve',
+      '--input-json={}'
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(cliRes.status, 1);
+    const parsedErr = JSON.parse(cliRes.stderr);
+    assert.equal(parsedErr.details?.code || parsedErr.error, parsedErr.details?.code ? 'DK_UNAUTHORIZED_APPROVAL' : parsedErr.error);
+
+    // approvals.json must NOT exist or have 0 approvals
+    const appFile = path.join(tempDir, '.development-kit', 'idea', 'approvals.json');
+    if (fs.existsSync(appFile)) {
+      const history = JSON.parse(fs.readFileSync(appFile, 'utf8'));
+      assert.equal(history.approvals.length, 0, 'No approval record written');
+    }
+
+    // State must still be READY_FOR_APPROVAL
+    assert.equal(computeIdeaStageState(tempDir).state, 'READY_FOR_APPROVAL');
+
+    // Explicit PRODUCT_OWNER approval succeeds
+    const approved = approveCurrentIdeaBrief(tempDir, { approvingAuthority: 'PRODUCT_OWNER' });
+    assert.equal(approved.state.state, 'APPROVED');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 8 (Defect 2): New candidate default UNCLASSIFIED; classifyRequirementScope enforces PO authority; record update cannot mutate scope', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    const cand = recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Capture inverter DC string voltages and insulation resistance measurements.',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    assert.equal(cand.scopeDisposition, 'UNCLASSIFIED');
+
+    // evaluateDiscoveryReadiness blocks UNCLASSIFIED material requirement
+    const readiness = evaluateDiscoveryReadiness(tempDir);
+    assert.equal(readiness.ready, false);
+    assert.ok(readiness.blockers.some(b => b.code === 'UNCLASSIFIED_MATERIAL_REQUIREMENT'));
+
+    // Normal recordRequirementCandidate update cannot mutate scopeDisposition
+    assert.throws(() => {
+      recordRequirementCandidate(tempDir, {
+        id: 'IDEA-REQ-001',
+        statement: 'Capture inverter DC string voltages and insulation resistance measurements.',
+        origin: 'USER_CONFIRMED',
+        resolutionState: 'CONFIRMED',
+        confirmedBy: 'PRODUCT_OWNER',
+        scopeDisposition: 'MUST',
+      });
+    }, (err) => err.code === 'DK_SCOPE_IMMUTABLE');
+
+    // classifyRequirementScope without PRODUCT_OWNER fails on material requirement
+    assert.throws(() => {
+      classifyRequirementScope(tempDir, {
+        id: 'IDEA-REQ-001',
+        scopeDisposition: 'MUST',
+        confirmedBy: 'AI_AGENT',
+      });
+    }, (err) => err.code === 'DK_UNAUTHORIZED_SCOPE_CLASSIFICATION');
+
+    // classifyRequirementScope with PRODUCT_OWNER succeeds and bumps discovery revision
+    const discRevBefore = loadDiscoveryState(tempDir).revision;
+    const classified = classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
+      scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    assert.equal(classified.newScope, 'MUST');
+    const discRevAfter = loadDiscoveryState(tempDir).revision;
+    assert.ok(discRevAfter > discRevBefore);
+
+    // Readiness is now unblocked for REQ-001
+    const readiness2 = evaluateDiscoveryReadiness(tempDir);
+    assert.ok(!readiness2.blockers.some(b => b.code === 'UNCLASSIFIED_MATERIAL_REQUIREMENT'));
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 8 (Defect 3): Public registerArtifact unconditionally rejects IDEA_BRIEF', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    // Generic public call fails
+    assert.throws(() => {
+      registerArtifact({
+        rootDir: tempDir,
+        key: 'IDEA_BRIEF',
+        canonicalPath: 'idea-brief.md',
+        artifactType: 'idea-brief',
+        lifecycleStage: 'UNDERSTAND',
+        fingerprint: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        revision: 1,
+      });
+    }, (err) => err.code === 'DK_RAW_REGISTRATION_PROHIBITED');
+
+    // Attempting to pass old _allowDirectIdeaBrief parameter is also rejected
+    assert.throws(() => {
+      registerArtifact({
+        rootDir: tempDir,
+        key: 'IDEA_BRIEF',
+        canonicalPath: 'idea-brief.md',
+        artifactType: 'idea-brief',
+        lifecycleStage: 'UNDERSTAND',
+        fingerprint: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        revision: 1,
+        _allowDirectIdeaBrief: true,
+      });
+    }, (err) => err.code === 'DK_RAW_REGISTRATION_PROHIBITED');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 8 (Defect 4): New candidate born REJECTED throws DK_ILLEGAL_STATE_TRANSITION', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    // Attempting to create new candidate as REJECTED directly must fail
+    assert.throws(() => {
+      recordRequirementCandidate(tempDir, {
+        id: 'IDEA-REQ-001',
+        statement: 'Some candidate statement',
+        origin: 'USER_CONFIRMED',
+        resolutionState: 'REJECTED',
+        confirmedBy: 'PRODUCT_OWNER',
+      });
+    }, (err) => err.code === 'DK_ILLEGAL_STATE_TRANSITION');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 8 (Defect 5): USER_STATED and USER_CONFIRMED material candidate deactivation requires PO authority', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Capture inverter DC string voltages and insulation resistance measurements.',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'UNRESOLVED',
+      scopeDisposition: 'UNCLASSIFIED',
+      materiality: 'MATERIAL',
+    });
+
+    // Attempting deactivation without PRODUCT_OWNER authority fails
+    assert.throws(() => {
+      recordRequirementCandidate(tempDir, {
+        id: 'IDEA-REQ-001',
+        statement: 'Capture inverter DC string voltages and insulation resistance measurements.',
+        origin: 'USER_CONFIRMED',
+        resolutionState: 'REJECTED',
+        confirmedBy: 'AI_AGENT',
+        scopeDisposition: 'UNCLASSIFIED',
+        materiality: 'MATERIAL',
+      });
+    }, (err) => err.code === 'DK_UNAUTHORIZED_DEACTIVATION');
+
+    // With explicit PRODUCT_OWNER authority, rejection succeeds
+    const rejected = recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Capture inverter DC string voltages and insulation resistance measurements.',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'REJECTED',
+      confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'UNCLASSIFIED',
+      materiality: 'MATERIAL',
+    });
+    assert.equal(rejected.resolutionState, 'REJECTED');
+
+    // Also verify that superseding UNRESOLVED material USER_CONFIRMED without PO authority throws
+    assert.throws(() => {
+      supersedeRequirementCandidate(tempDir, 'IDEA-REQ-001', {
+        id: 'IDEA-REQ-002',
+        statement: 'Mutated statement',
+        origin: 'USER_CONFIRMED',
+        resolutionState: 'CONFIRMED',
+        confirmedBy: 'AI_AGENT',
+      });
+    }, (err) => err.code === 'DK_UNAUTHORIZED_SUPERSEDING' || err.code === 'DK_UNAUTHORIZED_CONFIRMATION');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 8 (Defect 6): Semantic supersession failure leaves zero disk side effects', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Statement 1',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
+    });
+
+    const discPath = path.join(tempDir, '.development-kit', 'idea', 'discovery.json');
+    const beforeBytes = fs.readFileSync(discPath, 'utf8');
+    const podDir = path.join(tempDir, '.development-kit', 'idea', 'decisions');
+    const podsBefore = fs.existsSync(podDir) ? fs.readdirSync(podDir) : [];
+
+    // Attempt supersession with invalid new candidate resolutionState = SUPERSEDED
+    assert.throws(() => {
+      supersedeRequirementCandidate(tempDir, 'IDEA-REQ-001', {
+        id: 'IDEA-REQ-002',
+        statement: 'Statement 2',
+        origin: 'USER_CONFIRMED',
+        resolutionState: 'SUPERSEDED', // invalid
+        confirmedBy: 'PRODUCT_OWNER',
+        scopeDisposition: 'MUST',
+        createPod: true,
+      });
+    }, (err) => err.code === 'DK_ILLEGAL_STATE_TRANSITION');
+
+    // discovery.json must be byte-identical
+    const afterBytes = fs.readFileSync(discPath, 'utf8');
+    assert.equal(beforeBytes, afterBytes, 'discovery.json must be untouched');
+
+    // No POD files created
+    const podsAfter = fs.existsSync(podDir) ? fs.readdirSync(podDir) : [];
+    assert.equal(podsBefore.length, podsAfter.length, 'No POD file created on failure');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 8 (Defect 7): validateDiscoveryStateStructure rejects impossible persisted combinations on load', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    const discPath = path.join(tempDir, '.development-kit', 'idea', 'discovery.json');
+    fs.mkdirSync(path.dirname(discPath), { recursive: true });
+
+    // Combination 1: Active record with supersededBy set
+    fs.writeFileSync(discPath, JSON.stringify({
+      schemaVersion: '1.0.0',
+      revision: 1,
+      requirements: [{
+        id: 'IDEA-REQ-001',
+        statement: 'Statement',
+        origin: 'USER_CONFIRMED',
+        materiality: 'MATERIAL',
+        scopeDisposition: 'MUST',
+        resolutionState: 'CONFIRMED',
+        confirmedBy: 'PRODUCT_OWNER',
+        linkedPodId: null,
+        supersedes: null,
+        supersededBy: 'IDEA-REQ-002', // illegal: resolutionState !== SUPERSEDED
+      }],
+      openQuestions: [],
+    }), 'utf8');
+
+    assert.throws(() => {
+      loadDiscoveryState(tempDir);
+    }, (err) => err.code === 'DK_LINEAGE_ERROR');
+
+    // Combination 2: REJECTED record carrying MUST scope disposition
+    fs.writeFileSync(discPath, JSON.stringify({
+      schemaVersion: '1.0.0',
+      revision: 1,
+      requirements: [{
+        id: 'IDEA-REQ-001',
+        statement: 'Statement',
+        origin: 'USER_CONFIRMED',
+        materiality: 'MATERIAL',
+        scopeDisposition: 'MUST', // illegal: REJECTED + MUST
+        resolutionState: 'REJECTED',
+        confirmedBy: 'PRODUCT_OWNER',
+        linkedPodId: null,
+        supersedes: null,
+        supersededBy: null,
+      }],
+      openQuestions: [],
+    }), 'utf8');
+
+    assert.throws(() => {
+      loadDiscoveryState(tempDir);
+    }, (err) => err.code === 'DK_DISCOVERY_CORRUPT');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 8 (Defect 8): Blank Open Questions section blocks structure validation', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    // Brief with completely blank Open Questions section
+    const blankQBrief = VALID_BRIEF.replace('## Open Questions\n- None', '## Open Questions\n');
+    const val = validateIdeaBriefStructure(blankQBrief);
+    assert.equal(val.valid, false);
+    assert.ok(val.issues.some(i => i.code === 'EMPTY_SECTION_BLOCKS_APPROVAL'));
+
+    // Brief with canonical None in Open Questions is valid
+    const noneVal = validateIdeaBriefStructure(VALID_BRIEF);
+    const qIssues = noneVal.issues.filter(i => i.section === 'openQuestions');
+    assert.equal(qIssues.length, 0);
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
 

@@ -174,10 +174,20 @@ export function computeEffectiveApprovalStatus(
   return { status: 'STALE', latestApproval: latest };
 }
 
-export function approveCurrentIdeaBrief(rootDir = process.cwd(), {
-  approvingAuthority = 'PRODUCT_OWNER',
-  linkedPodIds = [],
-} = {}) {
+export function approveCurrentIdeaBrief(rootDir = process.cwd(), options = {}) {
+  const {
+    approvingAuthority,
+    linkedPodIds = [],
+  } = (options && typeof options === 'object') ? options : {};
+
+  // Reject missing or non-PRODUCT_OWNER authority before any side effects
+  if (approvingAuthority !== 'PRODUCT_OWNER') {
+    throw new IdeaStateError(
+      `Explicit approvingAuthority = 'PRODUCT_OWNER' is required. Got: ${JSON.stringify(approvingAuthority)}`,
+      'DK_UNAUTHORIZED_APPROVAL'
+    );
+  }
+
   const preState = computeIdeaStageState(rootDir);
   if (preState.state !== 'READY_FOR_APPROVAL') {
     throw new IdeaStateError(

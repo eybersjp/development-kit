@@ -24,6 +24,7 @@ import {
   loadDiscoveryState,
   persistApprovalRecord,
   approveCurrentIdeaBrief,
+  classifyRequirementScope,
 } from '../runtime/orchestration/index.mjs';
 import { reconcileCanonicalArtifact } from '../runtime/orchestration/reconciliation.mjs';
 
@@ -93,12 +94,13 @@ function main() {
     }
     case 'idea-record-candidate': return output(recordRequirementCandidate(rootDir, payload));
     case 'idea-supersede-candidate': return output(supersedeRequirementCandidate(rootDir, payload.oldId, payload.newCandidate));
+    case 'idea-classify-scope': return output(classifyRequirementScope(rootDir, payload));
     case 'idea-record-question': return output(recordOpenQuestion(rootDir, payload));
     case 'idea-supersede-question': return output(supersedeOpenQuestion(rootDir, payload.oldId, payload.newQuestion));
     case 'idea-discovery-eval': return output(evaluateDiscoveryReadiness(rootDir));
     case 'idea-approve': {
       return output(approveCurrentIdeaBrief(rootDir, {
-        approvingAuthority: payload.approvingAuthority || 'PRODUCT_OWNER',
+        approvingAuthority: payload.approvingAuthority,
         linkedPodIds: payload.linkedPodIds || [],
       }));
     }

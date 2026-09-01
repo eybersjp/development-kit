@@ -251,6 +251,18 @@ export function validateIdeaBriefStructure(markdownText) {
       });
     }
 
+    // Sections that block approval if blank must have canonical None or actual content
+    if (sec.blocksApprovalIfEmpty && sec.allowEmptyInDraft && content !== undefined) {
+      if (!content.trim()) {
+        issues.push({
+          code: 'EMPTY_SECTION_BLOCKS_APPROVAL',
+          section: sec.id,
+          header: sec.header,
+          message: `Section ${sec.title} cannot be completely blank. Use "- None" if no entries apply.`,
+        });
+      }
+    }
+
     if (!sec.allowEmptyInDraft && (!content.trim() || isCanonicalNone(content))) {
       issues.push({
         code: 'EMPTY_SECTION',
