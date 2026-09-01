@@ -90,6 +90,15 @@ jobs:
             exit 1
           fi
 
+      - name: Report release failure
+        if: failure() || cancelled()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Release workflow failed or timed out during validation/tagging. Check GitHub Actions run logs for details."
+          gh issue close "$ISSUE_NUMBER" --reason "not planned"
+
   publish:
     needs: release
     runs-on: ubuntu-latest
@@ -205,6 +214,7 @@ jobs:
           exit 1
 
       - name: Report completed release
+        if: success()
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
@@ -213,3 +223,12 @@ jobs:
         run: |
           gh issue comment "$ISSUE_NUMBER" --body "Release \`$TAG\` completed. GitHub Release: confirmed. npm status: \`$NPM_STATUS\`."
           gh issue close "$ISSUE_NUMBER" --reason completed
+
+      - name: Report publish failure
+        if: failure() || cancelled()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Release workflow failed or timed out during GitHub Release/npm publication. Check GitHub Actions run logs for details."
+          gh issue close "$ISSUE_NUMBER" --reason "not planned"

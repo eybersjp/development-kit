@@ -14,7 +14,7 @@ Runs verification for the active task. v0.9 distinguishes test execution from ve
 
 1. Resolve the active Development Contract and run ID. Recheck the contract source fingerprint before verification.
 2. Build a fresh or rehydrated verification context from the contract, authoritative sources, actual repository state/diff, and real test/runtime evidence. Upstream implementation reports are explicitly non-authoritative.
-3. Run applicable unit, integration, type, lint, browser/runtime, regression, edge-case, schema/migration, security, accessibility, and design checks.
+3. Run applicable unit, integration, type, lint, browser/runtime, regression, edge-case, schema/migration, security, accessibility, and design checks. For UI work, perform Design System Compliance verification.
 4. Attach evidence to the stable contract criterion IDs. Each criterion receives exactly one runtime status: PASS, FAIL, PARTIAL, UNVERIFIED, or NOT_APPLICABLE.
 5. PASS requires evidence unless that criterion is explicitly evidence-exempt. Evidence-exempt does not mean optional.
 6. NOT_APPLICABLE requires an explicit reason.
@@ -24,7 +24,7 @@ Runs verification for the active task. v0.9 distinguishes test execution from ve
 
 ## UI Verification
 
-For UI work, bind and re-read authoritative `design.md`; use browser/visual evidence when available. If the host lacks visual capability, record the evidence gap and require manual visual evidence rather than silently skipping the gate.
+For UI work, bind and re-read authoritative `design.md`; run Design System Compliance checks and use browser/visual evidence when available. If the host lacks visual capability, record the evidence gap and require manual visual evidence rather than silently skipping the gate.
 
 ## Skills Activated
 

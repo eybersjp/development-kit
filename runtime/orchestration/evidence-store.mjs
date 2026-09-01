@@ -27,7 +27,45 @@ const EVIDENCE_TYPES = Object.freeze([
   'migration',
   'configuration',
   'manual',
+  'assertion',
+  'external',
 ]);
+
+export const TRUST_LEVELS = Object.freeze({
+  E0: 'E0', // Agent prose assertion (non-authoritative)
+  E1: 'E1', // Agent-supplied artifact (unverified file/screenshot)
+  E2: 'E2', // DK-captured execution evidence
+  E3: 'E3', // Independent deterministic verification
+  E4: 'E4', // Authoritative external platform evidence
+});
+
+const TRUST_RANK = Object.freeze({
+  E0: 0,
+  E1: 1,
+  E2: 2,
+  E3: 3,
+  E4: 4,
+});
+
+export function compareTrustLevel(actual, required) {
+  const actualRank = TRUST_RANK[actual] ?? -1;
+  const requiredRank = TRUST_RANK[required] ?? 0;
+  return actualRank >= requiredRank;
+}
+
+export function inferTrustLevel(item) {
+  if (!item || typeof item !== 'object') return TRUST_LEVELS.E0;
+  if (item.type === 'assertion') return TRUST_LEVELS.E0;
+  if (item.type === 'external' && item.authoritativeExternalState) return TRUST_LEVELS.E4;
+  if (item.type === 'test' && item.deterministicVerification) return TRUST_LEVELS.E3;
+  if (['test', 'command', 'runtime', 'browser'].includes(item.type)) {
+    return TRUST_LEVELS.E2;
+  }
+  if (['source', 'diff', 'visual', 'manual', 'schema', 'migration', 'configuration'].includes(item.type)) {
+    return TRUST_LEVELS.E1;
+  }
+  return TRUST_LEVELS.E0;
+}
 
 const VERIFIER_ROLES = new Set([
   'spec-verifier',
@@ -94,9 +132,23 @@ function normalizeEvidenceItem(item) {
   const type = nonEmptyString(item.type, 'evidence.type');
   if (!EVIDENCE_TYPES.includes(type)) throw new EvidenceValidationError(`Unsupported evidence type: ${type}`);
 
-  const normalized = { type };
+  const inferred = inferTrustLevel(item);
+  let trustLevel = inferred;
+  if (item.trustLevel !== undefined) {
+    const declared = nonEmptyString(item.trustLevel, 'evidence.trustLevel').toUpperCase();
+    if (!Object.values(TRUST_LEVELS).includes(declared)) {
+      throw new EvidenceValidationError(`Unsupported evidence trust level: ${declared}`);
+    }
+    // Prevent unproven upgrading of trust level
+    if (TRUST_RANK[declared] > TRUST_RANK[inferred]) {
+      throw new EvidenceValidationError(`Declared evidence trust level ${declared} exceeds proven level ${inferred}`);
+    }
+    trustLevel = declared;
+  }
+
+  const normalized = { type, trustLevel };
   for (const [key, value] of Object.entries(item)) {
-    if (key === 'type' || value === undefined) continue;
+    if (key === 'type' || key === 'trustLevel' || value === undefined) continue;
     if (typeof value === 'function' || typeof value === 'symbol') {
       throw new EvidenceValidationError(`Evidence property ${key} is not serializable`);
     }
@@ -208,8 +260,15 @@ function computeVerdict(entries, { optionalKey = null } = {}) {
 }
 
 function validateEvidenceBearingStatus(entry, label) {
-  if (entry.status === 'PASS' && entry.requiredEvidence !== false && entry.evidence.length === 0) {
-    throw new EvidenceValidationError(`PASS ${label} requires evidence`);
+  if (entry.status === 'PASS' && entry.requiredEvidence !== false) {
+    if (entry.evidence.length === 0) {
+      throw new EvidenceValidationError(`PASS ${label} requires evidence`);
+    }
+    const hasAuthoritativeEvidence = entry.evidence.some((ev) => ['E2', 'E3', 'E4'].includes(ev.trustLevel) || ['test', 'command', 'runtime', 'browser'].includes(ev.type));
+    const allAssertions = entry.evidence.every((ev) => ev.trustLevel === 'E0' || ev.type === 'assertion');
+    if (allAssertions || (!hasAuthoritativeEvidence && entry.minTrustLevel && ['E2', 'E3', 'E4'].includes(entry.minTrustLevel))) {
+      throw new EvidenceValidationError(`PASS ${label} cannot be satisfied by E0 agent assertions alone`);
+    }
   }
   if (entry.status === 'NOT_APPLICABLE' && !entry.reason) {
     throw new EvidenceValidationError(`NOT_APPLICABLE ${label} requires a reason`);

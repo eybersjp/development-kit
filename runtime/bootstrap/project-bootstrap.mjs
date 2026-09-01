@@ -95,3 +95,51 @@ export async function bootstrapProject(rootDir = process.cwd(), options = {}) {
     };
   }
 }
+
+export class BootstrapError extends Error {
+  constructor(message, code = 'DK_BOOTSTRAP_FAILED', details = null) {
+    super(message);
+    this.name = 'BootstrapError';
+    this.code = code;
+    this.details = details;
+  }
+}
+
+export function assertProjectBootstrapped(rootDir = process.cwd(), { requireMutatingState = true } = {}) {
+  const dkDir = path.join(rootDir, '.development-kit');
+  if (!fs.existsSync(dkDir) || !fs.statSync(dkDir).isDirectory()) {
+    throw new BootstrapError('Project root lacks .development-kit directory', 'DK_BOOTSTRAP_MISSING');
+  }
+
+  const projectFile = path.join(dkDir, 'project.json');
+  const workspaceFile = path.join(dkDir, 'workspace-id');
+
+  if (!fs.existsSync(projectFile) || !fs.existsSync(workspaceFile)) {
+    throw new BootstrapError('Project identity or workspace identity is missing', 'DK_BOOTSTRAP_CORRUPT');
+  }
+
+  let projectData;
+  try {
+    projectData = JSON.parse(fs.readFileSync(projectFile, 'utf8'));
+  } catch (err) {
+    throw new BootstrapError(`Corrupt project.json: ${err.message}`, 'DK_BOOTSTRAP_CORRUPT');
+  }
+
+  if (!projectData.projectId || !projectData.frameworkVersion) {
+    throw new BootstrapError('project.json missing mandatory projectId or frameworkVersion', 'DK_BOOTSTRAP_CORRUPT');
+  }
+
+  if (requireMutatingState) {
+    const contractsDir = path.join(dkDir, 'contracts');
+    const runsDir = path.join(dkDir, 'runs');
+    if (!fs.existsSync(contractsDir)) fs.mkdirSync(contractsDir, { recursive: true });
+    if (!fs.existsSync(runsDir)) fs.mkdirSync(runsDir, { recursive: true });
+  }
+
+  return {
+    bootstrapped: true,
+    projectId: projectData.projectId,
+    frameworkVersion: projectData.frameworkVersion,
+  };
+}
+

@@ -13,7 +13,7 @@ Implements one approved task without allowing the implementation agent to certif
 ## Workflow
 
 1. Select the next approved task from the validated PLAN.
-2. Run repository orientation and task-readiness checks.
+2. Run repository orientation and task-readiness checks. For visual UI work, execute DESIGN SYSTEM PRE-FLIGHT to verify `design.md` exists and is approved.
 3. Create or resolve the active Development Contract and orchestration run using `node scripts/orchestration.mjs --operation=prepare-run`. Bind `design.md` automatically for UI/design-governed work.
 4. Build a fresh implementation context from the contract and authoritative sources. The implementation report is an assertion only.
 5. Before consequential shell, database, publication, deployment, infrastructure, or destructive actions, run the execution-safety assessment. `BLOCK` must not execute. `REQUIRE_APPROVAL` must use the normal explicit approval gate.

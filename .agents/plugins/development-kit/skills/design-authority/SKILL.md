@@ -6,13 +6,15 @@ compatibility: opencode
 
 # Design Authority Skill
 
-## Purpose
+## Overview
 
 Acts as the shared governance engine for visual frontend design systems in Development Kit. Governs `design.md` as the single authoritative source of truth for frontend UI styling, component appearance, layout behaviour, spacing, typography, colour, responsive behaviour, interaction states, and visual consistency in this project.
 
 ---
 
-## When Design Authority Applies
+## Process
+
+### When Design Authority Applies
 
 - Applies to any project or feature with a visual frontend / user interface.
 - Confirmed non-visual / backend-only projects are completely exempt from Design Authority gates (`applicable: false`).

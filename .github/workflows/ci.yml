@@ -11,7 +11,11 @@ permissions:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     timeout-minutes: 15
 
     steps:
@@ -70,6 +74,9 @@ jobs:
 
       - name: Validate v0.7.1 regression suite
         run: npm run v071:validate
+
+      - name: Validate Design Authority governance
+        run: npm run design-authority:validate
 
       - name: Validate Autopilot runtime and evaluations
         run: npm run autopilot:validate

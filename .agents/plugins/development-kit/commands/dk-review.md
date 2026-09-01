@@ -19,7 +19,7 @@ Runs the independent review cycle for the active Development Contract. Specifica
 5. Reviewer findings must use structured severity INFO / WARNING / MAJOR / CRITICAL and disposition OPEN / RESOLVED / ACCEPTED_RISK / NOT_APPLICABLE.
 6. MAJOR/CRITICAL findings require evidence. ACCEPTED_RISK requires approval provenance.
 7. Run architecture-drift detection for new dependencies, services, storage, top-level patterns, API surfaces, environment requirements, migration strategies, and auth patterns. Classify EXPECTED / AUTHORIZED / UNAUTHORIZED / REQUIRES_DECISION.
-8. For UI work, independently bind authoritative `design.md` and require design/runtime evidence; do not accept the implementer's statement that the design system was followed.
+8. For UI work, independently bind authoritative `design.md`, evaluate the Same Design Team Test, assign stable DS-001 issue IDs, and require design/runtime evidence; do not accept the implementer's statement that the design system was followed.
 9. Submit the verification records, structured reviews, control manifests, architecture drift, and approvals to the deterministic acceptance engine.
 
 ## Acceptance Rule

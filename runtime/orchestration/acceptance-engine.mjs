@@ -3,6 +3,7 @@ import { validateControlManifest, validateVerificationRecord } from './evidence-
 import { validateReviewResult } from './review-result.mjs';
 import { validateArchitectureDrift } from './architecture-drift.mjs';
 import { selectRequiredGates } from './gate-selector.mjs';
+import { buildAuthorityGraphFromContract } from './authority-graph.mjs';
 
 const ACCEPTANCE_STATES = Object.freeze(['ACCEPTED', 'PENDING', 'BLOCKED']);
 
@@ -172,6 +173,23 @@ export function decideAcceptance({
 
   for (const approvalId of requiredGates.humanApprovals) {
     if (!validApprovals.has(approvalId)) pending.push({ code: 'MISSING_REQUIRED_APPROVAL', approvalId });
+  }
+
+  // Authority Graph completeness check
+  if (verification && verification.verdict === 'PASS') {
+    const authGraph = buildAuthorityGraphFromContract({ contract, verification, rootDir });
+    const trace = authGraph.validateTraceability();
+    if (!trace.complete) {
+      blockers.push({
+        code: 'AUTHORITY_GRAPH_INCOMPLETE',
+        detail: {
+          orphanTasks: trace.orphanTasks,
+          unverifiedRequirements: trace.unverifiedRequirements,
+          uncoveredCriteria: trace.uncoveredCriteria,
+          supersededNodesInUse: trace.supersededNodesInUse,
+        },
+      });
+    }
   }
 
   const state = blockers.length > 0 ? 'BLOCKED' : pending.length > 0 ? 'PENDING' : 'ACCEPTED';

@@ -72,6 +72,21 @@ export function contractNeedsDesignAuthority(contract) {
     || contract.authoritativeSources.some((source) => source.kind === 'design-authority' || /(^|\/)design\.md$/i.test(source.path));
 }
 
+export const ISOLATION_LEVELS = Object.freeze({
+  L1: 'L1_FRESH_CONTEXT',
+  L2: 'L2_SEPARATE_ROLE',
+  L3: 'L3_SEPARATE_PROCESS',
+  L4: 'L4_EXTERNAL_VERIFIER',
+});
+
+export function computeIsolationLevel({ role, contextIsolation, separateProcess = false, externalVerifier = false } = {}) {
+  if (externalVerifier) return ISOLATION_LEVELS.L4;
+  if (separateProcess) return ISOLATION_LEVELS.L3;
+  if (role && role !== 'implementation-agent' && role !== 'implementer') return ISOLATION_LEVELS.L2;
+  if (contextIsolation === 'fresh') return ISOLATION_LEVELS.L1;
+  return 'L0_SAME_CONTEXT';
+}
+
 export function buildContextPackage({
   contract,
   role,
@@ -80,6 +95,8 @@ export function buildContextPackage({
   repositoryState = {},
   implementationReport = null,
   capabilities = {},
+  separateProcess = false,
+  externalVerifier = false,
   createdAt = new Date().toISOString(),
 } = {}) {
   validateDevelopmentContract(contract);
@@ -108,6 +125,13 @@ export function buildContextPackage({
     throw new ContextPackageError('Design-governed work requires authoritative design.md binding');
   }
 
+  const isolationLevel = computeIsolationLevel({
+    role,
+    contextIsolation: isolation,
+    separateProcess,
+    externalVerifier,
+  });
+
   const pkg = {
     schemaVersion: '1.0.0',
     contractId: contract.contractId,
@@ -115,12 +139,24 @@ export function buildContextPackage({
     role,
     purpose,
     contextIsolation: isolation,
+    isolationLevel,
     sourceFingerprint: contract.sourceFingerprint,
     createdAt,
     contract: structuredClone(contract),
     authoritativeSources: sources,
     repositoryState: cloneObject(repositoryState, 'repositoryState'),
     capabilities: cloneObject(capabilities, 'capabilities'),
+    isolationMetadata: {
+      freshContext: isolation === 'fresh',
+      sourceRehydrated: sources.length > 0,
+      repositoryReRead: true,
+      implementationSummaryInherited: implementationReport !== null,
+      separateAgentRole: purpose !== 'implementation',
+      sameModelOrUnknown: true,
+      separateProcess: Boolean(separateProcess),
+      separateHost: false,
+      externalVerifier: Boolean(externalVerifier),
+    },
     designAuthority: designSource ? {
       path: designSource.path,
       fingerprint: designSource.fingerprint,
@@ -138,6 +174,9 @@ export function buildContextPackage({
 export function assertIndependentVerificationContext(contextPackage) {
   if (!plainObject(contextPackage)) throw new ContextPackageError('Context package is required');
   if (contextPackage.purpose !== 'verification') throw new ContextPackageError('Verification requires a verification context package');
+  if (contextPackage.role === 'implementation-agent' || contextPackage.role === 'implementer') {
+    throw new ContextPackageError('Implementation role cannot self-certify verification');
+  }
   if (!['fresh', 'rehydrated'].includes(contextPackage.contextIsolation)) {
     throw new ContextPackageError('Verification context is not independently isolated');
   }
