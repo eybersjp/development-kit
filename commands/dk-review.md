@@ -6,6 +6,14 @@ description: >-
 
 # /dk-review
 
+## Lifecycle Entry Gate
+
+At session start or command invocation, execute the centralized lifecycle entry adapter:
+```bash
+node scripts/lifecycle.mjs --command=dk-review --phase=entry
+```
+This establishes and validates project bootstrap, binds project identity, and verifies execution context.
+
 ## Purpose
 
 Runs the independent review cycle for the active Development Contract. Specification verification and technical review remain separate responsibilities. Reviewer prose cannot override authoritative sources or runtime evidence.

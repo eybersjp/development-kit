@@ -6,6 +6,14 @@ description: >-
 
 # /dk-build-auto
 
+## Lifecycle Entry Gate
+
+At session start or command invocation, execute the centralized lifecycle entry adapter:
+```bash
+node scripts/lifecycle.mjs --command=dk-build-auto --phase=entry
+```
+This establishes and validates project bootstrap, binds project identity, and verifies execution context.
+
 ## Purpose
 
 Processes the approved PLAN sequentially while preserving the same v0.9 control plane as `/dk-build`. Automation may remove repetitive handoffs, but it may not weaken evidence, safety, review, or human approval gates.

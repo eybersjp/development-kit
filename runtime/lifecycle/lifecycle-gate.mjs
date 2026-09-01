@@ -93,7 +93,15 @@ export async function executeLifecycleEntry({
         try {
           const check = assertProjectBootstrapped(rootDir, { requireMutatingState: false });
           identity = { projectId: check.projectId, frameworkVersion: check.frameworkVersion };
-        } catch (_) {}
+        } catch (err) {
+          return {
+            success: false,
+            command: normCmd,
+            classification,
+            error: `Lifecycle entry failed: Corrupt bootstrap state: ${err.message}`,
+            code: 'DK_LIFECYCLE_BOOTSTRAP_CORRUPT',
+          };
+        }
       }
       break;
     }
@@ -103,7 +111,15 @@ export async function executeLifecycleEntry({
         try {
           const check = assertProjectBootstrapped(rootDir, { requireMutatingState: false });
           identity = { projectId: check.projectId, frameworkVersion: check.frameworkVersion };
-        } catch (_) {}
+        } catch (err) {
+          return {
+            success: false,
+            command: normCmd,
+            classification,
+            error: `Lifecycle entry failed: Corrupt bootstrap state: ${err.message}`,
+            code: 'DK_LIFECYCLE_BOOTSTRAP_CORRUPT',
+          };
+        }
       }
       break;
     }

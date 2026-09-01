@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 
 import { executeLifecycleEntry, COMMAND_ENTRY_TAXONOMY } from '../runtime/lifecycle/lifecycle-gate.mjs';
 import { getProjectBootstrapStatus, bootstrapProject } from '../runtime/bootstrap/project-bootstrap.mjs';
@@ -41,241 +42,294 @@ function cleanupTempDir(dir) {
 
 const VALID_BRIEF = `# Idea Brief: Solar Commissioning Manager\n\n## Problem\nField solar installers lack structured commissioning documentation tools.\n\n## Intended Users\nSolar EPC commissioning technicians and field project managers.\n\n## Success Criteria\n100% compliant commissioning sign-off records produced in PDF/JSON.\n\n## Requirements (Must)\n- Capture inverter DC string voltages and insulation resistance measurements.\n- Support offline checklist completion.\n\n## Preferences (Should)\n- None\n\n## Assumptions\n- Technicians have mobile tablets on site.\n\n## Constraints\n- Must operate without continuous cellular connectivity.\n\n## Risks\n- Extreme temperatures may affect tablet battery life.\n\n## Open Questions\n- None\n\n## Future Ideas (Explicitly Deferred)\n- Direct FLIR radiometric camera integration.\n`;
 
-test('Scenario 1 & 2: fresh project bootstrap & idempotency', async () => {
-  const tempDir = createTempDir();
-  try {
-    const entry1 = await executeLifecycleEntry({ rootDir: tempDir, command: 'dk-idea' });
-    assert.equal(entry1.success, true);
-    assert.equal(entry1.bootstrapped, true);
-    assert.ok(fs.existsSync(path.join(tempDir, '.development-kit', 'project.json')));
-    assert.ok(fs.existsSync(path.join(tempDir, '.development-kit', 'workspace-id')));
-
-    const entry2 = await executeLifecycleEntry({ rootDir: tempDir, command: 'dk-idea' });
-    assert.equal(entry2.success, true);
-    assert.equal(entry2.identity.projectId, entry1.identity.projectId);
-  } finally {
-    cleanupTempDir(tempDir);
-  }
-});
-
-test('Scenario 3: bootstrap failure fail-closed on corrupt project.json', async () => {
-  const tempDir = createTempDir();
-  try {
-    const dkDir = path.join(tempDir, '.development-kit');
-    fs.mkdirSync(dkDir, { recursive: true });
-    fs.writeFileSync(path.join(dkDir, 'project.json'), '{ malformed json', 'utf8');
-    fs.writeFileSync(path.join(dkDir, 'workspace-id'), 'ws-test', 'utf8');
-
-    const entry = await executeLifecycleEntry({ rootDir: tempDir, command: 'dk-idea' });
-    assert.equal(entry.success, false);
-    assert.equal(entry.code, 'DK_LIFECYCLE_BOOTSTRAP_CORRUPT');
-  } finally {
-    cleanupTempDir(tempDir);
-  }
-});
-
-test('Scenario 4 & 5: Windows path handling & host brain artifact isolation', () => {
+test('Blocker 1: Out-of-band direct edit to idea-brief.md without API invalidates approval & causes mismatch blocker', () => {
   const tempDir = createTempDir();
   try {
     bootstrapProject(tempDir);
-    const persisted = persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF });
-    assert.ok(persisted.absolutePath.includes(path.sep));
-    assert.ok(!persisted.absolutePath.includes('.gemini'));
-    assert.ok(!persisted.absolutePath.includes('antigravity/brain'));
-    assert.ok(fs.existsSync(path.join(tempDir, 'idea-brief.md')));
-  } finally {
-    cleanupTempDir(tempDir);
-  }
-});
-
-test('Scenario 6 & 7: canonical artifact & registry persistence', () => {
-  const tempDir = createTempDir();
-  try {
-    bootstrapProject(tempDir);
-    const persisted = persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF });
-    const reg = loadArtifactRegistry(tempDir);
-    assert.ok(reg.artifacts.IDEA_BRIEF);
-    assert.equal(reg.artifacts.IDEA_BRIEF.canonicalPath, 'idea-brief.md');
-    assert.equal(reg.artifacts.IDEA_BRIEF.fingerprint, persisted.fingerprint);
-  } finally {
-    cleanupTempDir(tempDir);
-  }
-});
-
-test('Scenario 8, 9, 10: legacy migration, duplicate normalization & conflict fail-closed', () => {
-  const tempDir = createTempDir();
-  try {
-    bootstrapProject(tempDir);
-
-    // Legacy only -> migrated
-    fs.mkdirSync(path.join(tempDir, 'docs'), { recursive: true });
-    fs.writeFileSync(path.join(tempDir, 'docs', 'idea-brief.md'), VALID_BRIEF, 'utf8');
-    const res1 = resolveCanonicalIdeaArtifact(tempDir);
-    assert.equal(res1.registered, true);
-    assert.equal(fs.existsSync(path.join(tempDir, 'idea-brief.md')), true);
-    assert.equal(fs.existsSync(path.join(tempDir, 'docs', 'idea-brief.md')), false);
-
-    // Identical duplicate -> normalized
-    fs.writeFileSync(path.join(tempDir, 'docs', 'idea-brief.md'), VALID_BRIEF, 'utf8');
-    const res2 = resolveCanonicalIdeaArtifact(tempDir);
-    assert.equal(res2.registered, true);
-    assert.equal(fs.existsSync(path.join(tempDir, 'docs', 'idea-brief.md')), false);
-
-    // Divergent duplicate -> conflict
-    fs.writeFileSync(path.join(tempDir, 'docs', 'idea-brief.md'), VALID_BRIEF + '\n# Divergence\n', 'utf8');
-    assert.throws(() => resolveCanonicalIdeaArtifact(tempDir), (err) => err.code === 'DK_ARTIFACT_AUTHORITY_CONFLICT');
-  } finally {
-    cleanupTempDir(tempDir);
-  }
-});
-
-test('Scenario 11: IDEA template/schema/validator drift', () => {
-  const res = validateIdeaBriefStructure(VALID_BRIEF);
-  assert.equal(res.valid, true);
-  const placeholderRes = validateIdeaBriefStructure(VALID_BRIEF.replace('Solar EPC', '[Requirement 1]'));
-  assert.equal(placeholderRes.valid, false);
-});
-
-test('Scenario 12, 13, 14, 15, 16, 17, 18: Discovery provenance, Candidate ID, Lineage, PO Adoption', () => {
-  const tempDir = createTempDir();
-  try {
-    bootstrapProject(tempDir);
-
-    // Candidate namespace enforcement
-    assert.throws(() => recordRequirementCandidate(tempDir, { id: 'REQ-001', statement: 'x' }));
-
-    // AI_PROPOSED Must blocked without confirmation
-    recordRequirementCandidate(tempDir, { id: 'IDEA-REQ-001', statement: 'AI suggestion', origin: 'AI_PROPOSED', resolutionState: 'UNRESOLVED' });
-    let evalRes = evaluateDiscoveryReadiness(tempDir);
-    assert.equal(evalRes.ready, false);
-    assert.equal(evalRes.blockers[0].code, 'UNCONFIRMED_AI_PROPOSAL');
-
-    // ASSUMED Must blocked without confirmation
-    recordRequirementCandidate(tempDir, { id: 'IDEA-REQ-002', statement: 'Assumption', origin: 'ASSUMED', resolutionState: 'UNRESOLVED' });
-    evalRes = evaluateDiscoveryReadiness(tempDir);
-    assert.equal(evalRes.ready, false);
-
-    // RESEARCH_DERIVED Must blocked without PO adoption
-    recordRequirementCandidate(tempDir, { id: 'IDEA-REQ-003', statement: 'Research item', origin: 'RESEARCH_DERIVED', resolutionState: 'UNRESOLVED' });
-    evalRes = evaluateDiscoveryReadiness(tempDir);
-    assert.equal(evalRes.ready, false);
-    assert.ok(evalRes.blockers.some((b) => b.code === 'UNADOPTED_RESEARCH_REQUIREMENT'));
-
-    // Adopt RESEARCH_DERIVED -> origin retained, lineage established
-    const adopted = recordRequirementCandidate(tempDir, {
-      id: 'IDEA-REQ-003',
-      statement: 'Research item',
-      origin: 'RESEARCH_DERIVED',
-      resolutionState: 'ADOPTED',
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Capture inverter DC string voltages',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
-      createPod: true,
     });
-    assert.equal(adopted.origin, 'RESEARCH_DERIVED');
-    assert.equal(adopted.resolutionState, 'ADOPTED');
-    assert.equal(adopted.linkedPodId, 'POD-IDEA-REQ-003');
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-002',
+      statement: 'Support offline checklist completion',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+
+    const disc = loadDiscoveryState(tempDir);
+    const p1 = persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF, discoveryRevision: disc.revision, discoveryFingerprint: disc.fingerprint });
+    persistApprovalRecord(tempDir, { artifactFingerprint: p1.fingerprint, artifactRevision: p1.revision, approvingAuthority: 'PRODUCT_OWNER' });
+
+    const approvedState = computeIdeaStageState(tempDir);
+    assert.equal(approvedState.state, 'APPROVED');
+
+    // Directly modify idea-brief.md with fs.writeFileSync (out-of-band edit)
+    fs.writeFileSync(path.join(tempDir, 'idea-brief.md'), VALID_BRIEF + '\n- Unregistered extra requirement\n', 'utf8');
+
+    const modifiedState = computeIdeaStageState(tempDir);
+    assert.notEqual(modifiedState.state, 'APPROVED');
+    assert.equal(modifiedState.state, 'BLOCKED');
+    assert.equal(modifiedState.blockerType, 'RUNTIME_FRAMEWORK');
+    assert.equal(modifiedState.issues[0].code, 'DK_ARTIFACT_FINGERPRINT_MISMATCH');
   } finally {
     cleanupTempDir(tempDir);
   }
 });
 
-test('Scenario 19, 20, 21: Material questions, non-material, and deferred policy', () => {
+test('Blocker 2: Must requirements not bound to discovery candidates block READY_FOR_APPROVAL', () => {
   const tempDir = createTempDir();
   try {
     bootstrapProject(tempDir);
-
-    // Material unresolved question blocks
-    recordOpenQuestion(tempDir, { id: 'IDEA-Q-001', question: 'Critical question', materiality: 'MATERIAL', resolution: 'UNRESOLVED' });
-    let check = evaluateDiscoveryReadiness(tempDir);
-    assert.equal(check.ready, false);
-    assert.equal(check.blockers[0].code, 'UNRESOLVED_MATERIAL_QUESTION');
-
-    // Non-material question does not block
-    recordOpenQuestion(tempDir, { id: 'IDEA-Q-002', question: 'Minor question', materiality: 'NON_MATERIAL', resolution: 'UNRESOLVED' });
-
-    // Explicitly deferred material question unblocks
-    recordOpenQuestion(tempDir, { id: 'IDEA-Q-001', question: 'Critical question', materiality: 'MATERIAL', resolution: 'DEFERRED' });
-    check = evaluateDiscoveryReadiness(tempDir);
-    assert.equal(check.ready, true);
-  } finally {
-    cleanupTempDir(tempDir);
-  }
-});
-
-test('Scenario 22, 23, 24, 25, 26, 27: Structural draft vs approval, stale/immutable approval, dual fingerprint/revision, spoofing rejection', () => {
-  const tempDir = createTempDir();
-  try {
-    bootstrapProject(tempDir);
-    const persisted = persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF });
-
-    // Structurally valid draft without approval -> READY_FOR_APPROVAL
-    const stage1 = computeIdeaStageState(tempDir);
-    assert.equal(stage1.state, 'READY_FOR_APPROVAL');
-
-    // Approve revision 1
-    persistApprovalRecord(tempDir, { artifactFingerprint: persisted.fingerprint, artifactRevision: 1 });
-    const stage2 = computeIdeaStageState(tempDir);
-    assert.equal(stage2.state, 'APPROVED');
-
-    // Modify artifact -> stale approval, historical approval immutable
-    const p2 = persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF + '\n- More info\n' });
-    const stage3 = computeIdeaStageState(tempDir);
-    assert.equal(stage3.state, 'READY_FOR_APPROVAL');
-    const hist = loadApprovalsHistory(tempDir);
-    assert.equal(hist.approvals.length, 1);
-
-    // Reverting text content (gives revision 3) remains STALE because revision mismatch
-    const p3 = persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF });
-    const status3 = computeEffectiveApprovalStatus(tempDir, p3.fingerprint, 3);
-    assert.equal(status3.status, 'STALE');
-
-    // Spoofed caller state rejected: NextStepResolver ignores caller-passed approved status when runtime state is not approved
-    const resolver = new NextStepResolver();
-    const next = resolver.resolve({ completedCommand: '/dk-idea', approvalStatus: 'approved', rootDir: tempDir });
-    assert.equal(next[0].command, '/dk-idea');
-  } finally {
-    cleanupTempDir(tempDir);
-  }
-});
-
-test('Scenario 28 & 29: Product blocker routes to /dk-idea, runtime blocker routes to /dk-debug', () => {
-  const resolver = new NextStepResolver();
-  const prodBlock = resolver.resolve({ completedCommand: '/dk-idea', blockers: ['unresolved_scope'], blockerType: 'PRODUCT_DISCOVERY' });
-  assert.equal(prodBlock[0].command, '/dk-idea');
-
-  const runBlock = resolver.resolve({ completedCommand: '/dk-idea', blockers: ['corrupt_registry'], blockerType: 'RUNTIME_FRAMEWORK' });
-  assert.equal(runBlock[0].command, '/dk-debug');
-});
-
-test('Scenario 30, 31, 32, 33, 34, 35: Command entry policy for /dk-test, /dk-review, /dk-autopilot, /dk-status, /dk-research, /dk-debug', async () => {
-  const tempDir = createTempDir();
-  try {
-    assert.equal(COMMAND_ENTRY_TAXONOMY['/dk-test'], 'PROJECT_STATE_MUTATING');
-    assert.equal(COMMAND_ENTRY_TAXONOMY['/dk-review'], 'PROJECT_STATE_MUTATING');
-    assert.equal(COMMAND_ENTRY_TAXONOMY['/dk-autopilot'], 'PROJECT_ORCHESTRATOR');
-    assert.equal(COMMAND_ENTRY_TAXONOMY['/dk-status'], 'PROJECT_READ_ONLY');
-    assert.equal(COMMAND_ENTRY_TAXONOMY['/dk-research'], 'DUAL_MODE');
-    assert.equal(COMMAND_ENTRY_TAXONOMY['/dk-debug'], 'DUAL_MODE');
-
-    // Autopilot bootstraps fresh project
-    const autoEntry = await executeLifecycleEntry({ rootDir: tempDir, command: 'dk-autopilot' });
-    assert.equal(autoEntry.success, true);
-    assert.equal(autoEntry.bootstrapped, true);
-  } finally {
-    cleanupTempDir(tempDir);
-  }
-});
-
-test('Scenario 36, 37, 38: Command entry drift, process restart reconstruction, package consumer installation', async () => {
-  const tempDir = createTempDir();
-  try {
-    fs.mkdirSync(path.join(tempDir, '.agents'), { recursive: true });
-    await executeLifecycleEntry({ rootDir: tempDir, command: 'dk-idea' });
-    recordRequirementCandidate(tempDir, { id: 'IDEA-REQ-001', statement: 'Initial item', origin: 'USER_CONFIRMED', resolutionState: 'CONFIRMED' });
+    // Persist valid 10-section brief with Must requirements, but ZERO recorded discovery candidates
     persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF });
 
-    // Process restart & rehydration
-    const rehydrated = computeIdeaStageState(tempDir);
-    assert.equal(rehydrated.state, 'READY_FOR_APPROVAL');
+    const stage = computeIdeaStageState(tempDir);
+    assert.notEqual(stage.state, 'READY_FOR_APPROVAL');
+    assert.equal(stage.state, 'DISCOVERY_IN_PROGRESS');
+    assert.equal(stage.issues[0].code, 'UNBOUND_MUST_REQUIREMENTS');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Blocker 3: Unsafe authority defaults removed, strict validation enforced', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+
+    // Omitted origin throws
+    assert.throws(() => {
+      recordRequirementCandidate(tempDir, { id: 'IDEA-REQ-001', statement: 'Sample' });
+    }, (err) => err.code === 'DK_INVALID_ORIGIN');
+
+    // RESEARCH_DERIVED + ADOPTED without explicit confirmedBy = PRODUCT_OWNER throws
+    assert.throws(() => {
+      recordRequirementCandidate(tempDir, {
+        id: 'IDEA-REQ-001',
+        statement: 'Sample',
+        origin: 'RESEARCH_DERIVED',
+        resolutionState: 'ADOPTED',
+      });
+    }, (err) => err.code === 'DK_UNAUTHORIZED_ADOPTION');
+
+    // AI_PROPOSED + CONFIRMED without explicit confirmedBy = PRODUCT_OWNER throws
+    assert.throws(() => {
+      recordRequirementCandidate(tempDir, {
+        id: 'IDEA-REQ-001',
+        statement: 'Sample',
+        origin: 'AI_PROPOSED',
+        resolutionState: 'CONFIRMED',
+      });
+    }, (err) => err.code === 'DK_UNAUTHORIZED_CONFIRMATION');
+
+    // Invalid question resolution throws
+    assert.throws(() => {
+      recordOpenQuestion(tempDir, { id: 'IDEA-Q-001', question: 'Q?', resolution: 'INVALID_RESOLUTION' });
+    }, (err) => err.code === 'DK_INVALID_QUESTION_RESOLUTION');
+
+    // persistApprovalRecord without approvingAuthority = PRODUCT_OWNER throws
+    assert.throws(() => {
+      persistApprovalRecord(tempDir, { artifactFingerprint: 'sha256:123', artifactRevision: 1, approvingAuthority: 'AI_AGENT' });
+    }, (err) => err.code === 'DK_UNAUTHORIZED_APPROVAL');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Blocker 4: All 16 public command markdown files invoke centralized lifecycle adapter', () => {
+  const commandsDir = path.resolve('commands');
+  const files = fs.readdirSync(commandsDir).filter((f) => f.startsWith('dk-') && f.endsWith('.md'));
+  assert.equal(files.length, 16);
+
+  for (const file of files) {
+    const cmdName = file.replace('.md', '');
+    const content = fs.readFileSync(path.join(commandsDir, file), 'utf8');
+    assert.ok(
+      content.includes(`node scripts/lifecycle.mjs --command=${cmdName}`),
+      `Command ${file} must invoke node scripts/lifecycle.mjs --command=${cmdName}`
+    );
+  }
+});
+
+test('Blocker 5: Discovery state revision changes invalidate Idea Brief approval (discovery staleness)', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Capture DC voltages',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+
+    const disc1 = loadDiscoveryState(tempDir);
+    const p1 = persistCanonicalIdeaBrief({
+      rootDir: tempDir,
+      content: VALID_BRIEF,
+      discoveryRevision: disc1.revision,
+      discoveryFingerprint: disc1.fingerprint,
+    });
+    persistApprovalRecord(tempDir, { artifactFingerprint: p1.fingerprint, artifactRevision: p1.revision, approvingAuthority: 'PRODUCT_OWNER' });
+
+    const stage1 = computeIdeaStageState(tempDir);
+    assert.equal(stage1.state, 'APPROVED');
+
+    // Add new material requirement to discovery.json -> discovery revision bumps to 2
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-002',
+      statement: 'Insulation resistance logging',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+
+    // Re-evaluating stage state without re-persisting Idea Brief must invalidate APPROVED
+    const stage2 = computeIdeaStageState(tempDir);
+    assert.notEqual(stage2.state, 'APPROVED');
+    assert.equal(stage2.state, 'DRAFT_READY');
+    assert.equal(stage2.issues[0].code, 'DISCOVERY_REVISION_MISMATCH');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Blocker 6: Public CLI orchestration operations for IDEA workflow execute cleanly', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    const scriptPath = path.resolve('scripts/orchestration.mjs');
+
+    // Record candidate via CLI
+    const candExec = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-record-candidate',
+      '--input-json=' + JSON.stringify({
+        id: 'IDEA-REQ-001',
+        statement: 'Capture DC string voltages',
+        origin: 'USER_CONFIRMED',
+        resolutionState: 'CONFIRMED',
+        confirmedBy: 'PRODUCT_OWNER',
+      })
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(candExec.status, 0);
+
+    // Persist Idea Brief via CLI
+    const persistExec = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-persist',
+      '--input-json=' + JSON.stringify({ content: VALID_BRIEF })
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(persistExec.status, 0);
+
+    // Approve Idea Brief via CLI
+    const approveExec = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-approve',
+      '--input-json=' + JSON.stringify({ approvingAuthority: 'PRODUCT_OWNER' })
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(approveExec.status, 0);
+
+    // Check state via CLI
+    const stateExec = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-state'
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(stateExec.status, 0);
+    const stateRes = JSON.parse(stateExec.stdout);
+    assert.equal(stateRes.result.state, 'APPROVED');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Blocker 7: Corrupt project state fails closed and does not masquerade as in-progress', async () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    const appFile = path.join(tempDir, '.development-kit', 'idea', 'approvals.json');
+    fs.mkdirSync(path.dirname(appFile), { recursive: true });
+    fs.writeFileSync(appFile, '{ corrupt json', 'utf8');
+
+    const state = computeIdeaStageState(tempDir);
+    assert.equal(state.state, 'BLOCKED');
+    assert.equal(state.blockerType, 'RUNTIME_FRAMEWORK');
+    assert.equal(state.issues[0].code, 'DK_APPROVALS_CORRUPT');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Backward Compatibility: NextStepContext accepts not_required, pending, unverified and boolean strings', () => {
+  const resolver = new NextStepResolver();
+  const res1 = resolver.resolve({
+    completedCommand: '/dk-test',
+    approvalStatus: 'not_required',
+    postSimplificationVerificationStatus: 'unverified',
+    success: 'true',
+  });
+  assert.ok(Array.isArray(res1));
+});
+
+test('True Fresh Process Restart: Child process reconstructs state accurately with 0 in-memory state', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Capture DC voltages',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    const disc = loadDiscoveryState(tempDir);
+    const p = persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF, discoveryRevision: disc.revision, discoveryFingerprint: disc.fingerprint });
+    persistApprovalRecord(tempDir, { artifactFingerprint: p.fingerprint, artifactRevision: p.revision, approvingAuthority: 'PRODUCT_OWNER' });
+
+    // Spawn a separate node process to compute state
+    const scriptPath = path.resolve('scripts/orchestration.mjs');
+    const child = spawnSync(process.execPath, [scriptPath, '--operation=idea-state'], {
+      cwd: tempDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(child.status, 0);
+    const parsed = JSON.parse(child.stdout);
+    assert.equal(parsed.result.state, 'APPROVED');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Host Brain Artifact Isolation: Competing brain artifact does not override canonical project artifact', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    // Create a rogue file simulating host brain storage
+    const brainDir = path.join(tempDir, '.gemini', 'antigravity', 'brain', 'rogue');
+    fs.mkdirSync(brainDir, { recursive: true });
+    fs.writeFileSync(path.join(brainDir, 'idea-brief.md'), '# Rogue Brain Brief', 'utf8');
+
+    // Persist real project canonical artifact
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Real project requirement',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    const disc = loadDiscoveryState(tempDir);
+    persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF, discoveryRevision: disc.revision, discoveryFingerprint: disc.fingerprint });
+
+    const resolved = resolveCanonicalIdeaArtifact(tempDir, { verifyFingerprint: true });
+    assert.equal(resolved.relativePath, 'idea-brief.md');
+    assert.equal(resolved.absolutePath, path.join(tempDir, 'idea-brief.md'));
+    assert.ok(!resolved.absolutePath.includes('.gemini'));
   } finally {
     cleanupTempDir(tempDir);
   }

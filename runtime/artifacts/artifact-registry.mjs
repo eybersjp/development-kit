@@ -1,10 +1,6 @@
 /**
  * Development Kit — Project-Local Authoritative Artifact Registry
- *
- * Manages .development-kit/artifacts.json, canonical artifact path resolution,
- * atomic writing, SHA-256 fingerprinting, and migration/conflict resolution.
  */
-
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -59,7 +55,7 @@ export function persistArtifactRegistry(registry, rootDir = process.cwd()) {
   fs.renameSync(tempPath, regPath);
 }
 
-export function resolveCanonicalIdeaArtifact(rootDir = process.cwd()) {
+export function resolveCanonicalIdeaArtifact(rootDir = process.cwd(), { verifyFingerprint = false } = {}) {
   const registry = loadArtifactRegistry(rootDir);
   const rootPath = path.join(rootDir, 'idea-brief.md');
   const legacyPath = path.join(rootDir, 'docs', 'idea-brief.md');
@@ -68,8 +64,15 @@ export function resolveCanonicalIdeaArtifact(rootDir = process.cwd()) {
   const legacyExists = fs.existsSync(legacyPath) && fs.statSync(legacyPath).isFile();
 
   if (registry.artifacts.IDEA_BRIEF) {
-    const regRel = registry.artifacts.IDEA_BRIEF.canonicalPath;
+    const regRecord = registry.artifacts.IDEA_BRIEF;
+    const regRel = regRecord.canonicalPath;
     const regAbs = path.resolve(rootDir, regRel);
+
+    const relFromRoot = path.relative(rootDir, regAbs);
+    if (relFromRoot.startsWith('..') || path.isAbsolute(relFromRoot)) {
+      throw new ArtifactRegistryError('Registered artifact path escapes project root', 'DK_ARTIFACT_PATH_ESCAPE');
+    }
+
     if (fs.existsSync(regAbs)) {
       if (regRel === 'idea-brief.md' && legacyExists) {
         const rootContent = fs.readFileSync(rootPath, 'utf8');
@@ -86,11 +89,27 @@ export function resolveCanonicalIdeaArtifact(rootDir = process.cwd()) {
           fs.unlinkSync(legacyPath);
         }
       }
+
+      const actualContent = fs.readFileSync(regAbs, 'utf8');
+      const actualFp = computeSha256(actualContent);
+
+      if (verifyFingerprint && actualFp !== regRecord.fingerprint) {
+        throw new ArtifactRegistryError(
+          'Physical file fingerprint does not match registered artifact fingerprint',
+          'DK_ARTIFACT_FINGERPRINT_MISMATCH',
+          { registeredFingerprint: regRecord.fingerprint, actualFingerprint: actualFp }
+        );
+      }
+
       return {
         relativePath: regRel,
         absolutePath: regAbs,
-        fingerprint: registry.artifacts.IDEA_BRIEF.fingerprint,
-        revision: registry.artifacts.IDEA_BRIEF.revision || 1,
+        fingerprint: regRecord.fingerprint,
+        actualFingerprint: actualFp,
+        isFingerprintMismatch: actualFp !== regRecord.fingerprint,
+        revision: regRecord.revision || 1,
+        discoveryRevision: regRecord.discoveryRevision ?? null,
+        discoveryFingerprint: regRecord.discoveryFingerprint ?? null,
         registered: true,
       };
     }
@@ -124,7 +143,11 @@ export function resolveCanonicalIdeaArtifact(rootDir = process.cwd()) {
       relativePath: 'idea-brief.md',
       absolutePath: rootPath,
       fingerprint: rootFp,
+      actualFingerprint: rootFp,
+      isFingerprintMismatch: false,
       revision: 1,
+      discoveryRevision: null,
+      discoveryFingerprint: null,
       registered: true,
     };
   }
@@ -145,7 +168,11 @@ export function resolveCanonicalIdeaArtifact(rootDir = process.cwd()) {
       relativePath: 'idea-brief.md',
       absolutePath: rootPath,
       fingerprint: fp,
+      actualFingerprint: fp,
+      isFingerprintMismatch: false,
       revision: 1,
+      discoveryRevision: null,
+      discoveryFingerprint: null,
       registered: true,
     };
   }
@@ -171,7 +198,11 @@ export function resolveCanonicalIdeaArtifact(rootDir = process.cwd()) {
       relativePath: 'idea-brief.md',
       absolutePath: rootPath,
       fingerprint: fp,
+      actualFingerprint: fp,
+      isFingerprintMismatch: false,
       revision: 1,
+      discoveryRevision: null,
+      discoveryFingerprint: null,
       registered: true,
     };
   }
@@ -180,7 +211,11 @@ export function resolveCanonicalIdeaArtifact(rootDir = process.cwd()) {
     relativePath: 'idea-brief.md',
     absolutePath: rootPath,
     fingerprint: null,
+    actualFingerprint: null,
+    isFingerprintMismatch: false,
     revision: 0,
+    discoveryRevision: null,
+    discoveryFingerprint: null,
     registered: false,
   };
 }
@@ -193,6 +228,8 @@ export function registerArtifact({
   lifecycleStage,
   fingerprint,
   revision = 1,
+  discoveryRevision = null,
+  discoveryFingerprint = null,
 }) {
   const registry = loadArtifactRegistry(rootDir);
   registry.artifacts[key] = {
@@ -201,6 +238,8 @@ export function registerArtifact({
     artifactType,
     lifecycleStage,
     revision,
+    discoveryRevision,
+    discoveryFingerprint,
     updatedAt: new Date().toISOString(),
   };
   persistArtifactRegistry(registry, rootDir);
@@ -210,12 +249,14 @@ export function registerArtifact({
 export function persistCanonicalIdeaBrief({
   rootDir = process.cwd(),
   content,
+  discoveryRevision = null,
+  discoveryFingerprint = null,
 }) {
   if (typeof content !== 'string' || !content.trim()) {
     throw new ArtifactRegistryError('Content must be a non-empty string', 'DK_ARTIFACT_INVALID_CONTENT');
   }
 
-  const resolved = resolveCanonicalIdeaArtifact(rootDir);
+  const resolved = resolveCanonicalIdeaArtifact(rootDir, { verifyFingerprint: false });
   const targetAbs = path.resolve(rootDir, 'idea-brief.md');
   const tempPath = `${targetAbs}.tmp.${Date.now()}.${process.pid}`;
 
@@ -233,6 +274,8 @@ export function persistCanonicalIdeaBrief({
     lifecycleStage: 'UNDERSTAND',
     fingerprint,
     revision: newRevision,
+    discoveryRevision,
+    discoveryFingerprint,
   });
 
   return {
@@ -241,6 +284,8 @@ export function persistCanonicalIdeaBrief({
     absolutePath: targetAbs,
     fingerprint,
     revision: newRevision,
+    discoveryRevision,
+    discoveryFingerprint,
     record,
   };
 }

@@ -9,6 +9,14 @@ description: >-
 
 # /dk-design
 
+## Lifecycle Entry Gate
+
+At session start or command invocation, execute the centralized lifecycle entry adapter:
+```bash
+node scripts/lifecycle.mjs --command=dk-design --phase=entry
+```
+This establishes and validates project bootstrap, binds project identity, and verifies execution context.
+
 ## Purpose
 
 Produces the technical and visual design for the approved specification. The solution-architect-agent determines the smallest compatible solution. Depending on the scope, data models, API contracts, user flows, and design direction may also be produced.

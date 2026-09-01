@@ -6,6 +6,14 @@ description: >-
 
 # /dk-autopilot
 
+## Lifecycle Entry Gate
+
+At session start or command invocation, execute the centralized lifecycle entry adapter:
+```bash
+node scripts/lifecycle.mjs --command=dk-autopilot --phase=entry
+```
+This establishes and validates project bootstrap, binds project identity, and verifies execution context.
+
 ## Purpose
 
 Executes all nine canonical stages (`UNDERSTAND` -> `DEFINE` -> `DESIGN` -> `PLAN` -> `IMPLEMENT` -> `VERIFY` -> `REVIEW` -> `SIMPLIFY` -> `COMPLETE`) while preserving the existing user-facing workflow. v0.9 adds a contract/evidence control plane beneath IMPLEMENT through COMPLETE; older projects without active contracts remain backward-compatible.

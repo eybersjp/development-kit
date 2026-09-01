@@ -18,6 +18,11 @@ import {
   computeIdeaStageState,
   resolveCanonicalIdeaArtifact,
   persistCanonicalIdeaBrief,
+  recordRequirementCandidate,
+  recordOpenQuestion,
+  evaluateDiscoveryReadiness,
+  loadDiscoveryState,
+  persistApprovalRecord,
 } from '../runtime/orchestration/index.mjs';
 import { reconcileCanonicalArtifact } from '../runtime/orchestration/reconciliation.mjs';
 
@@ -76,7 +81,27 @@ function main() {
     case 'run-status': return output(loadCurrentRunState(payload.contractId, payload.runId, rootDir));
     case 'idea-validate': return output(validateIdeaBriefStructure(payload.content || (payload.filePath ? fs.readFileSync(safeInputPath(rootDir, payload.filePath), 'utf8') : fs.readFileSync(resolveCanonicalIdeaArtifact(rootDir).absolutePath, 'utf8'))));
     case 'idea-state': return output(computeIdeaStageState(rootDir));
-    case 'idea-persist': return output(persistCanonicalIdeaBrief({ rootDir, content: payload.content }));
+    case 'idea-persist': {
+      const disc = loadDiscoveryState(rootDir);
+      return output(persistCanonicalIdeaBrief({
+        rootDir,
+        content: payload.content,
+        discoveryRevision: disc.revision,
+        discoveryFingerprint: disc.fingerprint,
+      }));
+    }
+    case 'idea-record-candidate': return output(recordRequirementCandidate(rootDir, payload));
+    case 'idea-record-question': return output(recordOpenQuestion(rootDir, payload));
+    case 'idea-discovery-eval': return output(evaluateDiscoveryReadiness(rootDir));
+    case 'idea-approve': {
+      const resolved = resolveCanonicalIdeaArtifact(rootDir, { verifyFingerprint: true });
+      return output(persistApprovalRecord(rootDir, {
+        artifactFingerprint: resolved.fingerprint,
+        artifactRevision: resolved.revision,
+        approvingAuthority: payload.approvingAuthority || 'PRODUCT_OWNER',
+        linkedPodIds: payload.linkedPodIds || [],
+      }));
+    }
     case 'artifact-resolve': return output(resolveCanonicalIdeaArtifact(rootDir));
     default: throw new Error(`Unsupported orchestration operation: ${operation}`);
   }

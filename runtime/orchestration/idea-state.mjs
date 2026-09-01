@@ -1,18 +1,10 @@
 /**
  * Development Kit — Deterministic IDEA Stage State Machine & Approval Engine
- *
- * Implements 6-state model:
- * NOT_STARTED -> DISCOVERY_IN_PROGRESS -> DRAFT_READY -> READY_FOR_APPROVAL -> APPROVED
- *                                      \-> BLOCKED
- *
- * Enforces immutable approval history in .development-kit/idea/approvals.json
- * with dual fingerprint and revision matching.
  */
-
 import fs from 'node:fs';
 import path from 'node:path';
 import { getProjectBootstrapStatus } from '../bootstrap/project-bootstrap.mjs';
-import { resolveCanonicalIdeaArtifact } from '../artifacts/artifact-registry.mjs';
+import { resolveCanonicalIdeaArtifact, computeSha256 } from '../artifacts/artifact-registry.mjs';
 import { validateIdeaBriefStructure } from './idea-schema.mjs';
 import { loadDiscoveryState, evaluateDiscoveryReadiness } from './idea-discovery.mjs';
 
@@ -24,6 +16,15 @@ export const IDEA_STAGE_STATES = Object.freeze([
   'APPROVED',
   'BLOCKED',
 ]);
+
+export class IdeaStateError extends Error {
+  constructor(message, code = 'DK_IDEA_STATE_ERROR', details = null) {
+    super(message);
+    this.name = 'IdeaStateError';
+    this.code = code;
+    this.details = details;
+  }
+}
 
 export function getApprovalsFilePath(rootDir = process.cwd()) {
   return path.join(rootDir, '.development-kit', 'idea', 'approvals.json');
@@ -39,18 +40,29 @@ export function loadApprovalsHistory(rootDir = process.cwd()) {
   }
 
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch {
-    return { schemaVersion: '1.0.0', approvals: [] };
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (!Array.isArray(data.approvals)) {
+      throw new Error('Approvals data is malformed');
+    }
+    return data;
+  } catch (err) {
+    throw new IdeaStateError(`Corrupt approvals history: ${err.message}`, 'DK_APPROVALS_CORRUPT');
   }
 }
 
 export function persistApprovalRecord(rootDir = process.cwd(), {
   artifactFingerprint,
   artifactRevision,
-  approvingAuthority = 'PRODUCT_OWNER',
+  approvingAuthority,
   linkedPodIds = [],
 } = {}) {
+  if (!artifactFingerprint || !artifactRevision) {
+    throw new IdeaStateError('artifactFingerprint and artifactRevision are required for approval', 'DK_INVALID_APPROVAL_PARAMS');
+  }
+  if (approvingAuthority !== 'PRODUCT_OWNER') {
+    throw new IdeaStateError(`Explicit approvingAuthority = 'PRODUCT_OWNER' required. Got: ${approvingAuthority}`, 'DK_UNAUTHORIZED_APPROVAL');
+  }
+
   const dir = path.join(rootDir, '.development-kit', 'idea');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -101,9 +113,9 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
 
   let artifact;
   try {
-    artifact = resolveCanonicalIdeaArtifact(rootDir);
+    artifact = resolveCanonicalIdeaArtifact(rootDir, { verifyFingerprint: true });
   } catch (err) {
-    if (err.code === 'DK_ARTIFACT_AUTHORITY_CONFLICT') {
+    if (err.code === 'DK_ARTIFACT_AUTHORITY_CONFLICT' || err.code === 'DK_ARTIFACT_FINGERPRINT_MISMATCH' || err.code === 'DK_ARTIFACT_REGISTRY_CORRUPT') {
       return {
         state: 'BLOCKED',
         blockerType: 'RUNTIME_FRAMEWORK',
@@ -114,7 +126,29 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
     throw err;
   }
 
-  const discoveryState = loadDiscoveryState(rootDir);
+  let discoveryState;
+  try {
+    discoveryState = loadDiscoveryState(rootDir);
+  } catch (err) {
+    return {
+      state: 'BLOCKED',
+      blockerType: 'RUNTIME_FRAMEWORK',
+      bootstrapped: true,
+      issues: [{ code: err.code, message: err.message }],
+    };
+  }
+
+  try {
+    loadApprovalsHistory(rootDir);
+  } catch (err) {
+    return {
+      state: 'BLOCKED',
+      blockerType: 'RUNTIME_FRAMEWORK',
+      bootstrapped: true,
+      issues: [{ code: err.code, message: err.message }],
+    };
+  }
+
   const hasDiscovery = discoveryState.requirements.length > 0 || discoveryState.openQuestions.length > 0;
 
   if (!artifact.registered && !hasDiscovery) {
@@ -145,6 +179,35 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
     };
   }
 
+  const mustSection = structValidation.sections.requirementsMust || '';
+  const mustLines = mustSection.split('\n').map(l => l.trim()).filter(l => l.startsWith('-') || l.startsWith('*'));
+  
+  if (mustLines.length > 0 && discoveryState.requirements.length === 0) {
+    return {
+      state: 'DISCOVERY_IN_PROGRESS',
+      bootstrapped: true,
+      issues: [{
+        code: 'UNBOUND_MUST_REQUIREMENTS',
+        message: 'Requirements (Must) in Idea Brief are not bound to structured discovery candidates in discovery.json',
+      }],
+      artifact,
+    };
+  }
+
+  if (artifact.discoveryRevision !== null && artifact.discoveryRevision !== undefined) {
+    if (discoveryState.revision !== artifact.discoveryRevision || (artifact.discoveryFingerprint && discoveryState.fingerprint !== artifact.discoveryFingerprint)) {
+      return {
+        state: 'DRAFT_READY',
+        bootstrapped: true,
+        issues: [{
+          code: 'DISCOVERY_REVISION_MISMATCH',
+          message: `Discovery state has changed (rev ${discoveryState.revision}) since Idea Brief was persisted (rev ${artifact.discoveryRevision})`,
+        }],
+        artifact,
+      };
+    }
+  }
+
   const discoveryReadiness = evaluateDiscoveryReadiness(rootDir);
 
   if (!discoveryReadiness.ready) {
@@ -157,7 +220,18 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
     };
   }
 
-  const approval = computeEffectiveApprovalStatus(rootDir, artifact.fingerprint, artifact.revision);
+  let approval;
+  try {
+    approval = computeEffectiveApprovalStatus(rootDir, artifact.fingerprint, artifact.revision);
+  } catch (err) {
+    return {
+      state: 'BLOCKED',
+      blockerType: 'RUNTIME_FRAMEWORK',
+      bootstrapped: true,
+      issues: [{ code: err.code, message: err.message }],
+    };
+  }
+
   if (approval.status === 'CURRENT') {
     return {
       state: 'APPROVED',

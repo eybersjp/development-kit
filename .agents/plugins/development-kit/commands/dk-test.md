@@ -6,6 +6,14 @@ description: >-
 
 # /dk-test
 
+## Lifecycle Entry Gate
+
+At session start or command invocation, execute the centralized lifecycle entry adapter:
+```bash
+node scripts/lifecycle.mjs --command=dk-test --phase=entry
+```
+This establishes and validates project bootstrap, binds project identity, and verifies execution context.
+
 ## Purpose
 
 Runs verification for the active task. v0.9 distinguishes test execution from verification coverage: a green subset of tests is not a PASS when required criteria or controls remain unverified.

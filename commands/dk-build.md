@@ -6,6 +6,14 @@ description: >-
 
 # /dk-build
 
+## Lifecycle Entry Gate
+
+At session start or command invocation, execute the centralized lifecycle entry adapter:
+```bash
+node scripts/lifecycle.mjs --command=dk-build --phase=entry
+```
+This establishes and validates project bootstrap, binds project identity, and verifies execution context.
+
 ## Purpose
 
 Implements one approved task without allowing the implementation agent to certify its own work. v0.9 keeps the familiar task loop but makes the Development Contract, authoritative sources, evidence, safety policy, and acceptance engine the control plane.

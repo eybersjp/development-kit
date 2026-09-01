@@ -46,12 +46,15 @@ export const REVIEW_STATUSES = Object.freeze([
 export const APPROVAL_STATUSES = Object.freeze([
   'approved',
   'pending',
-  'rejected'
+  'rejected',
+  'not_required'
 ]);
 
 export const POST_SIMPLIFICATION_STATUSES = Object.freeze([
   'passed',
-  'failed'
+  'failed',
+  'unverified',
+  'pending'
 ]);
 
 export const DOCUMENTATION_STATUSES = Object.freeze([
@@ -149,9 +152,17 @@ export function validateContextSchema(rawContext, registry = null) {
     return { valid: false, error: `Invalid isWorkflowComplete value: ${rawContext.isWorkflowComplete} (must be boolean)` };
   }
 
+  if (rawContext.maxRecommendations !== undefined) {
+    const num = Number(rawContext.maxRecommendations);
+    if (!Number.isInteger(num) || num <= 0) {
+      return { valid: false, error: `Invalid maxRecommendations value: ${rawContext.maxRecommendations} (must be positive integer)` };
+    }
+  }
+
   if (rawContext.remainingTasks !== undefined) {
-    if (typeof rawContext.remainingTasks !== 'number' || isNaN(rawContext.remainingTasks) || !Number.isInteger(rawContext.remainingTasks) || rawContext.remainingTasks < 0 || !Number.isSafeInteger(rawContext.remainingTasks)) {
-      return { valid: false, error: `Invalid remainingTasks value: ${rawContext.remainingTasks} (must be a non-negative safe integer)` };
+    const num = Number(rawContext.remainingTasks);
+    if (!Number.isInteger(num) || num < 0) {
+      return { valid: false, error: `Invalid remainingTasks value: ${rawContext.remainingTasks} (must be non-negative integer)` };
     }
   }
 
@@ -191,7 +202,18 @@ export function normalizeContext(rawContext = {}) {
     ? rawContext.lifecycleStage.trim().toUpperCase()
     : undefined;
 
-  const success = rawContext.success !== undefined ? Boolean(rawContext.success) : true;
+  let success = true;
+  if (rawContext.success !== undefined) {
+    if (typeof rawContext.success === 'boolean') {
+      success = rawContext.success;
+    } else if (rawContext.success === 'true') {
+      success = true;
+    } else if (rawContext.success === 'false') {
+      success = false;
+    } else {
+      success = Boolean(rawContext.success);
+    }
+  }
 
   const verificationStatus = typeof rawContext.verificationStatus === 'string'
     ? rawContext.verificationStatus.trim().toLowerCase()
@@ -221,21 +243,34 @@ export function normalizeContext(rawContext = {}) {
     ? rawContext.repositoryStatus.trim().toLowerCase()
     : undefined;
 
-  const outstandingApprovals = Array.isArray(rawContext.outstandingApprovals)
-    ? rawContext.outstandingApprovals.filter(Boolean).map(String)
-    : (rawContext.hasOutstandingApprovals ? ['generic_approval_required'] : []);
-
   const blockers = Array.isArray(rawContext.blockers)
-    ? rawContext.blockers.filter(Boolean).map(String)
-    : (rawContext.hasBlockers ? ['generic_blocker'] : []);
+    ? rawContext.blockers.map(b => String(b).trim()).filter(Boolean)
+    : [];
 
-  const remainingTasks = typeof rawContext.remainingTasks === 'number'
-    ? rawContext.remainingTasks
-    : (typeof rawContext.hasRemainingTasks === 'boolean' ? (rawContext.hasRemainingTasks ? 1 : 0) : undefined);
+  const outstandingApprovals = Array.isArray(rawContext.outstandingApprovals)
+    ? rawContext.outstandingApprovals.map(a => String(a).trim()).filter(Boolean)
+    : [];
 
-  const isAutomated = Boolean(rawContext.isAutomated || rawContext.suppressIntermediate);
-  const isPaused = Boolean(rawContext.isPaused);
-  const isWorkflowComplete = Boolean(rawContext.isWorkflowComplete);
+  const remainingTasks = rawContext.remainingTasks !== undefined
+    ? Number(rawContext.remainingTasks)
+    : undefined;
+
+  const maxRecommendations = rawContext.maxRecommendations !== undefined
+    ? Number(rawContext.maxRecommendations)
+    : 3;
+
+  const isAutomated = typeof rawContext.isAutomated === 'boolean'
+    ? rawContext.isAutomated
+    : (rawContext.isAutomated === 'true' ? true : (rawContext.isAutomated === 'false' ? false : false));
+
+  const isPaused = typeof rawContext.isPaused === 'boolean'
+    ? rawContext.isPaused
+    : (rawContext.isPaused === 'true' ? true : (rawContext.isPaused === 'false' ? false : false));
+
+  const isWorkflowComplete = typeof rawContext.isWorkflowComplete === 'boolean'
+    ? rawContext.isWorkflowComplete
+    : (rawContext.isWorkflowComplete === 'true' ? true : (rawContext.isWorkflowComplete === 'false' ? false : false));
+
   const previousCommand = typeof rawContext.previousCommand === 'string'
     ? rawContext.previousCommand.trim()
     : undefined;
@@ -251,9 +286,10 @@ export function normalizeContext(rawContext = {}) {
     postSimplificationVerificationStatus,
     documentationStatus,
     repositoryStatus,
-    outstandingApprovals,
     blockers,
+    outstandingApprovals,
     remainingTasks,
+    maxRecommendations,
     isAutomated,
     isPaused,
     isWorkflowComplete,

@@ -1,12 +1,9 @@
 /**
  * Development Kit — Structured Requirements Discovery & Provenance Model
- *
- * Persists and validates discovery candidates in .development-kit/idea/discovery.json.
- * Tracks requirement provenance (origin vs authority), materiality, and POD linking.
  */
-
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { createPODecision, persistPODecision } from './po-decisions.mjs';
 
 export const DISCOVERY_SCHEMA_VERSION = '1.0.0';
@@ -30,6 +27,13 @@ export const RESOLUTION_STATES = Object.freeze([
   'SUPERSEDED',
 ]);
 
+export const QUESTION_RESOLUTIONS = Object.freeze([
+  'UNRESOLVED',
+  'ANSWERED',
+  'DEFERRED',
+  'REJECTED'
+]);
+
 export class DiscoveryStateError extends Error {
   constructor(message, code = 'DK_DISCOVERY_ERROR', details = null) {
     super(message);
@@ -37,6 +41,27 @@ export class DiscoveryStateError extends Error {
     this.code = code;
     this.details = details;
   }
+}
+
+export function computeDiscoveryFingerprint(state) {
+  const normalized = {
+    requirements: (state.requirements || []).map((r) => ({
+      id: r.id,
+      statement: r.statement,
+      origin: r.origin,
+      materiality: r.materiality,
+      resolutionState: r.resolutionState,
+      confirmedBy: r.confirmedBy,
+    })),
+    openQuestions: (state.openQuestions || []).map((q) => ({
+      id: q.id,
+      question: q.question,
+      materiality: q.materiality,
+      resolution: q.resolution,
+      resolvedBy: q.resolvedBy,
+    })),
+  };
+  return `sha256:${crypto.createHash('sha256').update(JSON.stringify(normalized), 'utf8').digest('hex')}`;
 }
 
 export function getDiscoveryDir(rootDir = process.cwd()) {
@@ -53,6 +78,7 @@ export function loadDiscoveryState(rootDir = process.cwd()) {
     return {
       schemaVersion: DISCOVERY_SCHEMA_VERSION,
       revision: 0,
+      fingerprint: computeDiscoveryFingerprint({ requirements: [], openQuestions: [] }),
       updatedAt: new Date().toISOString(),
       requirements: [],
       openQuestions: [],
@@ -61,6 +87,10 @@ export function loadDiscoveryState(rootDir = process.cwd()) {
 
   try {
     const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (!Array.isArray(data.requirements) || !Array.isArray(data.openQuestions)) {
+      throw new Error('Discovery state structure invalid');
+    }
+    data.fingerprint = computeDiscoveryFingerprint(data);
     return data;
   } catch (err) {
     throw new DiscoveryStateError(`Corrupt discovery state: ${err.message}`, 'DK_DISCOVERY_CORRUPT');
@@ -75,6 +105,7 @@ export function persistDiscoveryState(state, rootDir = process.cwd()) {
 
   const filePath = getDiscoveryFilePath(rootDir);
   const tempPath = `${filePath}.tmp.${Date.now()}.${process.pid}`;
+  state.fingerprint = computeDiscoveryFingerprint(state);
   const payload = {
     ...state,
     updatedAt: new Date().toISOString(),
@@ -89,9 +120,9 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
   id,
   statement,
   materiality = 'MATERIAL',
-  origin = 'USER_CONFIRMED',
-  resolutionState = 'CONFIRMED',
-  confirmedBy = 'PRODUCT_OWNER',
+  origin,
+  resolutionState = 'UNRESOLVED',
+  confirmedBy = null,
   createPod = false,
   podStatement = null,
 } = {}) {
@@ -101,14 +132,28 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
   if (!statement || typeof statement !== 'string' || !statement.trim()) {
     throw new DiscoveryStateError('Requirement statement is required', 'DK_INVALID_STATEMENT');
   }
-  if (!REQUIREMENT_ORIGINS.includes(origin)) {
-    throw new DiscoveryStateError(`Invalid requirement origin: ${origin}`, 'DK_INVALID_ORIGIN');
+  if (!origin || !REQUIREMENT_ORIGINS.includes(origin)) {
+    throw new DiscoveryStateError(`Explicit valid requirement origin required: ${origin}`, 'DK_INVALID_ORIGIN');
+  }
+  if (!RESOLUTION_STATES.includes(resolutionState)) {
+    throw new DiscoveryStateError(`Invalid resolutionState: ${resolutionState}`, 'DK_INVALID_RESOLUTION_STATE');
+  }
+
+  if (origin === 'RESEARCH_DERIVED') {
+    if (resolutionState === 'ADOPTED' && confirmedBy !== 'PRODUCT_OWNER') {
+      throw new DiscoveryStateError('RESEARCH_DERIVED cannot be ADOPTED without explicit confirmedBy = PRODUCT_OWNER', 'DK_UNAUTHORIZED_ADOPTION');
+    }
+  }
+  if (origin === 'AI_PROPOSED' || origin === 'ASSUMED') {
+    if (resolutionState === 'CONFIRMED' && confirmedBy !== 'PRODUCT_OWNER') {
+      throw new DiscoveryStateError(`${origin} requirement cannot be CONFIRMED without explicit confirmedBy = PRODUCT_OWNER`, 'DK_UNAUTHORIZED_CONFIRMATION');
+    }
   }
 
   const state = loadDiscoveryState(rootDir);
   let linkedPodId = null;
 
-  if (createPod && (resolutionState === 'CONFIRMED' || resolutionState === 'ADOPTED')) {
+  if (createPod && (resolutionState === 'CONFIRMED' || resolutionState === 'ADOPTED') && confirmedBy === 'PRODUCT_OWNER') {
     const podId = `POD-${id}`;
     const pod = createPODecision({
       id: podId,
@@ -162,6 +207,13 @@ export function recordOpenQuestion(rootDir = process.cwd(), {
   if (!question || typeof question !== 'string' || !question.trim()) {
     throw new DiscoveryStateError('Question text is required', 'DK_INVALID_QUESTION');
   }
+  if (!QUESTION_RESOLUTIONS.includes(resolution)) {
+    throw new DiscoveryStateError(`Invalid question resolution: ${resolution}`, 'DK_INVALID_QUESTION_RESOLUTION');
+  }
+
+  if (resolution === 'ANSWERED' && !resolvedBy) {
+    throw new DiscoveryStateError('ANSWERED question requires explicit resolvedBy authority', 'DK_UNAUTHORIZED_RESOLUTION');
+  }
 
   const state = loadDiscoveryState(rootDir);
   const existingIdx = state.openQuestions.findIndex((q) => q.id === id);
@@ -194,7 +246,17 @@ export function evaluateDiscoveryReadiness(rootDir = process.cwd()) {
 
   for (const req of state.requirements) {
     if (req.materiality === 'MATERIAL') {
-      if (req.origin === 'AI_PROPOSED' && req.resolutionState !== 'CONFIRMED') {
+      if (req.origin === 'USER_STATED' || req.origin === 'USER_CONFIRMED') {
+        if (req.resolutionState !== 'CONFIRMED' && req.resolutionState !== 'ADOPTED') {
+          blockers.push({
+            code: 'UNCONFIRMED_USER_REQUIREMENT',
+            id: req.id,
+            statement: req.statement,
+            message: `User requirement ${req.id} requires confirmation`,
+          });
+        }
+      }
+      if (req.origin === 'AI_PROPOSED' && (req.resolutionState !== 'CONFIRMED' || req.confirmedBy !== 'PRODUCT_OWNER')) {
         blockers.push({
           code: 'UNCONFIRMED_AI_PROPOSAL',
           id: req.id,
@@ -202,7 +264,7 @@ export function evaluateDiscoveryReadiness(rootDir = process.cwd()) {
           message: `AI-proposed requirement ${req.id} requires explicit PO confirmation before approval`,
         });
       }
-      if (req.origin === 'ASSUMED' && req.resolutionState !== 'CONFIRMED') {
+      if (req.origin === 'ASSUMED' && (req.resolutionState !== 'CONFIRMED' || req.confirmedBy !== 'PRODUCT_OWNER')) {
         blockers.push({
           code: 'UNCONFIRMED_ASSUMPTION',
           id: req.id,
@@ -240,5 +302,6 @@ export function evaluateDiscoveryReadiness(rootDir = process.cwd()) {
     requirementCount: state.requirements.length,
     questionCount: state.openQuestions.length,
     revision: state.revision || 0,
+    fingerprint: state.fingerprint || computeDiscoveryFingerprint(state),
   };
 }

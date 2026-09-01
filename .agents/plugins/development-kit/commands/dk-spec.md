@@ -11,6 +11,14 @@ description: >-
 
 Creates the minimum required specification artifacts for the approved concept or idea. The artifact-selector-agent determines what documents are actually needed based on the scale of work. Acceptance criteria are written using the acceptance-criteria-writing skill.
 
+## Lifecycle Entry Gate
+
+At session start or command invocation, execute the centralized lifecycle entry adapter:
+```bash
+node scripts/lifecycle.mjs --command=dk-spec --phase=entry
+```
+This establishes and validates project bootstrap, binds project identity, and verifies execution context.
+
 ## Workflow
 
 ### 1. Determine Artifact Level

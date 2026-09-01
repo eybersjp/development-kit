@@ -6,6 +6,14 @@ description: >-
 
 # /dk-research
 
+## Lifecycle Entry Gate
+
+At session start or command invocation, execute the centralized lifecycle entry adapter:
+```bash
+node scripts/lifecycle.mjs --command=dk-research --phase=entry
+```
+This establishes and validates project bootstrap, binds project identity, and verifies execution context.
+
 ## Purpose
 
 Runs focused external research when the current Development Kit task depends on information that is current, external to the repository, or materially improved by evidence from authoritative sources. The command is provider-neutral. Agent-Reach is the first supported optional provider, but Development Kit does not depend on it.

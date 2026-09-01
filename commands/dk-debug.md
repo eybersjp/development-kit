@@ -11,6 +11,14 @@ description: >-
 
 Applies systematic root-cause analysis to bugs and failures. Uses the structured cycle: Reproduce → Localise → Identify Root Cause → Fix → Add Regression Protection. Does not guess at fixes — follows evidence.
 
+## Lifecycle Entry Gate
+
+At session start or command invocation, execute the centralized lifecycle entry adapter:
+```bash
+node scripts/lifecycle.mjs --command=dk-debug --phase=entry
+```
+This establishes and validates project bootstrap, binds project identity, and verifies execution context.
+
 ## Workflow
 
 ### 1. Reproduce

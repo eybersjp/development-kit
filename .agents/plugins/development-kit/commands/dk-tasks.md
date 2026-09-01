@@ -6,6 +6,14 @@ description: >-
 
 # /dk-tasks
 
+## Lifecycle Entry Gate
+
+At session start or command invocation, execute the centralized lifecycle entry adapter:
+```bash
+node scripts/lifecycle.mjs --command=dk-tasks --phase=entry
+```
+This establishes and validates project bootstrap, binds project identity, and verifies execution context.
+
 ## Purpose
 
 Produces the approved implementation PLAN. Human-readable planning remains required, but v0.9 also requires a machine-readable task model so task counts, dependencies, acceptance-criterion coverage, and resource ownership are computed rather than asserted in prose.

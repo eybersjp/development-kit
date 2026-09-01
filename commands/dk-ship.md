@@ -6,6 +6,14 @@ description: >-
 
 # /dk-ship
 
+## Lifecycle Entry Gate
+
+At session start or command invocation, execute the centralized lifecycle entry adapter:
+```bash
+node scripts/lifecycle.mjs --command=dk-ship --phase=entry
+```
+This establishes and validates project bootstrap, binds project identity, and verifies execution context.
+
 ## Purpose
 
 Final release gate. Shipping is not authorized by an agent's completion claim: every active contract must be runtime-accepted and the repository's complete release validation must pass before merge/tag/publication preparation.
