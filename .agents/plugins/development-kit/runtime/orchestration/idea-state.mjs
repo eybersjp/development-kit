@@ -55,6 +55,12 @@ export function validateApprovalsHistoryStructure(data) {
     if (typeof app.artifactRevision !== 'number' || !Number.isInteger(app.artifactRevision) || app.artifactRevision <= 0) {
       throw new IdeaStateError(`Invalid approval artifactRevision in ${app.id}`, 'DK_APPROVALS_CORRUPT');
     }
+    if (typeof app.discoveryRevision !== 'number' || !Number.isInteger(app.discoveryRevision) || app.discoveryRevision < 0) {
+      throw new IdeaStateError(`Invalid approval discoveryRevision in ${app.id}`, 'DK_APPROVALS_CORRUPT');
+    }
+    if (!app.discoveryFingerprint || !/^sha256:[a-f0-9]{64}$/i.test(app.discoveryFingerprint)) {
+      throw new IdeaStateError(`Invalid approval discoveryFingerprint in ${app.id}`, 'DK_APPROVALS_CORRUPT');
+    }
     if (app.approvingAuthority !== 'PRODUCT_OWNER') {
       throw new IdeaStateError(`Unauthorized approvingAuthority ${app.approvingAuthority} in ${app.id}`, 'DK_APPROVALS_CORRUPT');
     }
@@ -95,6 +101,8 @@ export function loadApprovalsHistory(rootDir = process.cwd()) {
 export function persistApprovalRecord(rootDir = process.cwd(), {
   artifactFingerprint,
   artifactRevision,
+  discoveryRevision,
+  discoveryFingerprint,
   approvingAuthority,
   linkedPodIds = [],
 } = {}) {
@@ -103,6 +111,12 @@ export function persistApprovalRecord(rootDir = process.cwd(), {
   }
   if (!artifactRevision || typeof artifactRevision !== 'number' || !Number.isInteger(artifactRevision) || artifactRevision <= 0) {
     throw new IdeaStateError('artifactRevision must be a positive integer', 'DK_INVALID_APPROVAL_PARAMS');
+  }
+  if (typeof discoveryRevision !== 'number' || !Number.isInteger(discoveryRevision) || discoveryRevision < 0) {
+    throw new IdeaStateError('discoveryRevision must be a non-negative integer', 'DK_INVALID_APPROVAL_PARAMS');
+  }
+  if (!discoveryFingerprint || !/^sha256:[a-f0-9]{64}$/i.test(discoveryFingerprint)) {
+    throw new IdeaStateError('discoveryFingerprint must be a valid sha256:<64 hex> string', 'DK_INVALID_APPROVAL_PARAMS');
   }
   if (approvingAuthority !== 'PRODUCT_OWNER') {
     throw new IdeaStateError(`Explicit approvingAuthority = 'PRODUCT_OWNER' required. Got: ${approvingAuthority}`, 'DK_UNAUTHORIZED_APPROVAL');
@@ -119,6 +133,8 @@ export function persistApprovalRecord(rootDir = process.cwd(), {
     id: approvalId,
     artifactFingerprint,
     artifactRevision,
+    discoveryRevision,
+    discoveryFingerprint,
     approvingAuthority,
     linkedPodIds,
     approvedAt: new Date().toISOString(),
@@ -132,18 +148,70 @@ export function persistApprovalRecord(rootDir = process.cwd(), {
   return record;
 }
 
-export function computeEffectiveApprovalStatus(rootDir = process.cwd(), currentFingerprint, currentRevision) {
+export function computeEffectiveApprovalStatus(
+  rootDir = process.cwd(),
+  currentArtifactFingerprint,
+  currentArtifactRevision,
+  currentDiscoveryFingerprint,
+  currentDiscoveryRevision
+) {
   const history = loadApprovalsHistory(rootDir);
   if (!history.approvals || history.approvals.length === 0) {
     return { status: 'NONE', latestApproval: null };
   }
 
   const latest = history.approvals[history.approvals.length - 1];
-  if (latest.artifactFingerprint === currentFingerprint && latest.artifactRevision === currentRevision) {
+  // 4-Tuple approval match required for CURRENT
+  if (
+    latest.artifactFingerprint === currentArtifactFingerprint &&
+    latest.artifactRevision === currentArtifactRevision &&
+    latest.discoveryFingerprint === currentDiscoveryFingerprint &&
+    latest.discoveryRevision === currentDiscoveryRevision
+  ) {
     return { status: 'CURRENT', latestApproval: latest };
   }
 
   return { status: 'STALE', latestApproval: latest };
+}
+
+export function approveCurrentIdeaBrief(rootDir = process.cwd(), {
+  approvingAuthority = 'PRODUCT_OWNER',
+  linkedPodIds = [],
+} = {}) {
+  const preState = computeIdeaStageState(rootDir);
+  if (preState.state !== 'READY_FOR_APPROVAL') {
+    throw new IdeaStateError(
+      `Cannot approve Idea Brief: current state is ${preState.state} (must be READY_FOR_APPROVAL)`,
+      'DK_INVALID_APPROVAL_STATE',
+      { preState }
+    );
+  }
+
+  const resolved = resolveCanonicalIdeaArtifact(rootDir, { verifyFingerprint: true });
+  const disc = loadDiscoveryState(rootDir);
+
+  const approval = persistApprovalRecord(rootDir, {
+    artifactFingerprint: resolved.fingerprint,
+    artifactRevision: resolved.revision,
+    discoveryFingerprint: disc.fingerprint,
+    discoveryRevision: disc.revision,
+    approvingAuthority,
+    linkedPodIds,
+  });
+
+  const postState = computeIdeaStageState(rootDir);
+  if (postState.state !== 'APPROVED') {
+    throw new IdeaStateError(
+      `Approval recorded but stage state failed to transition to APPROVED (got ${postState.state})`,
+      'DK_APPROVAL_TRANSITION_FAILED',
+      { postState }
+    );
+  }
+
+  return {
+    approval,
+    state: postState,
+  };
 }
 
 export function normalizeStatementText(text) {
@@ -256,36 +324,13 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
   }
 
   // 1-to-1 MUST Requirements ↔ IDEA-REQ Binding & Content Verification
-  const mustSection = structValidation.sections.requirementsMust || '';
-  const mustLines = mustSection.split('\n').map(l => l.trim()).filter(l => l.startsWith('-') || l.startsWith('*'));
-  
   const reqIssues = [];
   const consumedReqIds = new Set();
+  const parsedMustItems = structValidation.parsedMustItems || [];
 
-  for (const line of mustLines) {
-    const cleanLine = line.replace(/^[-*]\s*/, '').trim();
-    if (!cleanLine || isCanonicalNone(cleanLine)) continue;
-
-    // Check for multiple IDEA-REQ tags on one line
-    const allMatches = cleanLine.match(/\[(IDEA-REQ-\d+)\]/gi);
-    if (!allMatches || allMatches.length === 0) {
-      reqIssues.push({
-        code: 'UNBOUND_MUST_REQUIREMENT',
-        message: `Must requirement is missing explicit [IDEA-REQ-xxx] tag: "${cleanLine}"`,
-      });
-      continue;
-    }
-    if (allMatches.length > 1) {
-      reqIssues.push({
-        code: 'MULTIPLE_REQUIREMENT_REFERENCES',
-        message: `Must requirement line contains multiple candidate IDs: "${cleanLine}"`,
-      });
-      continue;
-    }
-
-    const tagMatch = cleanLine.match(/^\[(IDEA-REQ-\d+)\]\s*(.*)$/i);
-    const candId = (tagMatch ? tagMatch[1] : allMatches[0].slice(1, -1)).toUpperCase();
-    const statementText = tagMatch ? tagMatch[2].trim() : cleanLine.replace(/\[(IDEA-REQ-\d+)\]/i, '').trim();
+  for (const item of parsedMustItems) {
+    const candId = item.id;
+    const statementText = item.statement;
 
     if (consumedReqIds.has(candId)) {
       reqIssues.push({
@@ -324,6 +369,14 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
       continue;
     }
 
+    if (matchedCand.scopeDisposition && matchedCand.scopeDisposition !== 'MUST') {
+      reqIssues.push({
+        code: 'NON_MUST_SCOPE_IN_MUST_SECTION',
+        message: `Requirement ${matchedCand.id} has scopeDisposition ${matchedCand.scopeDisposition} and cannot be listed in Requirements (Must)`,
+      });
+      continue;
+    }
+
     if (matchedCand.origin === 'RESEARCH_DERIVED' && (matchedCand.resolutionState !== 'ADOPTED' || matchedCand.confirmedBy !== 'PRODUCT_OWNER')) {
       reqIssues.push({
         code: 'UNADOPTED_RESEARCH_REQUIREMENT',
@@ -341,34 +394,27 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
     }
   }
 
+  // Bidirectional Check: Every active candidate with scopeDisposition === 'MUST' must appear in Requirements (Must)
+  for (const r of discoveryState.requirements) {
+    if (r.resolutionState !== 'SUPERSEDED' && r.resolutionState !== 'REJECTED') {
+      const isMust = (r.scopeDisposition === 'MUST' || !r.scopeDisposition);
+      if (isMust && !consumedReqIds.has(r.id.toUpperCase())) {
+        reqIssues.push({
+          code: 'MISSING_MUST_REQUIREMENT',
+          message: `Active discovery requirement ${r.id} is classified as MUST but missing from Requirements (Must) in Idea Brief`,
+          id: r.id,
+        });
+      }
+    }
+  }
+
   // 1-to-1 Open Questions ↔ IDEA-Q Binding & Content Verification
-  const qSection = structValidation.sections.openQuestions || '';
-  const qLines = qSection.split('\n').map(l => l.trim()).filter(l => l.startsWith('-') || l.startsWith('*'));
+  const parsedOpenQuestions = structValidation.parsedOpenQuestions || [];
   const consumedQIds = new Set();
 
-  for (const line of qLines) {
-    const cleanQ = line.replace(/^[-*]\s*/, '').trim();
-    if (!cleanQ || isCanonicalNone(cleanQ)) continue;
-
-    const allMatches = cleanQ.match(/\[(IDEA-Q-\d+)\]/gi);
-    if (!allMatches || allMatches.length === 0) {
-      reqIssues.push({
-        code: 'UNBOUND_OPEN_QUESTION',
-        message: `Open question is missing explicit [IDEA-Q-xxx] tag: "${cleanQ}"`,
-      });
-      continue;
-    }
-    if (allMatches.length > 1) {
-      reqIssues.push({
-        code: 'MULTIPLE_QUESTION_REFERENCES',
-        message: `Open question line contains multiple question IDs: "${cleanQ}"`,
-      });
-      continue;
-    }
-
-    const tagMatch = cleanQ.match(/^\[(IDEA-Q-\d+)\]\s*(.*)$/i);
-    const qId = (tagMatch ? tagMatch[1] : allMatches[0].slice(1, -1)).toUpperCase();
-    const qText = tagMatch ? tagMatch[2].trim() : cleanQ.replace(/\[(IDEA-Q-\d+)\]/i, '').trim();
+  for (const item of parsedOpenQuestions) {
+    const qId = item.id;
+    const qText = item.question;
 
     if (consumedQIds.has(qId)) {
       reqIssues.push({
@@ -448,7 +494,13 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
 
   let approval;
   try {
-    approval = computeEffectiveApprovalStatus(rootDir, artifact.fingerprint, artifact.revision);
+    approval = computeEffectiveApprovalStatus(
+      rootDir,
+      artifact.fingerprint,
+      artifact.revision,
+      discoveryState.fingerprint,
+      discoveryState.revision
+    );
   } catch (err) {
     return {
       state: 'BLOCKED',
@@ -471,7 +523,7 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
   return {
     state: 'READY_FOR_APPROVAL',
     bootstrapped: true,
-    issues: approval.status === 'STALE' ? [{ code: 'STALE_APPROVAL', message: 'Artifact changed since last approval' }] : [],
+    issues: approval.status === 'STALE' ? [{ code: 'STALE_APPROVAL', message: 'Artifact or discovery changed since last approval' }] : [],
     artifact,
     approvalStatus: approval.status,
   };

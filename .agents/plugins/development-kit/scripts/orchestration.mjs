@@ -23,6 +23,7 @@ import {
   evaluateDiscoveryReadiness,
   loadDiscoveryState,
   persistApprovalRecord,
+  approveCurrentIdeaBrief,
 } from '../runtime/orchestration/index.mjs';
 import { reconcileCanonicalArtifact } from '../runtime/orchestration/reconciliation.mjs';
 
@@ -96,11 +97,8 @@ function main() {
     case 'idea-supersede-question': return output(supersedeOpenQuestion(rootDir, payload.oldId, payload.newQuestion));
     case 'idea-discovery-eval': return output(evaluateDiscoveryReadiness(rootDir));
     case 'idea-approve': {
-      const resolved = resolveCanonicalIdeaArtifact(rootDir, { verifyFingerprint: true });
-      return output(persistApprovalRecord(rootDir, {
-        artifactFingerprint: resolved.fingerprint,
-        artifactRevision: resolved.revision,
-        approvingAuthority: payload.approvingAuthority,
+      return output(approveCurrentIdeaBrief(rootDir, {
+        approvingAuthority: payload.approvingAuthority || 'PRODUCT_OWNER',
         linkedPodIds: payload.linkedPodIds || [],
       }));
     }

@@ -214,6 +214,8 @@ export function validateIdeaBriefStructure(markdownText) {
       issues: err.issues || [{ code: 'PARSE_FAILED', message: err.message }],
       sections: {},
       title: null,
+      parsedMustItems: [],
+      parsedOpenQuestions: [],
     };
   }
 
@@ -224,6 +226,9 @@ export function validateIdeaBriefStructure(markdownText) {
       message: 'Idea Brief title is missing or contains placeholder',
     });
   }
+
+  const parsedMustItems = [];
+  const parsedOpenQuestions = [];
 
   for (const sec of IDEA_SECTIONS) {
     const content = parsed.sections[sec.id];
@@ -254,6 +259,121 @@ export function validateIdeaBriefStructure(markdownText) {
         message: `Section ${sec.title} cannot be empty in draft`,
       });
     }
+
+    // Canonical item grammar validation for Requirements (Must)
+    if (sec.id === 'requirementsMust') {
+      const rawLines = content.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      if (rawLines.length === 0 || isCanonicalNone(content)) {
+        issues.push({
+          code: 'CANONICAL_GRAMMAR_ERROR',
+          section: sec.id,
+          header: sec.header,
+          message: 'Requirements (Must) cannot be empty or None',
+        });
+      } else {
+        for (const line of rawLines) {
+          // Reject numbered lists, plain paragraphs, or non-bullet lines
+          if (!line.startsWith('- ') && !line.startsWith('* ')) {
+            issues.push({
+              code: 'CANONICAL_GRAMMAR_ERROR',
+              section: sec.id,
+              header: sec.header,
+              message: `Must requirement item must start with bullet "- ": "${line}"`,
+            });
+            continue;
+          }
+          const bulletBody = line.replace(/^[-*]\s*/, '').trim();
+          if (isCanonicalNone(bulletBody)) {
+            issues.push({
+              code: 'CANONICAL_GRAMMAR_ERROR',
+              section: sec.id,
+              header: sec.header,
+              message: 'Requirements (Must) cannot contain None',
+            });
+            continue;
+          }
+          const match = bulletBody.match(/^\[(IDEA-REQ-\d+)\]\s+(.+)$/i);
+          if (!match) {
+            issues.push({
+              code: 'CANONICAL_GRAMMAR_ERROR',
+              section: sec.id,
+              header: sec.header,
+              message: `Must requirement line must strictly match "- [IDEA-REQ-xxx] <statement>": "${line}"`,
+            });
+            continue;
+          }
+          const reqId = match[1].toUpperCase();
+          const statement = match[2].trim();
+          // Check for multiple candidate tags on same line
+          if (/\[IDEA-REQ-\d+\]/gi.test(statement)) {
+            issues.push({
+              code: 'MULTIPLE_REQUIREMENT_REFERENCES',
+              section: sec.id,
+              header: sec.header,
+              message: `Must requirement line contains multiple candidate IDs: "${line}"`,
+            });
+            continue;
+          }
+          parsedMustItems.push({ id: reqId, statement, rawLine: line });
+        }
+      }
+    }
+
+    // Canonical item grammar validation for Open Questions
+    if (sec.id === 'openQuestions') {
+      const rawLines = content.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      if (rawLines.length > 0 && !isCanonicalNone(content)) {
+        let hasNone = false;
+        let hasReal = false;
+        for (const line of rawLines) {
+          if (!line.startsWith('- ') && !line.startsWith('* ')) {
+            issues.push({
+              code: 'CANONICAL_GRAMMAR_ERROR',
+              section: sec.id,
+              header: sec.header,
+              message: `Open question item must start with bullet "- ": "${line}"`,
+            });
+            continue;
+          }
+          const bulletBody = line.replace(/^[-*]\s*/, '').trim();
+          if (isCanonicalNone(bulletBody)) {
+            hasNone = true;
+            continue;
+          }
+          hasReal = true;
+          const match = bulletBody.match(/^\[(IDEA-Q-\d+)\]\s+(.+)$/i);
+          if (!match) {
+            issues.push({
+              code: 'CANONICAL_GRAMMAR_ERROR',
+              section: sec.id,
+              header: sec.header,
+              message: `Open question line must strictly match "- [IDEA-Q-xxx] <question>" or "- None": "${line}"`,
+            });
+            continue;
+          }
+          const qId = match[1].toUpperCase();
+          const questionText = match[2].trim();
+          if (/\[IDEA-Q-\d+\]/gi.test(questionText)) {
+            issues.push({
+              code: 'MULTIPLE_QUESTION_REFERENCES',
+              section: sec.id,
+              header: sec.header,
+              message: `Open question line contains multiple question IDs: "${line}"`,
+            });
+            continue;
+          }
+          parsedOpenQuestions.push({ id: qId, question: questionText, rawLine: line });
+        }
+        if (hasNone && hasReal) {
+          issues.push({
+            code: 'CANONICAL_GRAMMAR_ERROR',
+            section: sec.id,
+            header: sec.header,
+            message: 'Open Questions cannot mix "- None" with active question items',
+          });
+        }
+      }
+    }
   }
 
   return {
@@ -261,6 +381,8 @@ export function validateIdeaBriefStructure(markdownText) {
     issues,
     sections: parsed.sections,
     title: parsed.title,
+    parsedMustItems,
+    parsedOpenQuestions,
   };
 }
 

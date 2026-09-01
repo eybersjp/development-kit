@@ -260,8 +260,15 @@ export function registerArtifact({
   revision = 1,
   discoveryRevision = null,
   discoveryFingerprint = null,
+  _allowDirectIdeaBrief = false,
 }) {
   if (key === 'IDEA_BRIEF') {
+    if (!_allowDirectIdeaBrief) {
+      throw new ArtifactRegistryError(
+        'Direct registration of IDEA_BRIEF is prohibited. Use persistCanonicalIdeaBrief or reconcileCanonicalIdeaBrief.',
+        'DK_RAW_REGISTRATION_PROHIBITED'
+      );
+    }
     // Validate that discovery bindings correspond to actual loaded discovery state
     const disc = loadDiscoveryState(rootDir);
     if (discoveryRevision !== null && discoveryRevision !== undefined) {
@@ -323,6 +330,7 @@ export function persistCanonicalIdeaBrief({
     revision: newRevision,
     discoveryRevision: finalDiscRev,
     discoveryFingerprint: finalDiscFp,
+    _allowDirectIdeaBrief: true,
   });
 
   return {
@@ -378,7 +386,8 @@ export function reconcileCanonicalIdeaBrief({
   const finalDiscFp = disc.fingerprint;
 
   const resolved = resolveCanonicalIdeaArtifact(rootDir, { verifyFingerprint: false });
-  const revision = (resolved.registered && resolved.revision) ? resolved.revision : 1;
+  // Monotonic revision increment: reconciliation creates a new artifact revision
+  const newRevision = (resolved.registered && resolved.revision) ? resolved.revision + 1 : 1;
 
   const record = registerArtifact({
     rootDir,
@@ -387,9 +396,10 @@ export function reconcileCanonicalIdeaBrief({
     artifactType: 'idea-brief',
     lifecycleStage: 'UNDERSTAND',
     fingerprint,
-    revision,
+    revision: newRevision,
     discoveryRevision: finalDiscRev,
     discoveryFingerprint: finalDiscFp,
+    _allowDirectIdeaBrief: true,
   });
 
   return {
