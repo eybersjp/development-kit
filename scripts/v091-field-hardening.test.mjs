@@ -11,6 +11,7 @@ import { getProjectBootstrapStatus, bootstrapProject, assertProjectBootstrapped 
 import { resolveScriptPath } from './run.mjs';
 import {
   createPODecision,
+  createSupersedingPODecision,
   persistPODecision,
   loadPODecisionById,
   validatePODecision,
@@ -2341,7 +2342,7 @@ test('Candidate 10 (Defect 3): Structured decisionData cross-check rejects misma
   }
 });
 
-test('Candidate 10 (Defect 4): Repository-wide audit: No fallback synthesis or parameter defaults for PRODUCT_OWNER', () => {
+test('Candidate 10 & 11 (Defect 4): Repository-wide audit: No fallback synthesis or parameter defaults for PRODUCT_OWNER / product-owner', () => {
   const runtimeDir = path.resolve('runtime');
   const scriptsDir = path.resolve('scripts');
 
@@ -2361,13 +2362,13 @@ test('Candidate 10 (Defect 4): Repository-wide audit: No fallback synthesis or p
 
           // Exclude comments, strings, template literals, and error messages
           if (line.trim().startsWith('//') || line.trim().startsWith('*') || line.includes('throw new') || line.includes('Error(')) continue;
-          if (/`[^`]*PRODUCT_OWNER[^`]*`/.test(line)) continue;
+          if (/`[^`]*(?:PRODUCT_OWNER|product-owner)[^`]*`/.test(line)) continue;
 
-          // Check for fallback synthesis e.g. || 'PRODUCT_OWNER' or parameter default = 'PRODUCT_OWNER'
-          if (/\|\|\s*['"]PRODUCT_OWNER['"]/.test(line)) {
+          // Check for fallback synthesis e.g. || 'PRODUCT_OWNER' or || 'product-owner'
+          if (/\|\|\s*['"](?:PRODUCT_OWNER|product-owner)['"]/.test(line)) {
             assert.fail(`Found forbidden fallback synthesis on ${path.relative(process.cwd(), fullPath)}:${i + 1}: ${line}`);
           }
-          if (/\b(?:confirmedBy|resolvedBy|approvingAuthority)\s*=\s*['"]PRODUCT_OWNER['"]/.test(line)) {
+          if (/\b(?:confirmedBy|resolvedBy|approvingAuthority|provenance|status)\s*=\s*['"](?:PRODUCT_OWNER|product-owner|APPROVED)['"]/.test(line)) {
             assert.fail(`Found forbidden parameter default authority on ${path.relative(process.cwd(), fullPath)}:${i + 1}: ${line}`);
           }
         }
@@ -2536,6 +2537,390 @@ test('Candidate 10 (Defect 8): Material requirement supersession requires explic
       });
       assert.equal(superseded.superseded.resolutionState, 'SUPERSEDED');
     }
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+/* ========================================================================= */
+/* CANDIDATE 11 REGRESSION TESTS                                             */
+/* ========================================================================= */
+
+test('Candidate 11 (Defect 1 & 2): Strict POD decisionType enforcement; null or mismatched decisionType fails closed', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Capture inverter DC string voltages.',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    const classified = classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
+      scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+
+    // 1. Generic APPROVED product-owner POD with decisionType = null referenced as scopeDecision -> FAIL
+    const nullTypePod = createPODecision({
+      id: 'POD-NULL-TYPE-001',
+      statement: 'Generic decision without decisionType',
+      status: 'APPROVED',
+      provenance: 'product-owner',
+      decisionType: null,
+      decisionData: null,
+      affectedRequirements: ['IDEA-REQ-001'],
+    });
+    persistPODecision(nullTypePod, tempDir);
+
+    const discPath = path.join(tempDir, '.development-kit', 'idea', 'discovery.json');
+    const disc = loadDiscoveryState(tempDir);
+    disc.requirements[0].scopeDisposition = 'MUST';
+    disc.requirements[0].scopeDecision = {
+      previousDisposition: 'UNCLASSIFIED',
+      disposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
+      decisionId: 'POD-NULL-TYPE-001',
+      decidedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(discPath, JSON.stringify(disc, null, 2), 'utf8');
+
+    assert.throws(() => {
+      loadDiscoveryState(tempDir);
+    }, (err) => err.code === 'DK_DISCOVERY_CORRUPT' && err.message.includes('REQUIREMENT_SCOPE'));
+
+    // 2. QUESTION_SUPERSESSION POD referenced as requirement scope authority -> FAIL
+    const qSuperPod = createPODecision({
+      id: 'POD-Q-SUPER-001',
+      statement: 'Question supersession',
+      status: 'APPROVED',
+      provenance: 'product-owner',
+      decisionType: 'QUESTION_SUPERSESSION',
+      decisionData: { questionId: 'IDEA-Q-001', supersededBy: 'IDEA-Q-002' },
+      affectedRequirements: ['IDEA-REQ-001'],
+    });
+    persistPODecision(qSuperPod, tempDir);
+
+    disc.requirements[0].scopeDecision.decisionId = 'POD-Q-SUPER-001';
+    fs.writeFileSync(discPath, JSON.stringify(disc, null, 2), 'utf8');
+
+    assert.throws(() => {
+      loadDiscoveryState(tempDir);
+    }, (err) => err.code === 'DK_DISCOVERY_CORRUPT' && err.message.includes('REQUIREMENT_SCOPE'));
+
+    // Restore valid state before step 3
+    disc.requirements[0].scopeDecision.decisionId = classified.decisionId;
+    fs.writeFileSync(discPath, JSON.stringify(disc, null, 2), 'utf8');
+
+    // 3. REQUIREMENT_SCOPE POD referenced as requirement supersession authority -> FAIL
+    const scopePod = createPODecision({
+      id: 'POD-REQ-SCOPE-001',
+      statement: 'Scope classified',
+      status: 'APPROVED',
+      provenance: 'product-owner',
+      decisionType: 'REQUIREMENT_SCOPE',
+      decisionData: { requirementId: 'IDEA-REQ-001', previousScope: 'UNCLASSIFIED', newScope: 'MUST' },
+      affectedRequirements: ['IDEA-REQ-001'],
+    });
+    persistPODecision(scopePod, tempDir);
+
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-002',
+      statement: 'Replacement candidate',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'UNRESOLVED',
+    });
+
+    const disc2 = loadDiscoveryState(tempDir);
+    disc2.requirements[0].resolutionState = 'SUPERSEDED';
+    disc2.requirements[0].supersededBy = 'IDEA-REQ-002';
+    disc2.requirements[0].supersessionDecision = {
+      supersededBy: 'IDEA-REQ-002',
+      confirmedBy: 'PRODUCT_OWNER',
+      decisionId: 'POD-REQ-SCOPE-001',
+      decidedAt: new Date().toISOString(),
+    };
+    disc2.requirements[1].supersedes = 'IDEA-REQ-001';
+    fs.writeFileSync(discPath, JSON.stringify(disc2, null, 2), 'utf8');
+
+    assert.throws(() => {
+      loadDiscoveryState(tempDir);
+    }, (err) => err.code === 'DK_DISCOVERY_CORRUPT' && err.message.includes('REQUIREMENT_SUPERSESSION'));
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 11 (Defect 2 & 9): createPODecision requires explicit status and provenance; no fallback synthesis', () => {
+  // 1. Missing provenance throws
+  assert.throws(() => {
+    createPODecision({
+      id: 'POD-TEST-001',
+      statement: 'Test statement',
+      status: 'APPROVED',
+    });
+  }, (err) => err.code === 'DK_POD_INVALID' && err.message.includes('provenance is required'));
+
+  // 2. Missing status throws
+  assert.throws(() => {
+    createPODecision({
+      id: 'POD-TEST-002',
+      statement: 'Test statement',
+      provenance: 'product-owner',
+    });
+  }, (err) => err.code === 'DK_POD_INVALID' && err.message.includes('status is required'));
+
+  // 3. Missing both throws
+  assert.throws(() => {
+    createPODecision({
+      id: 'POD-TEST-003',
+      statement: 'Test statement',
+    });
+  }, (err) => err.code === 'DK_POD_INVALID');
+});
+
+test('Candidate 11 (Defect 3): Material question ANSWERED, DEFERRED, REJECTED require immutable POD evidence', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    // 1. ANSWERED resolution
+    const q1 = recordOpenQuestion(tempDir, {
+      id: 'IDEA-Q-001',
+      question: 'Operating temperature range?',
+      materiality: 'MATERIAL',
+      resolution: 'UNRESOLVED',
+    });
+
+    const ansQ = recordOpenQuestion(tempDir, {
+      id: 'IDEA-Q-001',
+      question: 'Operating temperature range?',
+      materiality: 'MATERIAL',
+      resolution: 'ANSWERED',
+      resolvedBy: 'PRODUCT_OWNER',
+    });
+    assert.equal(ansQ.resolution, 'ANSWERED');
+    assert.ok(ansQ.resolutionDecision.decisionId);
+
+    const ansPod = loadPODecisionById(tempDir, ansQ.resolutionDecision.decisionId);
+    assert.equal(ansPod.decisionType, 'QUESTION_RESOLUTION');
+    assert.equal(ansPod.status, 'APPROVED');
+    assert.equal(ansPod.provenance, 'product-owner');
+    assert.equal(ansPod.decisionData.newResolution, 'ANSWERED');
+
+    // 2. DEFERRED resolution with deferredTarget
+    const defQ = recordOpenQuestion(tempDir, {
+      id: 'IDEA-Q-002',
+      question: 'Future cellular telemetry module?',
+      materiality: 'MATERIAL',
+      resolution: 'DEFERRED',
+      deferredTarget: 'Future Ideas (Explicitly Deferred)',
+      resolvedBy: 'PRODUCT_OWNER',
+    });
+    assert.equal(defQ.resolution, 'DEFERRED');
+    assert.ok(defQ.resolutionDecision.decisionId);
+
+    const defPod = loadPODecisionById(tempDir, defQ.resolutionDecision.decisionId);
+    assert.equal(defPod.decisionType, 'QUESTION_RESOLUTION');
+    assert.equal(defPod.status, 'APPROVED');
+    assert.equal(defPod.decisionData.deferredTarget, 'Future Ideas (Explicitly Deferred)');
+
+    // 3. Direct JSON edit without POD fails on reload
+    const discPath = path.join(tempDir, '.development-kit', 'idea', 'discovery.json');
+    const disc = loadDiscoveryState(tempDir);
+    // Add fake question claiming ANSWERED without resolutionDecision or POD
+    disc.openQuestions.push({
+      id: 'IDEA-Q-003',
+      question: 'Injected question without POD',
+      materiality: 'MATERIAL',
+      resolution: 'ANSWERED',
+      resolvedBy: 'PRODUCT_OWNER',
+      resolutionDecision: null,
+      supersessionDecision: null,
+      supersedes: null,
+      supersededBy: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    fs.writeFileSync(discPath, JSON.stringify(disc, null, 2), 'utf8');
+
+    assert.throws(() => {
+      loadDiscoveryState(tempDir);
+    }, (err) => err.code === 'DK_DISCOVERY_CORRUPT');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 11 (Defect 4): Material requirement AI_PROPOSED, ASSUMED confirmation & RESEARCH_DERIVED adoption require immutable POD evidence', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+
+    // 1. AI_PROPOSED confirmation produces REQUIREMENT_CONFIRMATION POD
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Proposed capability A',
+      materiality: 'MATERIAL',
+      origin: 'AI_PROPOSED',
+      resolutionState: 'UNRESOLVED',
+    });
+
+    const conf1 = recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Proposed capability A',
+      materiality: 'MATERIAL',
+      origin: 'AI_PROPOSED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    assert.ok(conf1.confirmationDecision.decisionId);
+    const pod1 = loadPODecisionById(tempDir, conf1.confirmationDecision.decisionId);
+    assert.equal(pod1.decisionType, 'REQUIREMENT_CONFIRMATION');
+    assert.equal(pod1.status, 'APPROVED');
+    assert.equal(pod1.provenance, 'product-owner');
+    assert.equal(pod1.decisionData.newResolution, 'CONFIRMED');
+
+    // 2. ASSUMED confirmation produces REQUIREMENT_CONFIRMATION POD
+    const conf2 = recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-002',
+      statement: 'Assumed capability B',
+      materiality: 'MATERIAL',
+      origin: 'ASSUMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    assert.ok(conf2.confirmationDecision.decisionId);
+    const pod2 = loadPODecisionById(tempDir, conf2.confirmationDecision.decisionId);
+    assert.equal(pod2.decisionType, 'REQUIREMENT_CONFIRMATION');
+
+    // 3. RESEARCH_DERIVED adoption produces REQUIREMENT_ADOPTION POD
+    const adopt = recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-003',
+      statement: 'Research capability C',
+      materiality: 'MATERIAL',
+      origin: 'RESEARCH_DERIVED',
+      resolutionState: 'ADOPTED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    assert.ok(adopt.confirmationDecision.decisionId);
+    const pod3 = loadPODecisionById(tempDir, adopt.confirmationDecision.decisionId);
+    assert.equal(pod3.decisionType, 'REQUIREMENT_ADOPTION');
+    assert.equal(pod3.status, 'APPROVED');
+    assert.equal(pod3.decisionData.newResolution, 'ADOPTED');
+
+    // 4. Direct JSON edit: AI_PROPOSED UNRESOLVED -> CONFIRMED without matching POD fails on reload
+    const discPath = path.join(tempDir, '.development-kit', 'idea', 'discovery.json');
+    const disc = loadDiscoveryState(tempDir);
+    disc.requirements.push({
+      id: 'IDEA-REQ-004',
+      statement: 'Fabricated confirmation without POD',
+      materiality: 'MATERIAL',
+      origin: 'AI_PROPOSED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'UNCLASSIFIED',
+      linkedPodId: null,
+      confirmationDecision: null,
+      scopeDecision: null,
+      deactivationDecision: null,
+      supersessionDecision: null,
+      supersedes: null,
+      supersededBy: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    fs.writeFileSync(discPath, JSON.stringify(disc, null, 2), 'utf8');
+
+    assert.throws(() => {
+      loadDiscoveryState(tempDir);
+    }, (err) => err.code === 'DK_DISCOVERY_CORRUPT');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 11 (Defect 7): persistDiscoveryState validates complete authority and blocks writing invalid state', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    const state = loadDiscoveryState(tempDir);
+    state.requirements.push({
+      id: 'IDEA-REQ-001',
+      statement: 'Fake requirement with nonexistent POD',
+      materiality: 'MATERIAL',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+      scopeDisposition: 'MUST',
+      scopeDecision: {
+        previousDisposition: 'UNCLASSIFIED',
+        disposition: 'MUST',
+        confirmedBy: 'PRODUCT_OWNER',
+        decisionId: 'POD-NONEXISTENT-999',
+        decidedAt: new Date().toISOString(),
+      },
+      linkedPodId: null,
+      confirmationDecision: null,
+      deactivationDecision: null,
+      supersessionDecision: null,
+      supersedes: null,
+      supersededBy: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    // persistDiscoveryState must throw BEFORE committing to disk
+    assert.throws(() => {
+      persistDiscoveryState(state, tempDir);
+    }, (err) => err.code === 'DK_DISCOVERY_CORRUPT');
+
+    // Confirm file on disk was not corrupted
+    const reloaded = loadDiscoveryState(tempDir);
+    assert.equal(reloaded.requirements.length, 0);
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 11 (Defect 8): Append-only POD supersession creates immutable new record and rejects file overwrite', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    const pod1 = createPODecision({
+      id: 'POD-TEST-001',
+      statement: 'Original architectural decision',
+      status: 'APPROVED',
+      provenance: 'product-owner',
+    });
+    persistPODecision(pod1, tempDir);
+
+    const pod2 = createSupersedingPODecision({
+      originalDecisionId: 'POD-TEST-001',
+      id: 'POD-TEST-002',
+      statement: 'Superseding architectural decision',
+      status: 'APPROVED',
+      provenance: 'product-owner',
+    });
+    assert.equal(pod2.supersedes, 'POD-TEST-001');
+    assert.equal(pod2.id, 'POD-TEST-002');
+    persistPODecision(pod2, tempDir);
+
+    // Original POD remains unchanged on disk
+    const reloadedPod1 = loadPODecisionById(tempDir, 'POD-TEST-001');
+    assert.equal(reloadedPod1.statement, 'Original architectural decision');
+
+    // Attempting to overwrite POD-TEST-001 fails with DK_POD_IMMUTABILITY_VIOLATION
+    const illegalOverwrite = createPODecision({
+      id: 'POD-TEST-001',
+      statement: 'Attempted overwrite of POD-001',
+      status: 'APPROVED',
+      provenance: 'product-owner',
+    });
+    assert.throws(() => {
+      persistPODecision(illegalOverwrite, tempDir);
+    }, (err) => err.code === 'DK_POD_IMMUTABILITY_VIOLATION');
   } finally {
     cleanupTempDir(tempDir);
   }

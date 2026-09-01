@@ -100,6 +100,14 @@ export function computeDiscoveryFingerprint(state) {
       resolutionState: r.resolutionState,
       confirmedBy: r.confirmedBy,
       linkedPodId: r.linkedPodId || null,
+      confirmationDecision: r.confirmationDecision ? {
+        previousResolution: r.confirmationDecision.previousResolution || 'UNRESOLVED',
+        resolutionState: r.confirmationDecision.resolutionState,
+        origin: r.confirmationDecision.origin,
+        confirmedBy: r.confirmationDecision.confirmedBy,
+        decisionId: r.confirmationDecision.decisionId || null,
+        decidedAt: r.confirmationDecision.decidedAt || null,
+      } : null,
       scopeDecision: r.scopeDecision ? {
         previousDisposition: r.scopeDecision.previousDisposition || null,
         disposition: r.scopeDecision.disposition,
@@ -129,6 +137,14 @@ export function computeDiscoveryFingerprint(state) {
       resolution: q.resolution,
       resolvedBy: q.resolvedBy,
       deferredTarget: q.deferredTarget || null,
+      resolutionDecision: q.resolutionDecision ? {
+        previousResolution: q.resolutionDecision.previousResolution || 'UNRESOLVED',
+        resolution: q.resolutionDecision.resolution,
+        resolvedBy: q.resolutionDecision.resolvedBy,
+        decisionId: q.resolutionDecision.decisionId || null,
+        decidedAt: q.resolutionDecision.decidedAt || null,
+        deferredTarget: q.resolutionDecision.deferredTarget || null,
+      } : null,
       supersessionDecision: q.supersessionDecision ? {
         supersededBy: q.supersessionDecision.supersededBy,
         resolvedBy: q.supersessionDecision.resolvedBy,
@@ -205,6 +221,25 @@ export function validateDiscoveryStateStructure(data) {
     // REJECTED cannot carry MUST scope disposition
     if (r.resolutionState === 'REJECTED' && r.scopeDisposition === 'MUST') {
       throw new DiscoveryStateError(`REJECTED requirement ${r.id} cannot have MUST scope disposition`, 'DK_DISCOVERY_CORRUPT');
+    }
+
+    // Persisted confirmation/adoption authority validation for material candidates
+    if (r.materiality === 'MATERIAL' && (r.resolutionState === 'CONFIRMED' || r.resolutionState === 'ADOPTED')) {
+      if (!r.confirmationDecision || typeof r.confirmationDecision !== 'object') {
+        throw new DiscoveryStateError(`Material requirement ${r.id} with state ${r.resolutionState} lacks confirmationDecision authority metadata`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (r.confirmationDecision.confirmedBy !== 'PRODUCT_OWNER') {
+        throw new DiscoveryStateError(`Material requirement ${r.id} confirmationDecision must be confirmedBy PRODUCT_OWNER`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (r.confirmationDecision.resolutionState !== r.resolutionState) {
+        throw new DiscoveryStateError(`Material requirement ${r.id} confirmationDecision resolutionState mismatch`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (!r.confirmationDecision.decisionId || !/^POD-[A-Za-z0-9._-]+$/i.test(r.confirmationDecision.decisionId)) {
+        throw new DiscoveryStateError(`Material requirement ${r.id} confirmationDecision has invalid decisionId`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (!r.confirmationDecision.decidedAt || isNaN(Date.parse(r.confirmationDecision.decidedAt))) {
+        throw new DiscoveryStateError(`Material requirement ${r.id} confirmationDecision has invalid decidedAt timestamp`, 'DK_DISCOVERY_CORRUPT');
+      }
     }
 
     // Persisted scope authority validation for material candidates
@@ -340,6 +375,20 @@ export function validateDiscoveryStateStructure(data) {
     if (q.materiality === 'MATERIAL' && q.resolution !== 'UNRESOLVED' && q.resolution !== 'SUPERSEDED' && q.resolvedBy !== 'PRODUCT_OWNER') {
       throw new DiscoveryStateError(`Material question ${q.id} disposition ${q.resolution} requires explicit resolvedBy = 'PRODUCT_OWNER'`, 'DK_DISCOVERY_CORRUPT');
     }
+    if (q.materiality === 'MATERIAL' && (q.resolution === 'ANSWERED' || q.resolution === 'DEFERRED' || q.resolution === 'REJECTED')) {
+      if (!q.resolutionDecision || q.resolutionDecision.resolvedBy !== 'PRODUCT_OWNER') {
+        throw new DiscoveryStateError(`Material question ${q.id} resolution ${q.resolution} lacks resolutionDecision authority metadata`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (q.resolutionDecision.resolution !== q.resolution) {
+        throw new DiscoveryStateError(`Material question ${q.id} resolutionDecision resolution mismatch`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (!q.resolutionDecision.decisionId || !/^POD-[A-Za-z0-9._-]+$/i.test(q.resolutionDecision.decisionId)) {
+        throw new DiscoveryStateError(`Material question ${q.id} has invalid resolutionDecision decisionId`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (!q.resolutionDecision.decidedAt || isNaN(Date.parse(q.resolutionDecision.decidedAt))) {
+        throw new DiscoveryStateError(`Material question ${q.id} has invalid resolutionDecision decidedAt timestamp`, 'DK_DISCOVERY_CORRUPT');
+      }
+    }
     if (q.materiality === 'MATERIAL' && q.resolution === 'SUPERSEDED') {
       if (!q.supersessionDecision || q.supersessionDecision.resolvedBy !== 'PRODUCT_OWNER') {
         throw new DiscoveryStateError(`Material superseded question ${q.id} lacks valid supersessionDecision authority metadata`, 'DK_DISCOVERY_CORRUPT');
@@ -406,16 +455,55 @@ export function validateDiscoveryStateStructure(data) {
   return true;
 }
 
-export function validateDiscoveryAuthority(rootDir, state) {
+export function validateDiscoveryAuthority(rootDir, state, inMemoryPods = []) {
   if (!state || typeof state !== 'object') return true;
 
+  function resolvePod(decisionId) {
+    const fromMem = inMemoryPods.find((p) => p.id.toUpperCase() === decisionId.toUpperCase());
+    if (fromMem) {
+      validatePODecision(fromMem);
+      return fromMem;
+    }
+    return loadPODecisionById(rootDir, decisionId);
+  }
+
   for (const r of state.requirements || []) {
+    // Confirmation decision
+    if (r.confirmationDecision && r.confirmationDecision.decisionId) {
+      let pod;
+      try {
+        pod = resolvePod(r.confirmationDecision.decisionId);
+      } catch (err) {
+        throw new DiscoveryStateError(`Material requirement ${r.id} references missing or invalid confirmation POD ${r.confirmationDecision.decisionId}: ${err.message}`, 'DK_DISCOVERY_CORRUPT');
+      }
+      const expectedType = r.confirmationDecision.resolutionState === 'ADOPTED' ? 'REQUIREMENT_ADOPTION' : 'REQUIREMENT_CONFIRMATION';
+      if (pod.decisionType !== expectedType) {
+        throw new DiscoveryStateError(`POD ${pod.id} decisionType is ${pod.decisionType}; expected '${expectedType}'`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.provenance !== 'product-owner') {
+        throw new DiscoveryStateError(`POD ${pod.id} provenance is ${pod.provenance}; expected 'product-owner'`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.status !== 'APPROVED') {
+        throw new DiscoveryStateError(`POD ${pod.id} status is ${pod.status}; expected 'APPROVED'`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (!pod.affectedRequirements || !pod.affectedRequirements.includes(r.id)) {
+        throw new DiscoveryStateError(`POD ${pod.id} does not affect requirement ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (!pod.decisionData || pod.decisionData.requirementId !== r.id || pod.decisionData.newResolution !== r.confirmationDecision.resolutionState) {
+        throw new DiscoveryStateError(`POD ${pod.id} decisionData does not match requirement confirmation on ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+      }
+    }
+
+    // Scope decision
     if (r.scopeDecision && r.scopeDecision.decisionId) {
       let pod;
       try {
-        pod = loadPODecisionById(rootDir, r.scopeDecision.decisionId);
+        pod = resolvePod(r.scopeDecision.decisionId);
       } catch (err) {
         throw new DiscoveryStateError(`Material requirement ${r.id} references missing or invalid POD ${r.scopeDecision.decisionId}: ${err.message}`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.decisionType !== 'REQUIREMENT_SCOPE') {
+        throw new DiscoveryStateError(`POD ${pod.id} decisionType is ${pod.decisionType}; expected 'REQUIREMENT_SCOPE'`, 'DK_DISCOVERY_CORRUPT');
       }
       if (pod.provenance !== 'product-owner') {
         throw new DiscoveryStateError(`POD ${pod.id} provenance is ${pod.provenance}; expected 'product-owner'`, 'DK_DISCOVERY_CORRUPT');
@@ -426,19 +514,21 @@ export function validateDiscoveryAuthority(rootDir, state) {
       if (!pod.affectedRequirements || !pod.affectedRequirements.includes(r.id)) {
         throw new DiscoveryStateError(`POD ${pod.id} does not affect requirement ${r.id}`, 'DK_DISCOVERY_CORRUPT');
       }
-      if (pod.decisionType === 'REQUIREMENT_SCOPE') {
-        if (!pod.decisionData || pod.decisionData.requirementId !== r.id || pod.decisionData.newScope !== r.scopeDecision.disposition) {
-          throw new DiscoveryStateError(`POD ${pod.id} decisionData does not match scope decision on ${r.id}`, 'DK_DISCOVERY_CORRUPT');
-        }
+      if (!pod.decisionData || pod.decisionData.requirementId !== r.id || pod.decisionData.newScope !== r.scopeDecision.disposition) {
+        throw new DiscoveryStateError(`POD ${pod.id} decisionData does not match scope decision on ${r.id}`, 'DK_DISCOVERY_CORRUPT');
       }
     }
 
+    // Deactivation decision
     if (r.deactivationDecision && r.deactivationDecision.decisionId) {
       let pod;
       try {
-        pod = loadPODecisionById(rootDir, r.deactivationDecision.decisionId);
+        pod = resolvePod(r.deactivationDecision.decisionId);
       } catch (err) {
         throw new DiscoveryStateError(`Material requirement ${r.id} references missing or invalid rejection POD ${r.deactivationDecision.decisionId}: ${err.message}`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.decisionType !== 'REQUIREMENT_REJECTION') {
+        throw new DiscoveryStateError(`POD ${pod.id} decisionType is ${pod.decisionType}; expected 'REQUIREMENT_REJECTION'`, 'DK_DISCOVERY_CORRUPT');
       }
       if (pod.provenance !== 'product-owner') {
         throw new DiscoveryStateError(`POD ${pod.id} provenance is ${pod.provenance}; expected 'product-owner'`, 'DK_DISCOVERY_CORRUPT');
@@ -449,19 +539,21 @@ export function validateDiscoveryAuthority(rootDir, state) {
       if (!pod.affectedRequirements || !pod.affectedRequirements.includes(r.id)) {
         throw new DiscoveryStateError(`POD ${pod.id} does not affect requirement ${r.id}`, 'DK_DISCOVERY_CORRUPT');
       }
-      if (pod.decisionType === 'REQUIREMENT_REJECTION') {
-        if (!pod.decisionData || pod.decisionData.requirementId !== r.id) {
-          throw new DiscoveryStateError(`POD ${pod.id} decisionData does not match requirement rejection on ${r.id}`, 'DK_DISCOVERY_CORRUPT');
-        }
+      if (!pod.decisionData || pod.decisionData.requirementId !== r.id) {
+        throw new DiscoveryStateError(`POD ${pod.id} decisionData does not match requirement rejection on ${r.id}`, 'DK_DISCOVERY_CORRUPT');
       }
     }
 
+    // Supersession decision
     if (r.supersessionDecision && r.supersessionDecision.decisionId) {
       let pod;
       try {
-        pod = loadPODecisionById(rootDir, r.supersessionDecision.decisionId);
+        pod = resolvePod(r.supersessionDecision.decisionId);
       } catch (err) {
         throw new DiscoveryStateError(`Material requirement ${r.id} references missing or invalid supersession POD ${r.supersessionDecision.decisionId}: ${err.message}`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.decisionType !== 'REQUIREMENT_SUPERSESSION') {
+        throw new DiscoveryStateError(`POD ${pod.id} decisionType is ${pod.decisionType}; expected 'REQUIREMENT_SUPERSESSION'`, 'DK_DISCOVERY_CORRUPT');
       }
       if (pod.provenance !== 'product-owner') {
         throw new DiscoveryStateError(`POD ${pod.id} provenance is ${pod.provenance}; expected 'product-owner'`, 'DK_DISCOVERY_CORRUPT');
@@ -472,21 +564,49 @@ export function validateDiscoveryAuthority(rootDir, state) {
       if (!pod.affectedRequirements || !pod.affectedRequirements.includes(r.id)) {
         throw new DiscoveryStateError(`POD ${pod.id} does not affect requirement ${r.id}`, 'DK_DISCOVERY_CORRUPT');
       }
-      if (pod.decisionType === 'REQUIREMENT_SUPERSESSION') {
-        if (!pod.decisionData || pod.decisionData.requirementId !== r.id || pod.decisionData.supersededBy !== r.supersededBy) {
-          throw new DiscoveryStateError(`POD ${pod.id} decisionData does not match requirement supersession on ${r.id}`, 'DK_DISCOVERY_CORRUPT');
-        }
+      if (!pod.decisionData || pod.decisionData.requirementId !== r.id || pod.decisionData.supersededBy !== r.supersededBy) {
+        throw new DiscoveryStateError(`POD ${pod.id} decisionData does not match requirement supersession on ${r.id}`, 'DK_DISCOVERY_CORRUPT');
       }
     }
   }
 
   for (const q of state.openQuestions || []) {
+    // Resolution decision
+    if (q.resolutionDecision && q.resolutionDecision.decisionId) {
+      let pod;
+      try {
+        pod = resolvePod(q.resolutionDecision.decisionId);
+      } catch (err) {
+        throw new DiscoveryStateError(`Material question ${q.id} references missing or invalid resolution POD ${q.resolutionDecision.decisionId}: ${err.message}`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.decisionType !== 'QUESTION_RESOLUTION') {
+        throw new DiscoveryStateError(`POD ${pod.id} decisionType is ${pod.decisionType}; expected 'QUESTION_RESOLUTION'`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.provenance !== 'product-owner') {
+        throw new DiscoveryStateError(`POD ${pod.id} provenance is ${pod.provenance}; expected 'product-owner'`, 'DK_DISCOVERY_CORRUPT');
+      }
+      const expectedStatus = q.resolution === 'REJECTED' ? 'REJECTED' : 'APPROVED';
+      if (pod.status !== expectedStatus) {
+        throw new DiscoveryStateError(`POD ${pod.id} status is ${pod.status}; expected '${expectedStatus}'`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (!pod.decisionData || pod.decisionData.questionId !== q.id || pod.decisionData.newResolution !== q.resolution) {
+        throw new DiscoveryStateError(`POD ${pod.id} decisionData does not match question resolution on ${q.id}`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (q.resolution === 'DEFERRED' && pod.decisionData.deferredTarget !== q.resolutionDecision.deferredTarget) {
+        throw new DiscoveryStateError(`POD ${pod.id} decisionData deferredTarget does not match question ${q.id}`, 'DK_DISCOVERY_CORRUPT');
+      }
+    }
+
+    // Supersession decision
     if (q.supersessionDecision && q.supersessionDecision.decisionId) {
       let pod;
       try {
-        pod = loadPODecisionById(rootDir, q.supersessionDecision.decisionId);
+        pod = resolvePod(q.supersessionDecision.decisionId);
       } catch (err) {
         throw new DiscoveryStateError(`Material question ${q.id} references missing or invalid supersession POD ${q.supersessionDecision.decisionId}: ${err.message}`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.decisionType !== 'QUESTION_SUPERSESSION') {
+        throw new DiscoveryStateError(`POD ${pod.id} decisionType is ${pod.decisionType}; expected 'QUESTION_SUPERSESSION'`, 'DK_DISCOVERY_CORRUPT');
       }
       if (pod.provenance !== 'product-owner') {
         throw new DiscoveryStateError(`POD ${pod.id} provenance is ${pod.provenance}; expected 'product-owner'`, 'DK_DISCOVERY_CORRUPT');
@@ -494,10 +614,8 @@ export function validateDiscoveryAuthority(rootDir, state) {
       if (pod.status !== 'APPROVED') {
         throw new DiscoveryStateError(`POD ${pod.id} status is ${pod.status}; expected 'APPROVED' for question supersession`, 'DK_DISCOVERY_CORRUPT');
       }
-      if (pod.decisionType === 'QUESTION_SUPERSESSION') {
-        if (!pod.decisionData || pod.decisionData.questionId !== q.id || pod.decisionData.supersededBy !== q.supersededBy) {
-          throw new DiscoveryStateError(`POD ${pod.id} decisionData does not match question supersession on ${q.id}`, 'DK_DISCOVERY_CORRUPT');
-        }
+      if (!pod.decisionData || pod.decisionData.questionId !== q.id || pod.decisionData.supersededBy !== q.supersededBy) {
+        throw new DiscoveryStateError(`POD ${pod.id} decisionData does not match question supersession on ${q.id}`, 'DK_DISCOVERY_CORRUPT');
       }
     }
   }
@@ -530,9 +648,10 @@ export function loadDiscoveryState(rootDir = process.cwd()) {
   }
 }
 
-export function persistDiscoveryState(state, rootDir = process.cwd()) {
-  // Always validate complete state before writing to disk
+export function persistDiscoveryState(state, rootDir = process.cwd(), { inMemoryPods = [] } = {}) {
+  // Always validate complete structural and authority state before writing to disk
   validateDiscoveryStateStructure(state);
+  validateDiscoveryAuthority(rootDir, state, inMemoryPods);
 
   const dir = getDiscoveryDir(rootDir);
   if (!fs.existsSync(dir)) {
@@ -612,7 +731,9 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
   let finalScope;
   let scopeDecision = null;
   let deactivationDecision = null;
+  let confirmationDecision = null;
   let createdPod = null;
+  const now = new Date().toISOString();
 
   if (existingIdx >= 0) {
     const existing = state.requirements[existingIdx];
@@ -647,10 +768,39 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
     finalScope = existingScope;
     scopeDecision = existing.scopeDecision || null;
     deactivationDecision = existing.deactivationDecision || null;
+    confirmationDecision = existing.confirmationDecision || null;
 
     // Table-driven legal state-transition validation
     if (!isValidRequirementTransition(existing.resolutionState, resolutionState)) {
       throw new DiscoveryStateError(`Candidate ${id} resolution transition from ${existing.resolutionState} to ${resolutionState} is illegal`, 'DK_ILLEGAL_STATE_TRANSITION');
+    }
+
+    // Material confirmation / adoption creates POD
+    if (existing.materiality === 'MATERIAL' && (resolutionState === 'CONFIRMED' || resolutionState === 'ADOPTED')) {
+      const podType = resolutionState === 'ADOPTED' ? 'REQUIREMENT_ADOPTION' : 'REQUIREMENT_CONFIRMATION';
+      const podId = `POD-${id}-${resolutionState}-${String((state.revision || 0) + 1).padStart(3, '0')}`;
+      createdPod = createPODecision({
+        id: podId,
+        statement: podStatement || `${resolutionState} requirement ${id}`,
+        status: 'APPROVED',
+        provenance: 'product-owner',
+        decisionType: podType,
+        decisionData: {
+          requirementId: id,
+          origin: existing.origin,
+          previousResolution: existing.resolutionState,
+          newResolution: resolutionState,
+        },
+        affectedRequirements: [id],
+      });
+      confirmationDecision = {
+        previousResolution: existing.resolutionState,
+        resolutionState,
+        origin: existing.origin,
+        confirmedBy: 'PRODUCT_OWNER',
+        decisionId: podId,
+        decidedAt: now,
+      };
     }
 
     // Material deactivation / rejection requires PRODUCT_OWNER authority & POD evidence
@@ -672,7 +822,7 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
         resolutionState: 'REJECTED',
         confirmedBy: 'PRODUCT_OWNER',
         decisionId: podId,
-        decidedAt: new Date().toISOString(),
+        decidedAt: now,
       };
     } else if (existing.materiality === 'MATERIAL' && resolutionState === 'DEFERRED' && confirmedBy !== 'PRODUCT_OWNER') {
       throw new DiscoveryStateError(`Deferring material requirement ${id} requires explicit confirmedBy = 'PRODUCT_OWNER'`, 'DK_UNAUTHORIZED_DEACTIVATION');
@@ -689,22 +839,35 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
         throw new DiscoveryStateError(`Initial material candidate ${id} must be UNCLASSIFIED on creation (got ${scopeDisposition}). Use classifyRequirementScope to set scope.`, 'DK_MATERIAL_SCOPE_REQUIRES_CLASSIFICATION');
       }
       finalScope = 'UNCLASSIFIED';
+      if (resolutionState === 'CONFIRMED' || resolutionState === 'ADOPTED') {
+        const podType = resolutionState === 'ADOPTED' ? 'REQUIREMENT_ADOPTION' : 'REQUIREMENT_CONFIRMATION';
+        const podId = `POD-${id}-${resolutionState}-${String((state.revision || 0) + 1).padStart(3, '0')}`;
+        createdPod = createPODecision({
+          id: podId,
+          statement: podStatement || `${resolutionState} requirement ${id}`,
+          status: 'APPROVED',
+          provenance: 'product-owner',
+          decisionType: podType,
+          decisionData: {
+            requirementId: id,
+            origin,
+            previousResolution: 'UNRESOLVED',
+            newResolution: resolutionState,
+          },
+          affectedRequirements: [id],
+        });
+        confirmationDecision = {
+          previousResolution: 'UNRESOLVED',
+          resolutionState,
+          origin,
+          confirmedBy: 'PRODUCT_OWNER',
+          decisionId: podId,
+          decidedAt: now,
+        };
+      }
     } else {
       finalScope = scopeDisposition || 'UNCLASSIFIED';
     }
-  }
-
-  let linkedPodId = null;
-  if (createPod && (resolutionState === 'CONFIRMED' || resolutionState === 'ADOPTED') && confirmedBy === 'PRODUCT_OWNER') {
-    const podId = `POD-${id}`;
-    createdPod = createPODecision({
-      id: podId,
-      statement: podStatement || statement,
-      status: 'APPROVED',
-      provenance: 'product-owner',
-      affectedRequirements: [id],
-    });
-    linkedPodId = podId;
   }
 
   const reqObj = {
@@ -715,14 +878,15 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
     origin,
     resolutionState,
     confirmedBy: (resolutionState === 'CONFIRMED' || resolutionState === 'ADOPTED' || resolutionState === 'REJECTED') ? confirmedBy : null,
-    linkedPodId: linkedPodId || (createdPod ? createdPod.id : (existingIdx >= 0 ? state.requirements[existingIdx].linkedPodId : null)),
+    linkedPodId: createdPod ? createdPod.id : (existingIdx >= 0 ? state.requirements[existingIdx].linkedPodId : null),
+    confirmationDecision,
     scopeDecision,
     deactivationDecision,
     supersessionDecision: existingIdx >= 0 ? state.requirements[existingIdx].supersessionDecision : null,
     supersedes: existingIdx >= 0 ? state.requirements[existingIdx].supersedes : null,
     supersededBy: existingIdx >= 0 ? state.requirements[existingIdx].supersededBy : null,
-    createdAt: existingIdx >= 0 ? state.requirements[existingIdx].createdAt : new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: existingIdx >= 0 ? state.requirements[existingIdx].createdAt : now,
+    updatedAt: now,
   };
 
   const nextRequirements = [...state.requirements];
@@ -738,13 +902,16 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
     revision: (state.revision || 0) + 1,
   };
 
-  // Atomic complete validation BEFORE writing POD or state to disk
+  // Phase 1: Validate proposed state against in-memory PODs BEFORE disk writes
   validateDiscoveryStateStructure(proposedState);
+  validateDiscoveryAuthority(rootDir, proposedState, [createdPod].filter(Boolean));
 
+  // Phase 2: Persist POD after validation
   if (createdPod) {
     persistPODecision(createdPod, rootDir);
   }
 
+  // Phase 3: Persist discovery state
   persistDiscoveryState(proposedState, rootDir);
   return reqObj;
 }
@@ -823,7 +990,35 @@ export function supersedeRequirementCandidate(rootDir = process.cwd(), oldId, ne
     };
   }
 
-  // Phase 1: Construct proposed state WITHOUT disk side effects
+  let createdNewPod = null;
+  let newConfirmationDecision = null;
+  if (newMateriality === 'MATERIAL' && (newResolution === 'CONFIRMED' || newResolution === 'ADOPTED') && newConfirmedBy === 'PRODUCT_OWNER') {
+    const podType = newResolution === 'ADOPTED' ? 'REQUIREMENT_ADOPTION' : 'REQUIREMENT_CONFIRMATION';
+    const podId = `POD-${newId}-${newResolution}-${String((state.revision || 0) + 1).padStart(3, '0')}`;
+    createdNewPod = createPODecision({
+      id: podId,
+      statement: newCandidateData.podStatement || `${newResolution} requirement ${newId}`,
+      status: 'APPROVED',
+      provenance: 'product-owner',
+      decisionType: podType,
+      decisionData: {
+        requirementId: newId,
+        origin: newOrigin,
+        previousResolution: 'UNRESOLVED',
+        newResolution,
+      },
+      affectedRequirements: [newId],
+    });
+    newConfirmationDecision = {
+      previousResolution: 'UNRESOLVED',
+      resolutionState: newResolution,
+      origin: newOrigin,
+      confirmedBy: 'PRODUCT_OWNER',
+      decisionId: podId,
+      decidedAt: now,
+    };
+  }
+
   const updatedOld = {
     ...oldReq,
     resolutionState: 'SUPERSEDED',
@@ -833,20 +1028,6 @@ export function supersedeRequirementCandidate(rootDir = process.cwd(), oldId, ne
     updatedAt: now,
   };
 
-  let createdNewPod = null;
-  let newLinkedPodId = null;
-  if (newCandidateData.createPod && (newResolution === 'CONFIRMED' || newResolution === 'ADOPTED') && newConfirmedBy === 'PRODUCT_OWNER') {
-    const podId = `POD-${newId}`;
-    createdNewPod = createPODecision({
-      id: podId,
-      statement: newCandidateData.podStatement || newStatement,
-      status: 'APPROVED',
-      provenance: 'product-owner',
-      affectedRequirements: [newId],
-    });
-    newLinkedPodId = podId;
-  }
-
   const newReq = {
     id: newId,
     statement: newStatement.trim(),
@@ -855,7 +1036,8 @@ export function supersedeRequirementCandidate(rootDir = process.cwd(), oldId, ne
     origin: newOrigin,
     resolutionState: newResolution,
     confirmedBy: (newResolution === 'CONFIRMED' || newResolution === 'ADOPTED') ? newConfirmedBy : null,
-    linkedPodId: newLinkedPodId,
+    linkedPodId: createdNewPod ? createdNewPod.id : null,
+    confirmationDecision: newConfirmationDecision,
     scopeDecision: null,
     deactivationDecision: null,
     supersessionDecision: null,
@@ -875,10 +1057,13 @@ export function supersedeRequirementCandidate(rootDir = process.cwd(), oldId, ne
     revision: (state.revision || 0) + 1,
   };
 
-  // Phase 2: Validate entire proposed state structure BEFORE any POD side effects
-  validateDiscoveryStateStructure(proposedStateCheck);
+  const inMemoryPods = [createdSupersedePod, createdNewPod].filter(Boolean);
 
-  // Phase 3: Persist PODs only after successful validation
+  // Phase 1: Validate entire proposed state structure and authority BEFORE any POD side effects
+  validateDiscoveryStateStructure(proposedStateCheck);
+  validateDiscoveryAuthority(rootDir, proposedStateCheck, inMemoryPods);
+
+  // Phase 2: Persist PODs only after successful validation
   if (createdSupersedePod) {
     persistPODecision(createdSupersedePod, rootDir);
   }
@@ -886,7 +1071,7 @@ export function supersedeRequirementCandidate(rootDir = process.cwd(), oldId, ne
     persistPODecision(createdNewPod, rootDir);
   }
 
-  // Phase 4: Persist final state
+  // Phase 3: Persist final state
   persistDiscoveryState(proposedStateCheck, rootDir);
 
   return {
@@ -903,6 +1088,7 @@ export function recordOpenQuestion(rootDir = process.cwd(), {
   deferredTarget = null,
   resolvedBy = null,
   notes = null,
+  podStatement = null,
 } = {}) {
   if (!id || !/^IDEA-Q-\d+$/i.test(id)) {
     throw new DiscoveryStateError(`Invalid question ID: ${id}. Must match IDEA-Q-xxx`, 'DK_INVALID_QUESTION_ID');
@@ -931,6 +1117,10 @@ export function recordOpenQuestion(rootDir = process.cwd(), {
 
   const state = loadDiscoveryState(rootDir);
   const existingIdx = state.openQuestions.findIndex((q) => q.id.toUpperCase() === id.toUpperCase());
+  const now = new Date().toISOString();
+
+  let createdPod = null;
+  let resolutionDecision = null;
 
   if (existingIdx >= 0) {
     const existing = state.openQuestions[existingIdx];
@@ -950,9 +1140,63 @@ export function recordOpenQuestion(rootDir = process.cwd(), {
     if (!isValidQuestionTransition(existing.resolution, resolution)) {
       throw new DiscoveryStateError(`Question ${id} transition from ${existing.resolution} to ${resolution} is illegal`, 'DK_ILLEGAL_STATE_TRANSITION');
     }
+    resolutionDecision = existing.resolutionDecision || null;
+
+    if (existing.materiality === 'MATERIAL' && (resolution === 'ANSWERED' || resolution === 'DEFERRED' || resolution === 'REJECTED')) {
+      const podId = `POD-${id}-RES-${String((state.revision || 0) + 1).padStart(3, '0')}`;
+      const defTarget = resolution === 'DEFERRED' ? (deferredTarget || 'Future Ideas (Explicitly Deferred)') : null;
+      createdPod = createPODecision({
+        id: podId,
+        statement: podStatement || `${resolution} question ${id}`,
+        status: resolution === 'REJECTED' ? 'REJECTED' : 'APPROVED',
+        provenance: 'product-owner',
+        decisionType: 'QUESTION_RESOLUTION',
+        decisionData: {
+          questionId: id,
+          previousResolution: existing.resolution,
+          newResolution: resolution,
+          deferredTarget: defTarget,
+        },
+        affectedRequirements: [],
+      });
+      resolutionDecision = {
+        previousResolution: existing.resolution,
+        resolution,
+        resolvedBy: 'PRODUCT_OWNER',
+        decisionId: podId,
+        decidedAt: now,
+        deferredTarget: defTarget,
+      };
+    }
   } else {
     if (resolution === 'REJECTED') {
       throw new DiscoveryStateError(`New question ${id} cannot be directly created as REJECTED. Record as UNRESOLVED first.`, 'DK_ILLEGAL_STATE_TRANSITION');
+    }
+    if (materiality === 'MATERIAL' && (resolution === 'ANSWERED' || resolution === 'DEFERRED')) {
+      const podId = `POD-${id}-RES-${String((state.revision || 0) + 1).padStart(3, '0')}`;
+      const defTarget = resolution === 'DEFERRED' ? (deferredTarget || 'Future Ideas (Explicitly Deferred)') : null;
+      createdPod = createPODecision({
+        id: podId,
+        statement: podStatement || `${resolution} question ${id}`,
+        status: 'APPROVED',
+        provenance: 'product-owner',
+        decisionType: 'QUESTION_RESOLUTION',
+        decisionData: {
+          questionId: id,
+          previousResolution: 'UNRESOLVED',
+          newResolution: resolution,
+          deferredTarget: defTarget,
+        },
+        affectedRequirements: [],
+      });
+      resolutionDecision = {
+        previousResolution: 'UNRESOLVED',
+        resolution,
+        resolvedBy: 'PRODUCT_OWNER',
+        decisionId: podId,
+        decidedAt: now,
+        deferredTarget: defTarget,
+      };
     }
   }
 
@@ -964,11 +1208,12 @@ export function recordOpenQuestion(rootDir = process.cwd(), {
     deferredTarget: resolution === 'DEFERRED' ? (deferredTarget || 'Future Ideas (Explicitly Deferred)') : null,
     resolvedBy: resolution !== 'UNRESOLVED' ? resolvedBy : null,
     notes,
+    resolutionDecision,
     supersessionDecision: existingIdx >= 0 ? state.openQuestions[existingIdx].supersessionDecision : null,
     supersedes: existingIdx >= 0 ? state.openQuestions[existingIdx].supersedes : null,
     supersededBy: existingIdx >= 0 ? state.openQuestions[existingIdx].supersededBy : null,
-    createdAt: existingIdx >= 0 ? state.openQuestions[existingIdx].createdAt : new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: existingIdx >= 0 ? state.openQuestions[existingIdx].createdAt : now,
+    updatedAt: now,
   };
 
   const nextQuestions = [...state.openQuestions];
@@ -983,6 +1228,14 @@ export function recordOpenQuestion(rootDir = process.cwd(), {
     openQuestions: nextQuestions,
     revision: (state.revision || 0) + 1,
   };
+
+  const inMemoryPods = [createdPod].filter(Boolean);
+  validateDiscoveryStateStructure(proposedState);
+  validateDiscoveryAuthority(rootDir, proposedState, inMemoryPods);
+
+  if (createdPod) {
+    persistPODecision(createdPod, rootDir);
+  }
 
   persistDiscoveryState(proposedState, rootDir);
   return qObj;
@@ -1073,6 +1326,7 @@ export function supersedeOpenQuestion(rootDir = process.cwd(), oldId, newQuestio
     deferredTarget: newResolution === 'DEFERRED' ? (newQuestionData.deferredTarget || 'Future Ideas (Explicitly Deferred)') : null,
     resolvedBy: newResolution !== 'UNRESOLVED' ? newResolvedBy : null,
     notes: newQuestionData.notes || null,
+    resolutionDecision: null,
     supersessionDecision: null,
     supersedes: oldId,
     supersededBy: null,
@@ -1090,8 +1344,11 @@ export function supersedeOpenQuestion(rootDir = process.cwd(), oldId, newQuestio
     revision: (state.revision || 0) + 1,
   };
 
-  // Validate proposed state before writing POD
+  const inMemoryPods = [createdSupersedePod].filter(Boolean);
+
+  // Validate proposed state structure and authority before writing POD
   validateDiscoveryStateStructure(proposedStateCheck);
+  validateDiscoveryAuthority(rootDir, proposedStateCheck, inMemoryPods);
 
   if (createdSupersedePod) {
     persistPODecision(createdSupersedePod, rootDir);
@@ -1259,7 +1516,7 @@ export function classifyRequirementScope(rootDir = process.cwd(), {
     scopeDecision = {
       previousDisposition: oldScope,
       disposition: scopeDisposition,
-      confirmedBy: confirmedBy,
+      confirmedBy,
       decisionId: podId,
       decidedAt: now,
     };
@@ -1290,8 +1547,11 @@ export function classifyRequirementScope(rootDir = process.cwd(), {
     revision: (state.revision || 0) + 1,
   };
 
-  // Phase 1: Validate entire proposed state structure BEFORE writing POD or file to disk
+  const inMemoryPods = [createdPod].filter(Boolean);
+
+  // Phase 1: Validate entire proposed state structure and authority BEFORE writing POD or file to disk
   validateDiscoveryStateStructure(proposedState);
+  validateDiscoveryAuthority(rootDir, proposedState, inMemoryPods);
 
   // Phase 2: Persist POD after validation
   if (createdPod) {

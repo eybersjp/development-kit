@@ -4,6 +4,16 @@ import { createHash } from 'node:crypto';
 
 export const POD_SCHEMA_VERSION = '1.0.0';
 
+export const VALID_POD_DECISION_TYPES = Object.freeze([
+  'REQUIREMENT_SCOPE',
+  'REQUIREMENT_REJECTION',
+  'REQUIREMENT_SUPERSESSION',
+  'REQUIREMENT_CONFIRMATION',
+  'REQUIREMENT_ADOPTION',
+  'QUESTION_SUPERSESSION',
+  'QUESTION_RESOLUTION',
+]);
+
 export class PODecisionError extends Error {
   constructor(message, code = 'DK_POD_ERROR', details = null) {
     super(message);
@@ -63,31 +73,51 @@ export function validatePODecision(decision) {
     throw new PODecisionError('Decision statement is required', 'DK_POD_INVALID');
   }
 
-  if (!['APPROVED', 'SUPERSEDED', 'REJECTED', 'PROPOSED'].includes(decision.status)) {
-    throw new PODecisionError(`Unsupported decision status: ${decision.status}`, 'DK_POD_INVALID');
+  if (!decision.status || !['APPROVED', 'SUPERSEDED', 'REJECTED', 'PROPOSED'].includes(decision.status)) {
+    throw new PODecisionError(`Invalid or missing decision status: ${decision.status}`, 'DK_POD_INVALID');
   }
 
-  if (decision.provenance !== 'product-owner') {
-    throw new PODecisionError(`Invalid decision provenance: ${decision.provenance}. Must be 'product-owner'`, 'DK_POD_INVALID');
+  if (!decision.provenance || decision.provenance !== 'product-owner') {
+    throw new PODecisionError(`Invalid or missing decision provenance: ${decision.provenance}. Must be 'product-owner'`, 'DK_POD_INVALID');
   }
 
-  if (decision.createdAt && isNaN(Date.parse(decision.createdAt))) {
-    throw new PODecisionError(`Invalid createdAt timestamp: ${decision.createdAt}`, 'DK_POD_INVALID');
+  if (!decision.createdAt || typeof decision.createdAt !== 'string' || isNaN(Date.parse(decision.createdAt))) {
+    throw new PODecisionError(`Invalid or missing createdAt timestamp: ${decision.createdAt}`, 'DK_POD_INVALID');
   }
 
   if (decision.decisionType !== undefined && decision.decisionType !== null) {
-    const validTypes = [
-      'REQUIREMENT_SCOPE',
-      'REQUIREMENT_REJECTION',
-      'REQUIREMENT_SUPERSESSION',
-      'QUESTION_SUPERSESSION',
-      'QUESTION_RESOLUTION',
-    ];
-    if (!validTypes.includes(decision.decisionType)) {
+    if (!VALID_POD_DECISION_TYPES.includes(decision.decisionType)) {
       throw new PODecisionError(`Invalid decisionType: ${decision.decisionType}`, 'DK_POD_INVALID');
     }
-    if (decision.decisionData !== null && (typeof decision.decisionData !== 'object' || Array.isArray(decision.decisionData))) {
-      throw new PODecisionError('decisionData must be an object when present', 'DK_POD_INVALID');
+    if (!decision.decisionData || typeof decision.decisionData !== 'object' || Array.isArray(decision.decisionData)) {
+      throw new PODecisionError(`decisionData must be a non-null object for decisionType ${decision.decisionType}`, 'DK_POD_INVALID');
+    }
+
+    // Type-specific decisionData validation
+    if (decision.decisionType === 'REQUIREMENT_SCOPE') {
+      if (!decision.decisionData.requirementId || !decision.decisionData.newScope) {
+        throw new PODecisionError('REQUIREMENT_SCOPE decisionData requires requirementId and newScope', 'DK_POD_INVALID');
+      }
+    } else if (decision.decisionType === 'REQUIREMENT_REJECTION') {
+      if (!decision.decisionData.requirementId) {
+        throw new PODecisionError('REQUIREMENT_REJECTION decisionData requires requirementId', 'DK_POD_INVALID');
+      }
+    } else if (decision.decisionType === 'REQUIREMENT_SUPERSESSION') {
+      if (!decision.decisionData.requirementId || !decision.decisionData.supersededBy) {
+        throw new PODecisionError('REQUIREMENT_SUPERSESSION decisionData requires requirementId and supersededBy', 'DK_POD_INVALID');
+      }
+    } else if (decision.decisionType === 'REQUIREMENT_CONFIRMATION' || decision.decisionType === 'REQUIREMENT_ADOPTION') {
+      if (!decision.decisionData.requirementId || !decision.decisionData.newResolution) {
+        throw new PODecisionError(`${decision.decisionType} decisionData requires requirementId and newResolution`, 'DK_POD_INVALID');
+      }
+    } else if (decision.decisionType === 'QUESTION_SUPERSESSION') {
+      if (!decision.decisionData.questionId || !decision.decisionData.supersededBy) {
+        throw new PODecisionError('QUESTION_SUPERSESSION decisionData requires questionId and supersededBy', 'DK_POD_INVALID');
+      }
+    } else if (decision.decisionType === 'QUESTION_RESOLUTION') {
+      if (!decision.decisionData.questionId || !decision.decisionData.newResolution) {
+        throw new PODecisionError('QUESTION_RESOLUTION decisionData requires questionId and newResolution', 'DK_POD_INVALID');
+      }
     }
   }
 
@@ -105,8 +135,8 @@ export function validatePODecision(decision) {
 export function createPODecision({
   id,
   statement,
-  status = 'APPROVED',
-  provenance = 'product-owner',
+  status,
+  provenance,
   decisionType = null,
   decisionData = null,
   supersedes = null,
@@ -116,6 +146,19 @@ export function createPODecision({
   affectedDesignDecisions = [],
   createdAt = new Date().toISOString(),
 } = {}) {
+  if (!id || typeof id !== 'string') {
+    throw new PODecisionError('Decision id is required', 'DK_POD_INVALID');
+  }
+  if (!statement || typeof statement !== 'string') {
+    throw new PODecisionError('Decision statement is required', 'DK_POD_INVALID');
+  }
+  if (!status) {
+    throw new PODecisionError('Decision status is required', 'DK_POD_INVALID');
+  }
+  if (!provenance) {
+    throw new PODecisionError('Decision provenance is required', 'DK_POD_INVALID');
+  }
+
   const decision = {
     schemaVersion: POD_SCHEMA_VERSION,
     id: id.trim(),
@@ -138,19 +181,35 @@ export function createPODecision({
   return decision;
 }
 
-export function supersedePODecision(originalDecision, newDecisionId) {
-  validatePODecision(originalDecision);
-  if (originalDecision.status === 'SUPERSEDED') {
-    throw new PODecisionError(`Decision ${originalDecision.id} is already superseded by ${originalDecision.supersededBy}`, 'DK_POD_ALREADY_SUPERSEDED');
+/**
+ * Append-only supersession: creates a new decision record referencing the original.
+ * The original decision record is never mutated or overwritten.
+ */
+export function createSupersedingPODecision({
+  originalDecisionId,
+  id,
+  statement,
+  status,
+  provenance,
+  decisionType = null,
+  decisionData = null,
+  affectedRequirements = [],
+  createdAt = new Date().toISOString(),
+} = {}) {
+  if (!originalDecisionId || typeof originalDecisionId !== 'string') {
+    throw new PODecisionError('originalDecisionId is required for superseding POD', 'DK_POD_INVALID');
   }
-
-  const updated = {
-    ...originalDecision,
-    status: 'SUPERSEDED',
-    supersededBy: newDecisionId.trim(),
-  };
-  updated.fingerprint = computePODecisionFingerprint(updated);
-  return updated;
+  return createPODecision({
+    id,
+    statement,
+    status,
+    provenance,
+    decisionType,
+    decisionData,
+    supersedes: originalDecisionId,
+    affectedRequirements,
+    createdAt,
+  });
 }
 
 export function getPODecisionStorePath(rootDir = process.cwd()) {
