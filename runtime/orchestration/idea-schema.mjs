@@ -162,6 +162,8 @@ export function parseIdeaBriefMarkdown(markdownText) {
 
   const lines = markdownText.split('\n');
   const sections = {};
+  const duplicateSections = [];
+  const unknownSections = [];
   let currentSection = null;
   let currentLines = [];
   let title = null;
@@ -180,8 +182,12 @@ export function parseIdeaBriefMarkdown(markdownText) {
       }
       const matched = IDEA_SECTIONS.find((s) => s.header === trimmed);
       if (matched) {
+        if (sections[matched.id] !== undefined) {
+          duplicateSections.push({ id: matched.id, header: trimmed });
+        }
         currentSection = matched.id;
       } else {
+        unknownSections.push({ header: trimmed });
         currentSection = trimmed.replace('## ', '').trim();
       }
       continue;
@@ -199,6 +205,8 @@ export function parseIdeaBriefMarkdown(markdownText) {
   return {
     title,
     sections,
+    duplicateSections,
+    unknownSections,
   };
 }
 
@@ -219,6 +227,29 @@ export function validateIdeaBriefStructure(markdownText) {
     };
   }
 
+  // Reject duplicate canonical sections
+  if (parsed.duplicateSections && parsed.duplicateSections.length > 0) {
+    for (const dup of parsed.duplicateSections) {
+      issues.push({
+        code: 'DUPLICATE_SECTION',
+        section: dup.id,
+        header: dup.header,
+        message: `Duplicate section heading found in Idea Brief: "${dup.header}"`,
+      });
+    }
+  }
+
+  // Reject unknown H2 sections
+  if (parsed.unknownSections && parsed.unknownSections.length > 0) {
+    for (const unk of parsed.unknownSections) {
+      issues.push({
+        code: 'UNKNOWN_SECTION',
+        header: unk.header,
+        message: `Unknown section heading found in Idea Brief: "${unk.header}"`,
+      });
+    }
+  }
+
   if (!parsed.title || parsed.title === '[Title]' || containsTemplatePlaceholders(parsed.title)) {
     issues.push({
       code: 'INVALID_TITLE',
@@ -229,6 +260,8 @@ export function validateIdeaBriefStructure(markdownText) {
 
   const parsedMustItems = [];
   const parsedOpenQuestions = [];
+  const seenMustIds = new Set();
+  const seenQuestionIds = new Set();
 
   for (const sec of IDEA_SECTIONS) {
     const content = parsed.sections[sec.id];
@@ -326,6 +359,18 @@ export function validateIdeaBriefStructure(markdownText) {
             });
             continue;
           }
+          // Case-insensitive duplicate reference check
+          if (seenMustIds.has(reqId)) {
+            issues.push({
+              code: 'DUPLICATE_REQUIREMENT_REFERENCE',
+              id: reqId,
+              section: sec.id,
+              header: sec.header,
+              message: `Duplicate requirement reference: ${reqId}`,
+            });
+            continue;
+          }
+          seenMustIds.add(reqId);
           parsedMustItems.push({ id: reqId, statement, rawLine: line });
         }
       }
@@ -374,6 +419,18 @@ export function validateIdeaBriefStructure(markdownText) {
             });
             continue;
           }
+          // Case-insensitive duplicate question reference check
+          if (seenQuestionIds.has(qId)) {
+            issues.push({
+              code: 'DUPLICATE_QUESTION_REFERENCE',
+              id: qId,
+              section: sec.id,
+              header: sec.header,
+              message: `Duplicate question reference: ${qId}`,
+            });
+            continue;
+          }
+          seenQuestionIds.add(qId);
           parsedOpenQuestions.push({ id: qId, question: questionText, rawLine: line });
         }
         if (hasNone && hasReal) {

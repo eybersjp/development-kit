@@ -63,11 +63,16 @@ Options:
 Test assumptions. Is this the real problem? Does it need to exist? Is there a simpler approach? Challenge the proposed solution against the problem.
 
 ### 4. Scope Definition
-Separate into:
-- Must have (1-to-1 bound to active `[IDEA-REQ-xxx]` candidates matching their exact discovery statements)
-- Should have
-- Could have
-- Explicitly excluded
+Categorise every discovered candidate requirement deterministically:
+- `MUST` — Core required functionality (1-to-1 bound to active `[IDEA-REQ-xxx]` items in Requirements (Must))
+- `SHOULD` — Preferences and secondary expectations
+- `FUTURE` — Explicitly deferred capabilities
+- `EXCLUDED` — Out of scope / rejected capabilities
+
+Execute the deterministic scope classification operation for each candidate requirement:
+```bash
+node scripts/orchestration.mjs --operation=idea-classify-scope --input-json='{"id":"IDEA-REQ-001","scopeDisposition":"MUST","confirmedBy":"PRODUCT_OWNER"}'
+```
 
 Evaluate discovery readiness before writing the brief:
 ```bash

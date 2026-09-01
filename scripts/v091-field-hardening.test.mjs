@@ -19,6 +19,10 @@ import {
   registerArtifact,
 } from '../runtime/artifacts/artifact-registry.mjs';
 import {
+  isValidRequirementTransition,
+  isValidQuestionTransition,
+  LEGAL_REQUIREMENT_TRANSITIONS,
+  LEGAL_QUESTION_TRANSITIONS,
   recordRequirementCandidate,
   supersedeRequirementCandidate,
   recordOpenQuestion,
@@ -144,7 +148,11 @@ test('Blocker 2: Must ↔ IDEA-REQ exact 1-to-1 binding and adversarial cases', 
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -152,7 +160,11 @@ test('Blocker 2: Must ↔ IDEA-REQ exact 1-to-1 binding and adversarial cases', 
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-002',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
     persistCanonicalIdeaBrief({ rootDir: tempDir, content: untaggedBrief });
     const stageA = computeIdeaStageState(tempDir);
@@ -314,7 +326,11 @@ test('Blocker 5: Discovery state revision changes invalidate Idea Brief approval
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -322,7 +338,11 @@ test('Blocker 5: Discovery state revision changes invalidate Idea Brief approval
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-002',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
 
     const disc1 = loadDiscoveryState(tempDir);
@@ -350,7 +370,11 @@ test('Blocker 5: Discovery state revision changes invalidate Idea Brief approval
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-003',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
 
     // Re-evaluating stage state without re-persisting Idea Brief must invalidate APPROVED
@@ -379,10 +403,21 @@ test('Blocker 6: Public CLI orchestration operations for IDEA workflow execute c
         origin: 'USER_CONFIRMED',
         resolutionState: 'CONFIRMED',
         confirmedBy: 'PRODUCT_OWNER',
-        scopeDisposition: 'MUST',
       })
     ], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(candExec1.status, 0);
+
+    // Classify candidate 1 scope
+    const scopeExec1 = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-classify-scope',
+      '--input-json=' + JSON.stringify({
+        id: 'IDEA-REQ-001',
+        scopeDisposition: 'MUST',
+        confirmedBy: 'PRODUCT_OWNER',
+      })
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(scopeExec1.status, 0);
 
     // Record candidate 2 via CLI
     const candExec2 = spawnSync(process.execPath, [
@@ -394,10 +429,21 @@ test('Blocker 6: Public CLI orchestration operations for IDEA workflow execute c
         origin: 'USER_CONFIRMED',
         resolutionState: 'CONFIRMED',
         confirmedBy: 'PRODUCT_OWNER',
-        scopeDisposition: 'MUST',
       })
     ], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(candExec2.status, 0);
+
+    // Classify candidate 2 scope
+    const scopeExec2 = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-classify-scope',
+      '--input-json=' + JSON.stringify({
+        id: 'IDEA-REQ-002',
+        scopeDisposition: 'MUST',
+        confirmedBy: 'PRODUCT_OWNER',
+      })
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(scopeExec2.status, 0);
 
     // Persist Idea Brief via CLI
     const persistExec = spawnSync(process.execPath, [
@@ -466,7 +512,11 @@ test('True Fresh Process Restart: Child process reconstructs state accurately wi
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -474,7 +524,11 @@ test('True Fresh Process Restart: Child process reconstructs state accurately wi
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-002',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
     const disc = loadDiscoveryState(tempDir);
     const p = persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF, discoveryRevision: disc.revision, discoveryFingerprint: disc.fingerprint });
@@ -528,7 +582,11 @@ test('Restored: Direct-edit fingerprint mismatch blocks approval state', () => {
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -536,7 +594,11 @@ test('Restored: Direct-edit fingerprint mismatch blocks approval state', () => {
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-002',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
     const disc = loadDiscoveryState(tempDir);
     const p1 = persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF, discoveryRevision: disc.revision, discoveryFingerprint: disc.fingerprint });
@@ -734,7 +796,11 @@ test('Statement binding & tag integrity: Content mismatch and multiple tags per 
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -742,7 +808,11 @@ test('Statement binding & tag integrity: Content mismatch and multiple tags per 
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-002',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
 
     // 1. Spoofed statement text under valid ID -> REQUIREMENT_CONTENT_MISMATCH
@@ -843,7 +913,11 @@ test('Candidate 6: Exact statement and question normalization equality enforced'
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -851,7 +925,11 @@ test('Candidate 6: Exact statement and question normalization equality enforced'
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-002',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
 
     // Substring or prefix statement should fail REQUIREMENT_CONTENT_MISMATCH
@@ -880,7 +958,11 @@ test('Candidate 6: Identity immutability and explicit supersession for requireme
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
 
     // Attempting to mutate statement text under same ID fails
@@ -1016,7 +1098,11 @@ test('Candidate 7: 4-tuple approval binding invalidates on discovery revision ch
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -1024,7 +1110,11 @@ test('Candidate 7: 4-tuple approval binding invalidates on discovery revision ch
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-002',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
 
     const disc = loadDiscoveryState(tempDir);
@@ -1078,7 +1168,11 @@ test('Candidate 7: Reconcile increments artifact revision and invalidates old ap
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -1086,7 +1180,11 @@ test('Candidate 7: Reconcile increments artifact revision and invalidates old ap
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-002',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
 
     const disc1 = loadDiscoveryState(tempDir);
@@ -1132,7 +1230,11 @@ test('Candidate 7: Canonical item grammar rejects invalid syntax strictly', () =
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -1140,7 +1242,11 @@ test('Candidate 7: Canonical item grammar rejects invalid syntax strictly', () =
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-002',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
 
     // 1. Numbered list in Must
@@ -1184,7 +1290,11 @@ test('Candidate 7: Legal state transitions reject resurrecting superseded and re
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
 
     // Supersede 001 -> 002
@@ -1194,7 +1304,6 @@ test('Candidate 7: Legal state transitions reject resurrecting superseded and re
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
-      scopeDisposition: 'MUST',
     });
 
     // Attempting to transition 001 from SUPERSEDED -> CONFIRMED fails
@@ -1252,7 +1361,11 @@ test('Candidate 7: Reciprocal lineage validation rejects broken supersession poi
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
 
     supersedeRequirementCandidate(tempDir, 'IDEA-REQ-001', {
@@ -1286,7 +1399,11 @@ test('Candidate 7: Bidirectional Must ↔ Discovery requirement coverage', () =>
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -1294,7 +1411,11 @@ test('Candidate 7: Bidirectional Must ↔ Discovery requirement coverage', () =>
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-002',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
     // Record third active MUST candidate in discovery
     recordRequirementCandidate(tempDir, {
@@ -1303,7 +1424,11 @@ test('Candidate 7: Bidirectional Must ↔ Discovery requirement coverage', () =>
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-003',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
 
     // VALID_BRIEF only contains 001 and 002
@@ -1326,7 +1451,11 @@ test('Candidate 8 (Defect 1): idea-approve with missing authority fails with DK_
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
@@ -1334,7 +1463,11 @@ test('Candidate 8 (Defect 1): idea-approve with missing authority fails with DK_
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-002',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
     persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF });
     // Verify state is READY_FOR_APPROVAL
@@ -1525,15 +1658,22 @@ test('Candidate 8 (Defect 5): USER_STATED and USER_CONFIRMED material candidate 
     assert.equal(rejected.resolutionState, 'REJECTED');
 
     // Also verify that superseding UNRESOLVED material USER_CONFIRMED without PO authority throws
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-002',
+      statement: 'Unresolved statement',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'UNRESOLVED',
+      materiality: 'MATERIAL',
+    });
     assert.throws(() => {
-      supersedeRequirementCandidate(tempDir, 'IDEA-REQ-001', {
-        id: 'IDEA-REQ-002',
+      supersedeRequirementCandidate(tempDir, 'IDEA-REQ-002', {
+        id: 'IDEA-REQ-003',
         statement: 'Mutated statement',
         origin: 'USER_CONFIRMED',
-        resolutionState: 'CONFIRMED',
+        resolutionState: 'UNRESOLVED',
         confirmedBy: 'AI_AGENT',
       });
-    }, (err) => err.code === 'DK_UNAUTHORIZED_SUPERSEDING' || err.code === 'DK_UNAUTHORIZED_CONFIRMATION');
+    }, (err) => err.code === 'DK_UNAUTHORIZED_SUPERSEDING');
   } finally {
     cleanupTempDir(tempDir);
   }
@@ -1549,12 +1689,16 @@ test('Candidate 8 (Defect 6): Semantic supersession failure leaves zero disk sid
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
+    });
+    classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
       scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
     });
 
     const discPath = path.join(tempDir, '.development-kit', 'idea', 'discovery.json');
     const beforeBytes = fs.readFileSync(discPath, 'utf8');
-    const podDir = path.join(tempDir, '.development-kit', 'idea', 'decisions');
+    const podDir = path.join(tempDir, '.development-kit', 'decisions');
     const podsBefore = fs.existsSync(podDir) ? fs.readdirSync(podDir) : [];
 
     // Attempt supersession with invalid new candidate resolutionState = SUPERSEDED
@@ -1659,3 +1803,383 @@ test('Candidate 8 (Defect 8): Blank Open Questions section blocks structure vali
 });
 
 
+
+test('Candidate 9 (Defect 1): Documented /dk-idea public workflow sequence executes end-to-end', () => {
+  const tempDir = createTempDir();
+  try {
+    const scriptPath = path.resolve('scripts/orchestration.mjs');
+
+    // 1. Lifecycle entry
+    const lifecycleRes = spawnSync(process.execPath, [
+      path.resolve('scripts/lifecycle.mjs'),
+      '--command=dk-idea',
+      '--phase=entry',
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(lifecycleRes.status, 0);
+
+    // 2. Record material candidate using documented command example (born UNCLASSIFIED)
+    const candRes = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-record-candidate',
+      '--input-json=' + JSON.stringify({
+        id: 'IDEA-REQ-001',
+        statement: 'Capture inverter DC string voltages and insulation resistance measurements.',
+        origin: 'USER_CONFIRMED',
+        resolutionState: 'CONFIRMED',
+        confirmedBy: 'PRODUCT_OWNER',
+      })
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(candRes.status, 0);
+
+    // Record candidate 2
+    const candRes2 = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-record-candidate',
+      '--input-json=' + JSON.stringify({
+        id: 'IDEA-REQ-002',
+        statement: 'Support offline checklist completion.',
+        origin: 'USER_CONFIRMED',
+        resolutionState: 'CONFIRMED',
+        confirmedBy: 'PRODUCT_OWNER',
+      })
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(candRes2.status, 0);
+
+    // 3. Discovery eval is blocked while UNCLASSIFIED
+    const evalRes1 = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-discovery-eval',
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(evalRes1.status, 0);
+    const eval1Parsed = JSON.parse(evalRes1.stdout);
+    assert.equal(eval1Parsed.result.ready, false);
+    assert.ok(eval1Parsed.result.blockers.some(b => b.code === 'UNCLASSIFIED_MATERIAL_REQUIREMENT'));
+
+    // 4. Explicit Product Owner scope classification
+    const scopeRes1 = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-classify-scope',
+      '--input-json=' + JSON.stringify({
+        id: 'IDEA-REQ-001',
+        scopeDisposition: 'MUST',
+        confirmedBy: 'PRODUCT_OWNER',
+      })
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(scopeRes1.status, 0);
+
+    const scopeRes2 = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-classify-scope',
+      '--input-json=' + JSON.stringify({
+        id: 'IDEA-REQ-002',
+        scopeDisposition: 'MUST',
+        confirmedBy: 'PRODUCT_OWNER',
+      })
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(scopeRes2.status, 0);
+
+    // 5. Discovery eval now progresses to ready
+    const evalRes2 = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-discovery-eval',
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(evalRes2.status, 0);
+    const eval2Parsed = JSON.parse(evalRes2.stdout);
+    assert.equal(eval2Parsed.result.ready, true);
+
+    // 6. Persist Idea Brief
+    const persistRes = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-persist',
+      '--input-json=' + JSON.stringify({ content: VALID_BRIEF })
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(persistRes.status, 0);
+
+    // 7. State evaluation reaches READY_FOR_APPROVAL
+    const stateRes1 = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-state',
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(stateRes1.status, 0);
+    assert.equal(JSON.parse(stateRes1.stdout).result.state, 'READY_FOR_APPROVAL');
+
+    // 8. Explicit Product Owner approval
+    const approveRes = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-approve',
+      '--input-json=' + JSON.stringify({ approvingAuthority: 'PRODUCT_OWNER' })
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(approveRes.status, 0);
+
+    // 9. State evaluation reaches APPROVED
+    const stateRes2 = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-state',
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(stateRes2.status, 0);
+    assert.equal(JSON.parse(stateRes2.stdout).result.state, 'APPROVED');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 9 (Defect 2): recordRequirementCandidate rejects caller-supplied non-UNCLASSIFIED scope for material candidates', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+
+    // Material candidate creation with MUST scope is rejected
+    assert.throws(() => {
+      recordRequirementCandidate(tempDir, {
+        id: 'IDEA-REQ-001',
+        statement: 'Material requirement',
+        materiality: 'MATERIAL',
+        origin: 'USER_CONFIRMED',
+        scopeDisposition: 'MUST',
+      });
+    }, (err) => err.code === 'DK_MATERIAL_SCOPE_REQUIRES_CLASSIFICATION');
+
+    // Material candidate creation with UNCLASSIFIED or omitted succeeds
+    const cand = recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Material requirement',
+      materiality: 'MATERIAL',
+      origin: 'USER_CONFIRMED',
+    });
+    assert.equal(cand.scopeDisposition, 'UNCLASSIFIED');
+
+    // NON_MATERIAL candidate creation with explicit scope is allowed
+    const nonMat = recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-002',
+      statement: 'Non-material requirement',
+      materiality: 'NON_MATERIAL',
+      origin: 'AI_PROPOSED',
+      scopeDisposition: 'SHOULD',
+    });
+    assert.equal(nonMat.scopeDisposition, 'SHOULD');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 9 (Defects 3, 4, 5, 6): Persisted scope authority, POD creation, valid decisionId, and zero side effect safety', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Capture inverter DC string voltages.',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+
+    const podStoreDir = path.join(tempDir, '.development-kit', 'decisions');
+
+    // 1. Valid scope classification creates POD in .development-kit/decisions
+    const classified = classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
+      scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    assert.ok(classified.decisionId, 'Scope classification must return decisionId');
+    assert.ok(/^POD-IDEA-REQ-001-SCOPE/i.test(classified.decisionId));
+
+    // Verify POD file on disk
+    const podFilePath = path.join(podStoreDir, classified.decisionId + '.json');
+    assert.equal(fs.existsSync(podFilePath), true, 'POD file must exist in .development-kit/decisions');
+    const podData = JSON.parse(fs.readFileSync(podFilePath, 'utf8'));
+    assert.equal(podData.status, 'APPROVED');
+    assert.ok(podData.affectedRequirements.includes('IDEA-REQ-001'));
+
+    // Verify persisted discovery state contains scopeDecision authority metadata
+    const discState = loadDiscoveryState(tempDir);
+    const req = discState.requirements.find(r => r.id === 'IDEA-REQ-001');
+    assert.ok(req.scopeDecision, 'Requirement must contain scopeDecision object');
+    assert.equal(req.scopeDecision.confirmedBy, 'PRODUCT_OWNER');
+    assert.equal(req.scopeDecision.disposition, 'MUST');
+    assert.equal(req.scopeDecision.decisionId, classified.decisionId);
+
+    // 2. Direct JSON tampering of scope without valid scopeDecision fails reload
+    const discPath = path.join(tempDir, '.development-kit', 'idea', 'discovery.json');
+    const validBytes = fs.readFileSync(discPath, 'utf8');
+    const tampered = JSON.parse(validBytes);
+    tampered.requirements[0].scopeDecision = null; // strip authority
+    fs.writeFileSync(discPath, JSON.stringify(tampered, null, 2), 'utf8');
+
+    assert.throws(() => {
+      loadDiscoveryState(tempDir);
+    }, (err) => err.code === 'DK_DISCOVERY_CORRUPT');
+
+    // Restore valid state
+    fs.writeFileSync(discPath, validBytes, 'utf8');
+
+    // 3. Zero side effect safety: invalid semantic input fails before writing anything
+    const beforeDiscBytes = fs.readFileSync(discPath, 'utf8');
+    const beforePods = fs.readdirSync(podStoreDir);
+
+    assert.throws(() => {
+      classifyRequirementScope(tempDir, {
+        id: 'IDEA-REQ-001',
+        scopeDisposition: 'INVALID_SCOPE',
+        confirmedBy: 'PRODUCT_OWNER',
+      });
+    }, (err) => err.code === 'DK_INVALID_SCOPE_DISPOSITION');
+
+    assert.equal(fs.readFileSync(discPath, 'utf8'), beforeDiscBytes, 'discovery.json must remain byte-identical');
+    assert.deepEqual(fs.readdirSync(podStoreDir), beforePods, 'Decisions directory must remain byte-identical');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 9 (Defect 7): Reload validation enforces persisted authority for material rejection and supersession', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    const discPath = path.join(tempDir, '.development-kit', 'idea', 'discovery.json');
+    fs.mkdirSync(path.dirname(discPath), { recursive: true });
+
+    // Combination 1: Material requirement REJECTED without deactivationDecision authority
+    fs.writeFileSync(discPath, JSON.stringify({
+      schemaVersion: '1.0.0',
+      revision: 1,
+      requirements: [{
+        id: 'IDEA-REQ-001',
+        statement: 'Statement',
+        origin: 'USER_STATED',
+        materiality: 'MATERIAL',
+        scopeDisposition: 'EXCLUDED',
+        resolutionState: 'REJECTED',
+        confirmedBy: null,
+        deactivationDecision: null,
+      }],
+      openQuestions: [],
+    }), 'utf8');
+
+    assert.throws(() => {
+      loadDiscoveryState(tempDir);
+    }, (err) => err.code === 'DK_DISCOVERY_CORRUPT');
+
+    // Combination 2: Material USER_STATED requirement SUPERSEDED without supersessionDecision authority
+    fs.writeFileSync(discPath, JSON.stringify({
+      schemaVersion: '1.0.0',
+      revision: 1,
+      requirements: [
+        {
+          id: 'IDEA-REQ-001',
+          statement: 'Statement 1',
+          origin: 'USER_STATED',
+          materiality: 'MATERIAL',
+          scopeDisposition: 'UNCLASSIFIED',
+          resolutionState: 'SUPERSEDED',
+          supersededBy: 'IDEA-REQ-002',
+          supersessionDecision: null,
+        },
+        {
+          id: 'IDEA-REQ-002',
+          statement: 'Statement 2',
+          origin: 'USER_STATED',
+          materiality: 'MATERIAL',
+          scopeDisposition: 'UNCLASSIFIED',
+          resolutionState: 'CONFIRMED',
+          confirmedBy: 'PRODUCT_OWNER',
+          supersedes: 'IDEA-REQ-001',
+        },
+      ],
+      openQuestions: [],
+    }), 'utf8');
+
+    assert.throws(() => {
+      loadDiscoveryState(tempDir);
+    }, (err) => err.code === 'DK_DISCOVERY_CORRUPT');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 9 (Defect 8): Complete requirement and question state transition matrix table-driven validation', () => {
+  const allReqStates = ['UNRESOLVED', 'CONFIRMED', 'ADOPTED', 'DEFERRED', 'REJECTED', 'SUPERSEDED'];
+
+  for (const fromState of allReqStates) {
+    for (const toState of allReqStates) {
+      const allowed = LEGAL_REQUIREMENT_TRANSITIONS[fromState].includes(toState) || fromState === toState;
+      const result = isValidRequirementTransition(fromState, toState);
+      assert.equal(
+        result,
+        allowed,
+        'Requirement transition from ' + fromState + ' to ' + toState + ' expected ' + allowed + ' but got ' + result
+      );
+    }
+  }
+
+  const allQStates = ['UNRESOLVED', 'ANSWERED', 'DEFERRED', 'REJECTED', 'SUPERSEDED'];
+
+  for (const fromState of allQStates) {
+    for (const toState of allQStates) {
+      const allowed = LEGAL_QUESTION_TRANSITIONS[fromState].includes(toState) || fromState === toState;
+      const result = isValidQuestionTransition(fromState, toState);
+      assert.equal(
+        result,
+        allowed,
+        'Question transition from ' + fromState + ' to ' + toState + ' expected ' + allowed + ' but got ' + result
+      );
+    }
+  }
+});
+
+test('Candidate 9 (Defect 9): Exact section identity and case-insensitive ID uniqueness', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+
+    // 1. Duplicate canonical section rejected
+    const dupSecBrief = VALID_BRIEF + '\n## Requirements (Must)\n- [IDEA-REQ-003] Duplicate section candidate.\n';
+    const dupSecVal = validateIdeaBriefStructure(dupSecBrief);
+    assert.equal(dupSecVal.valid, false);
+    assert.ok(dupSecVal.issues.some(i => i.code === 'DUPLICATE_SECTION' && i.header === '## Requirements (Must)'));
+
+    // 2. Unknown section heading rejected
+    const unkSecBrief = VALID_BRIEF + '\n## Hidden Requirements\n- [IDEA-REQ-003] Hidden requirement.\n';
+    const unkSecVal = validateIdeaBriefStructure(unkSecBrief);
+    assert.equal(unkSecVal.valid, false);
+    assert.ok(unkSecVal.issues.some(i => i.code === 'UNKNOWN_SECTION' && i.header === '## Hidden Requirements'));
+
+    // 3. Case-insensitive duplicate requirement references in brief rejected
+    const caseDupBrief = VALID_BRIEF.replace(
+      '- [IDEA-REQ-002] Support offline checklist completion.',
+      '- [idea-req-001] Capture inverter DC string voltages and insulation resistance measurements.'
+    );
+    const caseDupVal = validateIdeaBriefStructure(caseDupBrief);
+    assert.equal(caseDupVal.valid, false);
+    assert.ok(caseDupVal.issues.some(i => i.code === 'DUPLICATE_REQUIREMENT_REFERENCE' && i.id === 'IDEA-REQ-001'));
+
+    // 4. Case-insensitive duplicate requirement in discovery rejected
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Capture inverter DC string voltages.',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+
+    // Attempting to record lowercase idea-req-001 as a new candidate throws DK_DISCOVERY_CORRUPT or update immutability
+    const discPath = path.join(tempDir, '.development-kit', 'idea', 'discovery.json');
+    const discData = JSON.parse(fs.readFileSync(discPath, 'utf8'));
+    discData.requirements.push({
+      id: 'idea-req-001',
+      statement: 'Duplicate with different casing',
+      origin: 'USER_CONFIRMED',
+      materiality: 'MATERIAL',
+      scopeDisposition: 'UNCLASSIFIED',
+      resolutionState: 'UNRESOLVED',
+    });
+    fs.writeFileSync(discPath, JSON.stringify(discData, null, 2), 'utf8');
+
+    assert.throws(() => {
+      loadDiscoveryState(tempDir);
+    }, (err) => err.code === 'DK_DISCOVERY_CORRUPT');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
