@@ -63,13 +63,16 @@ Options:
 Test assumptions. Is this the real problem? Does it need to exist? Is there a simpler approach? Challenge the proposed solution against the problem.
 
 ### 4. Scope Definition
-Categorise every discovered candidate requirement deterministically:
+Categorise every discovered candidate requirement into a proposed scope classification table:
 - `MUST` — Core required functionality (1-to-1 bound to active `[IDEA-REQ-xxx]` items in Requirements (Must))
 - `SHOULD` — Preferences and secondary expectations
 - `FUTURE` — Explicitly deferred capabilities
 - `EXCLUDED` — Out of scope / rejected capabilities
 
-Execute the deterministic scope classification operation for each candidate requirement:
+Present this scope proposal table to the user and request explicit Product Owner confirmation:
+- Example: "Please confirm the proposed scope classification: IDEA-REQ-001 -> MUST, IDEA-REQ-002 -> MUST, IDEA-REQ-003 -> SHOULD."
+
+ONLY after receiving explicit user confirmation, execute the deterministic scope classification operation for each confirmed candidate requirement:
 ```bash
 node scripts/orchestration.mjs --operation=idea-classify-scope --input-json='{"id":"IDEA-REQ-001","scopeDisposition":"MUST","confirmedBy":"PRODUCT_OWNER"}'
 ```

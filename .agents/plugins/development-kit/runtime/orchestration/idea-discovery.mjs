@@ -4,7 +4,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { createPODecision, persistPODecision } from './po-decisions.mjs';
+import {
+  createPODecision,
+  persistPODecision,
+  loadPODecisionById,
+  validatePODecision,
+} from './po-decisions.mjs';
 
 export const DISCOVERY_SCHEMA_VERSION = '1.0.0';
 
@@ -124,6 +129,12 @@ export function computeDiscoveryFingerprint(state) {
       resolution: q.resolution,
       resolvedBy: q.resolvedBy,
       deferredTarget: q.deferredTarget || null,
+      supersessionDecision: q.supersessionDecision ? {
+        supersededBy: q.supersessionDecision.supersededBy,
+        resolvedBy: q.supersessionDecision.resolvedBy,
+        decisionId: q.supersessionDecision.decisionId || null,
+        decidedAt: q.supersessionDecision.decidedAt || null,
+      } : null,
       supersedes: q.supersedes || null,
       supersededBy: q.supersededBy || null,
     })),
@@ -210,6 +221,9 @@ export function validateDiscoveryStateStructure(data) {
       if (!r.scopeDecision.decisionId || !/^POD-[A-Za-z0-9._-]+$/i.test(r.scopeDecision.decisionId)) {
         throw new DiscoveryStateError(`Material requirement ${r.id} scopeDecision has invalid decisionId ${r.scopeDecision.decisionId}`, 'DK_DISCOVERY_CORRUPT');
       }
+      if (!r.scopeDecision.decidedAt || isNaN(Date.parse(r.scopeDecision.decidedAt))) {
+        throw new DiscoveryStateError(`Material requirement ${r.id} scopeDecision has invalid decidedAt timestamp`, 'DK_DISCOVERY_CORRUPT');
+      }
     }
 
     // Persisted rejection authority validation for material candidates
@@ -220,20 +234,30 @@ export function validateDiscoveryStateStructure(data) {
       if (!r.deactivationDecision || r.deactivationDecision.confirmedBy !== 'PRODUCT_OWNER') {
         throw new DiscoveryStateError(`Material rejected requirement ${r.id} lacks valid deactivationDecision authority metadata`, 'DK_DISCOVERY_CORRUPT');
       }
+      if (r.deactivationDecision.resolutionState !== 'REJECTED') {
+        throw new DiscoveryStateError(`Material rejected requirement ${r.id} deactivationDecision resolutionState mismatch`, 'DK_DISCOVERY_CORRUPT');
+      }
       if (!r.deactivationDecision.decisionId || !/^POD-[A-Za-z0-9._-]+$/i.test(r.deactivationDecision.decisionId)) {
         throw new DiscoveryStateError(`Material rejected requirement ${r.id} has invalid deactivationDecision decisionId`, 'DK_DISCOVERY_CORRUPT');
       }
+      if (!r.deactivationDecision.decidedAt || isNaN(Date.parse(r.deactivationDecision.decidedAt))) {
+        throw new DiscoveryStateError(`Material rejected requirement ${r.id} has invalid deactivationDecision decidedAt timestamp`, 'DK_DISCOVERY_CORRUPT');
+      }
     }
 
-    // Persisted supersession authority validation for material USER_STATED / USER_CONFIRMED candidates
+    // Persisted supersession authority validation for ANY material candidate
     if (r.materiality === 'MATERIAL' && r.resolutionState === 'SUPERSEDED') {
-      if (r.origin === 'USER_STATED' || r.origin === 'USER_CONFIRMED') {
-        if (!r.supersessionDecision || r.supersessionDecision.confirmedBy !== 'PRODUCT_OWNER') {
-          throw new DiscoveryStateError(`Material USER_STATED/USER_CONFIRMED superseded requirement ${r.id} lacks valid supersessionDecision authority metadata`, 'DK_DISCOVERY_CORRUPT');
-        }
-        if (!r.supersessionDecision.decisionId || !/^POD-[A-Za-z0-9._-]+$/i.test(r.supersessionDecision.decisionId)) {
-          throw new DiscoveryStateError(`Material superseded requirement ${r.id} has invalid supersessionDecision decisionId`, 'DK_DISCOVERY_CORRUPT');
-        }
+      if (!r.supersessionDecision || r.supersessionDecision.confirmedBy !== 'PRODUCT_OWNER') {
+        throw new DiscoveryStateError(`Material superseded requirement ${r.id} lacks valid supersessionDecision authority metadata`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (r.supersessionDecision.supersededBy !== r.supersededBy) {
+        throw new DiscoveryStateError(`Material superseded requirement ${r.id} supersessionDecision supersededBy mismatch`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (!r.supersessionDecision.decisionId || !/^POD-[A-Za-z0-9._-]+$/i.test(r.supersessionDecision.decisionId)) {
+        throw new DiscoveryStateError(`Material superseded requirement ${r.id} has invalid supersessionDecision decisionId`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (!r.supersessionDecision.decidedAt || isNaN(Date.parse(r.supersessionDecision.decidedAt))) {
+        throw new DiscoveryStateError(`Material superseded requirement ${r.id} has invalid supersessionDecision decidedAt timestamp`, 'DK_DISCOVERY_CORRUPT');
       }
     }
 
@@ -316,6 +340,20 @@ export function validateDiscoveryStateStructure(data) {
     if (q.materiality === 'MATERIAL' && q.resolution !== 'UNRESOLVED' && q.resolution !== 'SUPERSEDED' && q.resolvedBy !== 'PRODUCT_OWNER') {
       throw new DiscoveryStateError(`Material question ${q.id} disposition ${q.resolution} requires explicit resolvedBy = 'PRODUCT_OWNER'`, 'DK_DISCOVERY_CORRUPT');
     }
+    if (q.materiality === 'MATERIAL' && q.resolution === 'SUPERSEDED') {
+      if (!q.supersessionDecision || q.supersessionDecision.resolvedBy !== 'PRODUCT_OWNER') {
+        throw new DiscoveryStateError(`Material superseded question ${q.id} lacks valid supersessionDecision authority metadata`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (q.supersessionDecision.supersededBy !== q.supersededBy) {
+        throw new DiscoveryStateError(`Material superseded question ${q.id} supersessionDecision supersededBy mismatch`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (!q.supersessionDecision.decisionId || !/^POD-[A-Za-z0-9._-]+$/i.test(q.supersessionDecision.decisionId)) {
+        throw new DiscoveryStateError(`Material superseded question ${q.id} has invalid supersessionDecision decisionId`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (!q.supersessionDecision.decidedAt || isNaN(Date.parse(q.supersessionDecision.decidedAt))) {
+        throw new DiscoveryStateError(`Material superseded question ${q.id} has invalid supersessionDecision decidedAt timestamp`, 'DK_DISCOVERY_CORRUPT');
+      }
+    }
     if (q.resolution === 'DEFERRED' && (!q.deferredTarget || typeof q.deferredTarget !== 'string')) {
       throw new DiscoveryStateError(`DEFERRED question ${q.id} requires valid deferredTarget`, 'DK_DISCOVERY_CORRUPT');
     }
@@ -368,6 +406,105 @@ export function validateDiscoveryStateStructure(data) {
   return true;
 }
 
+export function validateDiscoveryAuthority(rootDir, state) {
+  if (!state || typeof state !== 'object') return true;
+
+  for (const r of state.requirements || []) {
+    if (r.scopeDecision && r.scopeDecision.decisionId) {
+      let pod;
+      try {
+        pod = loadPODecisionById(rootDir, r.scopeDecision.decisionId);
+      } catch (err) {
+        throw new DiscoveryStateError(`Material requirement ${r.id} references missing or invalid POD ${r.scopeDecision.decisionId}: ${err.message}`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.provenance !== 'product-owner') {
+        throw new DiscoveryStateError(`POD ${pod.id} provenance is ${pod.provenance}; expected 'product-owner'`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.status !== 'APPROVED') {
+        throw new DiscoveryStateError(`POD ${pod.id} status is ${pod.status}; expected 'APPROVED' for scope classification`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (!pod.affectedRequirements || !pod.affectedRequirements.includes(r.id)) {
+        throw new DiscoveryStateError(`POD ${pod.id} does not affect requirement ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.decisionType === 'REQUIREMENT_SCOPE') {
+        if (!pod.decisionData || pod.decisionData.requirementId !== r.id || pod.decisionData.newScope !== r.scopeDecision.disposition) {
+          throw new DiscoveryStateError(`POD ${pod.id} decisionData does not match scope decision on ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+        }
+      }
+    }
+
+    if (r.deactivationDecision && r.deactivationDecision.decisionId) {
+      let pod;
+      try {
+        pod = loadPODecisionById(rootDir, r.deactivationDecision.decisionId);
+      } catch (err) {
+        throw new DiscoveryStateError(`Material requirement ${r.id} references missing or invalid rejection POD ${r.deactivationDecision.decisionId}: ${err.message}`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.provenance !== 'product-owner') {
+        throw new DiscoveryStateError(`POD ${pod.id} provenance is ${pod.provenance}; expected 'product-owner'`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.status !== 'REJECTED') {
+        throw new DiscoveryStateError(`POD ${pod.id} status is ${pod.status}; expected 'REJECTED' for requirement deactivation`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (!pod.affectedRequirements || !pod.affectedRequirements.includes(r.id)) {
+        throw new DiscoveryStateError(`POD ${pod.id} does not affect requirement ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.decisionType === 'REQUIREMENT_REJECTION') {
+        if (!pod.decisionData || pod.decisionData.requirementId !== r.id) {
+          throw new DiscoveryStateError(`POD ${pod.id} decisionData does not match requirement rejection on ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+        }
+      }
+    }
+
+    if (r.supersessionDecision && r.supersessionDecision.decisionId) {
+      let pod;
+      try {
+        pod = loadPODecisionById(rootDir, r.supersessionDecision.decisionId);
+      } catch (err) {
+        throw new DiscoveryStateError(`Material requirement ${r.id} references missing or invalid supersession POD ${r.supersessionDecision.decisionId}: ${err.message}`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.provenance !== 'product-owner') {
+        throw new DiscoveryStateError(`POD ${pod.id} provenance is ${pod.provenance}; expected 'product-owner'`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.status !== 'APPROVED') {
+        throw new DiscoveryStateError(`POD ${pod.id} status is ${pod.status}; expected 'APPROVED' for requirement supersession`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (!pod.affectedRequirements || !pod.affectedRequirements.includes(r.id)) {
+        throw new DiscoveryStateError(`POD ${pod.id} does not affect requirement ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.decisionType === 'REQUIREMENT_SUPERSESSION') {
+        if (!pod.decisionData || pod.decisionData.requirementId !== r.id || pod.decisionData.supersededBy !== r.supersededBy) {
+          throw new DiscoveryStateError(`POD ${pod.id} decisionData does not match requirement supersession on ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+        }
+      }
+    }
+  }
+
+  for (const q of state.openQuestions || []) {
+    if (q.supersessionDecision && q.supersessionDecision.decisionId) {
+      let pod;
+      try {
+        pod = loadPODecisionById(rootDir, q.supersessionDecision.decisionId);
+      } catch (err) {
+        throw new DiscoveryStateError(`Material question ${q.id} references missing or invalid supersession POD ${q.supersessionDecision.decisionId}: ${err.message}`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.provenance !== 'product-owner') {
+        throw new DiscoveryStateError(`POD ${pod.id} provenance is ${pod.provenance}; expected 'product-owner'`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.status !== 'APPROVED') {
+        throw new DiscoveryStateError(`POD ${pod.id} status is ${pod.status}; expected 'APPROVED' for question supersession`, 'DK_DISCOVERY_CORRUPT');
+      }
+      if (pod.decisionType === 'QUESTION_SUPERSESSION') {
+        if (!pod.decisionData || pod.decisionData.questionId !== q.id || pod.decisionData.supersededBy !== q.supersededBy) {
+          throw new DiscoveryStateError(`POD ${pod.id} decisionData does not match question supersession on ${q.id}`, 'DK_DISCOVERY_CORRUPT');
+        }
+      }
+    }
+  }
+
+  return true;
+}
+
 export function loadDiscoveryState(rootDir = process.cwd()) {
   const filePath = getDiscoveryFilePath(rootDir);
   if (!fs.existsSync(filePath)) {
@@ -384,6 +521,7 @@ export function loadDiscoveryState(rootDir = process.cwd()) {
   try {
     const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     validateDiscoveryStateStructure(data);
+    validateDiscoveryAuthority(rootDir, data);
     data.fingerprint = computeDiscoveryFingerprint(data);
     return data;
   } catch (err) {
@@ -442,6 +580,14 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
   }
   if (!RESOLUTION_STATES.includes(resolutionState)) {
     throw new DiscoveryStateError(`Invalid resolutionState: ${resolutionState}`, 'DK_INVALID_RESOLUTION_STATE');
+  }
+
+  // Normal requirement recording cannot write SUPERSEDED
+  if (resolutionState === 'SUPERSEDED') {
+    throw new DiscoveryStateError(
+      `Cannot set resolutionState = 'SUPERSEDED' via recordRequirementCandidate for ${id}. Use supersedeRequirementCandidate to establish replacement lineage.`,
+      'DK_SUPERSEDED_MUTATION_PROHIBITED'
+    );
   }
 
   if (origin === 'RESEARCH_DERIVED' && resolutionState === 'ADOPTED' && confirmedBy !== 'PRODUCT_OWNER') {
@@ -518,6 +664,8 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
         statement: podStatement || `Deactivated/Rejected material requirement ${id}`,
         status: 'REJECTED',
         provenance: 'product-owner',
+        decisionType: 'REQUIREMENT_REJECTION',
+        decisionData: { requirementId: id, resolutionState: 'REJECTED' },
         affectedRequirements: [id],
       });
       deactivationDecision = {
@@ -531,9 +679,6 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
     }
   } else {
     // New candidate creation
-    if (resolutionState === 'SUPERSEDED') {
-      throw new DiscoveryStateError(`New candidate ${id} cannot be directly created as SUPERSEDED. Use supersedeRequirementCandidate.`, 'DK_ILLEGAL_STATE_TRANSITION');
-    }
     if (resolutionState === 'REJECTED') {
       throw new DiscoveryStateError(`New candidate ${id} cannot be directly created as REJECTED. Record as UNRESOLVED first, then use an explicit rejection operation.`, 'DK_ILLEGAL_STATE_TRANSITION');
     }
@@ -621,13 +766,7 @@ export function supersedeRequirementCandidate(rootDir = process.cwd(), oldId, ne
   }
 
   // Material requirement supersession requires explicit PRODUCT_OWNER authorization
-  // USER_STATED and USER_CONFIRMED material candidates ALWAYS require PO authority even if UNRESOLVED
-  const requiresPoAuth = oldReq.materiality === 'MATERIAL' && (
-    oldReq.origin === 'USER_STATED' ||
-    oldReq.origin === 'USER_CONFIRMED' ||
-    oldReq.resolutionState !== 'UNRESOLVED'
-  );
-  if (requiresPoAuth && newCandidateData.confirmedBy !== 'PRODUCT_OWNER') {
+  if (oldReq.materiality === 'MATERIAL' && newCandidateData.confirmedBy !== 'PRODUCT_OWNER') {
     throw new DiscoveryStateError(`Superseding material requirement ${oldId} requires explicit confirmedBy = 'PRODUCT_OWNER'`, 'DK_UNAUTHORIZED_SUPERSEDING');
   }
 
@@ -672,11 +811,13 @@ export function supersedeRequirementCandidate(rootDir = process.cwd(), oldId, ne
       statement: newCandidateData.podStatement || `Requirement ${oldId} superseded by ${newId}`,
       status: 'APPROVED',
       provenance: 'product-owner',
+      decisionType: 'REQUIREMENT_SUPERSESSION',
+      decisionData: { requirementId: oldId, supersededBy: newId },
       affectedRequirements: [oldId, newId],
     });
     supersessionDecision = {
       supersededBy: newId,
-      confirmedBy: newConfirmedBy || 'PRODUCT_OWNER',
+      confirmedBy: newConfirmedBy,
       decisionId: podId,
       decidedAt: now,
     };
@@ -776,7 +917,15 @@ export function recordOpenQuestion(rootDir = process.cwd(), {
     throw new DiscoveryStateError(`Invalid question resolution: ${resolution}`, 'DK_INVALID_QUESTION_RESOLUTION');
   }
 
-  if (materiality === 'MATERIAL' && resolution !== 'UNRESOLVED' && resolution !== 'SUPERSEDED' && resolvedBy !== 'PRODUCT_OWNER') {
+  // Normal question recording cannot write SUPERSEDED
+  if (resolution === 'SUPERSEDED') {
+    throw new DiscoveryStateError(
+      `Cannot set resolution = 'SUPERSEDED' via recordOpenQuestion for ${id}. Use supersedeOpenQuestion to establish replacement lineage.`,
+      'DK_SUPERSEDED_MUTATION_PROHIBITED'
+    );
+  }
+
+  if (materiality === 'MATERIAL' && resolution !== 'UNRESOLVED' && resolvedBy !== 'PRODUCT_OWNER') {
     throw new DiscoveryStateError(`Material question ${resolution} resolution requires explicit resolvedBy = 'PRODUCT_OWNER'`, 'DK_UNAUTHORIZED_RESOLUTION');
   }
 
@@ -802,9 +951,6 @@ export function recordOpenQuestion(rootDir = process.cwd(), {
       throw new DiscoveryStateError(`Question ${id} transition from ${existing.resolution} to ${resolution} is illegal`, 'DK_ILLEGAL_STATE_TRANSITION');
     }
   } else {
-    if (resolution === 'SUPERSEDED') {
-      throw new DiscoveryStateError(`New question ${id} cannot be directly created as SUPERSEDED. Use supersedeOpenQuestion.`, 'DK_ILLEGAL_STATE_TRANSITION');
-    }
     if (resolution === 'REJECTED') {
       throw new DiscoveryStateError(`New question ${id} cannot be directly created as REJECTED. Record as UNRESOLVED first.`, 'DK_ILLEGAL_STATE_TRANSITION');
     }
@@ -816,8 +962,9 @@ export function recordOpenQuestion(rootDir = process.cwd(), {
     materiality,
     resolution,
     deferredTarget: resolution === 'DEFERRED' ? (deferredTarget || 'Future Ideas (Explicitly Deferred)') : null,
-    resolvedBy: resolution !== 'UNRESOLVED' && resolution !== 'SUPERSEDED' ? resolvedBy : null,
+    resolvedBy: resolution !== 'UNRESOLVED' ? resolvedBy : null,
     notes,
+    supersessionDecision: existingIdx >= 0 ? state.openQuestions[existingIdx].supersessionDecision : null,
     supersedes: existingIdx >= 0 ? state.openQuestions[existingIdx].supersedes : null,
     supersededBy: existingIdx >= 0 ? state.openQuestions[existingIdx].supersededBy : null,
     createdAt: existingIdx >= 0 ? state.openQuestions[existingIdx].createdAt : new Date().toISOString(),
@@ -856,8 +1003,9 @@ export function supersedeOpenQuestion(rootDir = process.cwd(), oldId, newQuestio
     throw new DiscoveryStateError(`Question ${oldId} resolution ${oldQ.resolution} cannot transition to SUPERSEDED`, 'DK_ILLEGAL_STATE_TRANSITION');
   }
 
-  if (oldQ.materiality === 'MATERIAL' && newQuestionData.resolvedBy !== 'PRODUCT_OWNER' && oldQ.resolution !== 'UNRESOLVED') {
-    throw new DiscoveryStateError(`Superseding active material question ${oldId} requires explicit resolvedBy = 'PRODUCT_OWNER'`, 'DK_UNAUTHORIZED_SUPERSEDING');
+  // Superseding ANY material question requires explicit resolvedBy = 'PRODUCT_OWNER'
+  if (oldQ.materiality === 'MATERIAL' && newQuestionData.resolvedBy !== 'PRODUCT_OWNER') {
+    throw new DiscoveryStateError(`Superseding material question ${oldId} requires explicit resolvedBy = 'PRODUCT_OWNER'`, 'DK_UNAUTHORIZED_SUPERSEDING');
   }
 
   const newId = newQuestionData.id;
@@ -886,11 +1034,35 @@ export function supersedeOpenQuestion(rootDir = process.cwd(), oldId, newQuestio
     throw new DiscoveryStateError('Material question resolution requires resolvedBy = "PRODUCT_OWNER"', 'DK_UNAUTHORIZED_RESOLUTION');
   }
 
+  const now = new Date().toISOString();
+  let createdSupersedePod = null;
+  let supersessionDecision = null;
+
+  if (oldQ.materiality === 'MATERIAL') {
+    const podId = `POD-${oldId}-SUPERSEDE-${String((state.revision || 0) + 1).padStart(3, '0')}`;
+    createdSupersedePod = createPODecision({
+      id: podId,
+      statement: newQuestionData.podStatement || `Question ${oldId} superseded by ${newId}`,
+      status: 'APPROVED',
+      provenance: 'product-owner',
+      decisionType: 'QUESTION_SUPERSESSION',
+      decisionData: { questionId: oldId, supersededBy: newId },
+      affectedRequirements: [],
+    });
+    supersessionDecision = {
+      supersededBy: newId,
+      resolvedBy: newResolvedBy,
+      decisionId: podId,
+      decidedAt: now,
+    };
+  }
+
   const updatedOld = {
     ...oldQ,
     resolution: 'SUPERSEDED',
     supersededBy: newId,
-    updatedAt: new Date().toISOString(),
+    supersessionDecision,
+    updatedAt: now,
   };
 
   const newQ = {
@@ -899,25 +1071,33 @@ export function supersedeOpenQuestion(rootDir = process.cwd(), oldId, newQuestio
     materiality: newMateriality,
     resolution: newResolution,
     deferredTarget: newResolution === 'DEFERRED' ? (newQuestionData.deferredTarget || 'Future Ideas (Explicitly Deferred)') : null,
-    resolvedBy: newResolution !== 'UNRESOLVED' && newResolution !== 'SUPERSEDED' ? newResolvedBy : null,
+    resolvedBy: newResolution !== 'UNRESOLVED' ? newResolvedBy : null,
     notes: newQuestionData.notes || null,
+    supersessionDecision: null,
     supersedes: oldId,
     supersededBy: null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
   };
 
-  const nextQuestions = [...state.openQuestions];
-  nextQuestions[oldIdx] = updatedOld;
-  nextQuestions.push(newQ);
+  const nextQuestionsCheck = [...state.openQuestions];
+  nextQuestionsCheck[oldIdx] = updatedOld;
+  nextQuestionsCheck.push(newQ);
 
-  const proposedState = {
+  const proposedStateCheck = {
     ...state,
-    openQuestions: nextQuestions,
+    openQuestions: nextQuestionsCheck,
     revision: (state.revision || 0) + 1,
   };
 
-  persistDiscoveryState(proposedState, rootDir);
+  // Validate proposed state before writing POD
+  validateDiscoveryStateStructure(proposedStateCheck);
+
+  if (createdSupersedePod) {
+    persistPODecision(createdSupersedePod, rootDir);
+  }
+
+  persistDiscoveryState(proposedStateCheck, rootDir);
 
   return {
     superseded: updatedOld,
@@ -1068,12 +1248,18 @@ export function classifyRequirementScope(rootDir = process.cwd(), {
       statement: podStatement || `Scope classified as ${scopeDisposition} for ${id}`,
       status: 'APPROVED',
       provenance: 'product-owner',
+      decisionType: 'REQUIREMENT_SCOPE',
+      decisionData: {
+        requirementId: id,
+        previousScope: oldScope,
+        newScope: scopeDisposition,
+      },
       affectedRequirements: [id],
     });
     scopeDecision = {
       previousDisposition: oldScope,
       disposition: scopeDisposition,
-      confirmedBy: confirmedBy || 'PRODUCT_OWNER',
+      confirmedBy: confirmedBy,
       decisionId: podId,
       decidedAt: now,
     };

@@ -10,6 +10,12 @@ import { executeLifecycleEntry, COMMAND_ENTRY_TAXONOMY } from '../runtime/lifecy
 import { getProjectBootstrapStatus, bootstrapProject, assertProjectBootstrapped } from '../runtime/bootstrap/project-bootstrap.mjs';
 import { resolveScriptPath } from './run.mjs';
 import {
+  createPODecision,
+  persistPODecision,
+  loadPODecisionById,
+  validatePODecision,
+} from '../runtime/orchestration/po-decisions.mjs';
+import {
   resolveCanonicalIdeaArtifact,
   persistCanonicalIdeaBrief,
   reconcileCanonicalIdeaBrief,
@@ -1022,6 +1028,7 @@ test('Candidate 6: Identity immutability and explicit supersession for requireme
       id: 'IDEA-Q-002',
       question: 'Refined question text?',
       materiality: 'MATERIAL',
+      resolvedBy: 'PRODUCT_OWNER',
     });
     assert.equal(superQ.superseded.resolution, 'SUPERSEDED');
     assert.equal(superQ.superseded.supersededBy, 'IDEA-Q-002');
@@ -1383,7 +1390,7 @@ test('Candidate 7: Reciprocal lineage validation rejects broken supersession poi
 
     assert.throws(() => {
       persistDiscoveryState(disc, tempDir);
-    }, (err) => err.code === 'DK_LINEAGE_ERROR');
+    }, (err) => err.code === 'DK_LINEAGE_ERROR' || err.code === 'DK_DISCOVERY_CORRUPT');
   } finally {
     cleanupTempDir(tempDir);
   }
@@ -2179,6 +2186,356 @@ test('Candidate 9 (Defect 9): Exact section identity and case-insensitive ID uni
     assert.throws(() => {
       loadDiscoveryState(tempDir);
     }, (err) => err.code === 'DK_DISCOVERY_CORRUPT');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+/* ========================================================================= */
+/* CANDIDATE 10 REGRESSION TESTS                                             */
+/* ========================================================================= */
+
+test('Candidate 10 (Defect 1): Discovery authority validates referenced POD existence; missing or faked POD fails closed', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Capture inverter DC string voltages.',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    const classified = classifyRequirementScope(tempDir, {
+      id: 'IDEA-REQ-001',
+      scopeDisposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+
+    // Valid state loads cleanly
+    const loaded = loadDiscoveryState(tempDir);
+    assert.equal(loaded.requirements[0].scopeDisposition, 'MUST');
+
+    // Case A: Delete the referenced POD file -> reload discovery -> FAIL CLOSED
+    const podFilePath = path.join(tempDir, '.development-kit', 'decisions', classified.decisionId + '.json');
+    assert.equal(fs.existsSync(podFilePath), true);
+    const podBackup = fs.readFileSync(podFilePath, 'utf8');
+    fs.unlinkSync(podFilePath);
+
+    assert.throws(() => {
+      loadDiscoveryState(tempDir);
+    }, (err) => err.code === 'DK_DISCOVERY_CORRUPT');
+
+    // Restore POD file -> reload succeeds
+    fs.writeFileSync(podFilePath, podBackup, 'utf8');
+    assert.ok(loadDiscoveryState(tempDir));
+
+    // Case B: Replace decisionId with valid-looking nonexistent fake POD ID -> FAIL CLOSED
+    const discPath = path.join(tempDir, '.development-kit', 'idea', 'discovery.json');
+    const discData = JSON.parse(fs.readFileSync(discPath, 'utf8'));
+    discData.requirements[0].scopeDecision.decisionId = 'POD-IDEA-REQ-001-SCOPE-999';
+    fs.writeFileSync(discPath, JSON.stringify(discData, null, 2), 'utf8');
+
+    assert.throws(() => {
+      loadDiscoveryState(tempDir);
+    }, (err) => err.code === 'DK_DISCOVERY_CORRUPT');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 10 (Defect 2): POD immutable write and idempotent replay protection', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    const pod = createPODecision({
+      id: 'POD-TEST-001',
+      statement: 'Approved architectural direction',
+      status: 'APPROVED',
+      provenance: 'product-owner',
+      decisionType: 'REQUIREMENT_SCOPE',
+      decisionData: { requirementId: 'IDEA-REQ-001', newScope: 'MUST' },
+    });
+
+    // 1. First write succeeds
+    const writtenPath = persistPODecision(pod, tempDir);
+    assert.equal(fs.existsSync(writtenPath), true);
+
+    // 2. Identical write is idempotent success
+    const replayPath = persistPODecision(pod, tempDir);
+    assert.equal(writtenPath, replayPath);
+
+    // 3. Mutated POD with same ID throws DK_POD_IMMUTABILITY_VIOLATION
+    const mutatedPod = {
+      ...pod,
+      statement: 'Attempted stealth overwrite statement',
+    };
+    // Recompute invalid fingerprint or different fingerprint
+    mutatedPod.fingerprint = 'sha256:0000000000000000000000000000000000000000000000000000000000000000';
+
+    assert.throws(() => {
+      persistPODecision(mutatedPod, tempDir);
+    }, (err) => err.code === 'DK_POD_FINGERPRINT_MISMATCH' || err.code === 'DK_POD_IMMUTABILITY_VIOLATION');
+
+    const validMutatedPod = createPODecision({
+      id: 'POD-TEST-001',
+      statement: 'Different valid statement with same ID',
+      status: 'APPROVED',
+      provenance: 'product-owner',
+    });
+
+    assert.throws(() => {
+      persistPODecision(validMutatedPod, tempDir);
+    }, (err) => err.code === 'DK_POD_IMMUTABILITY_VIOLATION');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 10 (Defect 3): Structured decisionData cross-check rejects mismatched POD metadata', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Capture inverter DC string voltages.',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+
+    // Create a POD for EXCLUDED scope on REQ-001
+    const excludedPod = createPODecision({
+      id: 'POD-IDEA-REQ-001-EXCLUDED',
+      statement: 'Excluding REQ-001',
+      status: 'APPROVED',
+      provenance: 'product-owner',
+      decisionType: 'REQUIREMENT_SCOPE',
+      decisionData: {
+        requirementId: 'IDEA-REQ-001',
+        newScope: 'EXCLUDED',
+      },
+      affectedRequirements: ['IDEA-REQ-001'],
+    });
+    persistPODecision(excludedPod, tempDir);
+
+    // Write discovery state claiming MUST scope but referencing EXCLUDED POD
+    const discPath = path.join(tempDir, '.development-kit', 'idea', 'discovery.json');
+    const discState = loadDiscoveryState(tempDir);
+    discState.requirements[0].scopeDisposition = 'MUST';
+    discState.requirements[0].scopeDecision = {
+      previousDisposition: 'UNCLASSIFIED',
+      disposition: 'MUST',
+      confirmedBy: 'PRODUCT_OWNER',
+      decisionId: 'POD-IDEA-REQ-001-EXCLUDED',
+      decidedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(discPath, JSON.stringify(discState, null, 2), 'utf8');
+
+    // Discovery reload must fail closed because decisionData.newScope ('EXCLUDED') !== disposition ('MUST')
+    assert.throws(() => {
+      loadDiscoveryState(tempDir);
+    }, (err) => err.code === 'DK_DISCOVERY_CORRUPT');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 10 (Defect 4): Repository-wide audit: No fallback synthesis or parameter defaults for PRODUCT_OWNER', () => {
+  const runtimeDir = path.resolve('runtime');
+  const scriptsDir = path.resolve('scripts');
+
+  function scanDir(dir) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const ent of entries) {
+      const fullPath = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        scanDir(fullPath);
+      } else if (ent.name.endsWith('.mjs') || ent.name.endsWith('.js')) {
+        const text = fs.readFileSync(fullPath, 'utf8');
+        const lines = text.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          // Exclude test files from assertion
+          if (fullPath.includes('.test.')) continue;
+
+          // Exclude comments, strings, template literals, and error messages
+          if (line.trim().startsWith('//') || line.trim().startsWith('*') || line.includes('throw new') || line.includes('Error(')) continue;
+          if (/`[^`]*PRODUCT_OWNER[^`]*`/.test(line)) continue;
+
+          // Check for fallback synthesis e.g. || 'PRODUCT_OWNER' or parameter default = 'PRODUCT_OWNER'
+          if (/\|\|\s*['"]PRODUCT_OWNER['"]/.test(line)) {
+            assert.fail(`Found forbidden fallback synthesis on ${path.relative(process.cwd(), fullPath)}:${i + 1}: ${line}`);
+          }
+          if (/\b(?:confirmedBy|resolvedBy|approvingAuthority)\s*=\s*['"]PRODUCT_OWNER['"]/.test(line)) {
+            assert.fail(`Found forbidden parameter default authority on ${path.relative(process.cwd(), fullPath)}:${i + 1}: ${line}`);
+          }
+        }
+      }
+    }
+  }
+
+  scanDir(runtimeDir);
+  scanDir(scriptsDir);
+});
+
+test('Candidate 10 (Defects 5 & 6): Normal candidate and question recording strictly reject SUPERSEDED for all origins', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+
+    const origins = ['USER_STATED', 'USER_CONFIRMED', 'AI_PROPOSED', 'ASSUMED', 'RESEARCH_DERIVED'];
+
+    for (let i = 0; i < origins.length; i++) {
+      const origin = origins[i];
+      const reqId = 'IDEA-REQ-' + String(i + 1).padStart(3, '0');
+
+      // 1. Cannot be created as SUPERSEDED
+      assert.throws(() => {
+        recordRequirementCandidate(tempDir, {
+          id: reqId,
+          statement: 'Statement ' + i,
+          origin,
+          resolutionState: 'SUPERSEDED',
+        });
+      }, (err) => err.code === 'DK_SUPERSEDED_MUTATION_PROHIBITED' || err.code === 'DK_ILLEGAL_STATE_TRANSITION');
+
+      // Create as UNRESOLVED
+      recordRequirementCandidate(tempDir, {
+        id: reqId,
+        statement: 'Statement ' + i,
+        origin,
+        resolutionState: 'UNRESOLVED',
+      });
+
+      // 2. Existing candidate cannot be mutated to SUPERSEDED via recordRequirementCandidate
+      assert.throws(() => {
+        recordRequirementCandidate(tempDir, {
+          id: reqId,
+          statement: 'Statement ' + i,
+          origin,
+          resolutionState: 'SUPERSEDED',
+        });
+      }, (err) => err.code === 'DK_SUPERSEDED_MUTATION_PROHIBITED' || err.code === 'DK_ILLEGAL_STATE_TRANSITION');
+    }
+
+    // Questions: cannot create or mutate to SUPERSEDED via recordOpenQuestion
+    assert.throws(() => {
+      recordOpenQuestion(tempDir, {
+        id: 'IDEA-Q-001',
+        question: 'Sample question',
+        resolution: 'SUPERSEDED',
+      });
+    }, (err) => err.code === 'DK_SUPERSEDED_MUTATION_PROHIBITED' || err.code === 'DK_ILLEGAL_STATE_TRANSITION');
+
+    recordOpenQuestion(tempDir, {
+      id: 'IDEA-Q-001',
+      question: 'Sample question',
+      resolution: 'UNRESOLVED',
+    });
+
+    assert.throws(() => {
+      recordOpenQuestion(tempDir, {
+        id: 'IDEA-Q-001',
+        question: 'Sample question',
+        resolution: 'SUPERSEDED',
+      });
+    }, (err) => err.code === 'DK_SUPERSEDED_MUTATION_PROHIBITED' || err.code === 'DK_ILLEGAL_STATE_TRANSITION');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 10 (Defect 7): Material question supersession requires explicit PO authority and creates POD', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    recordOpenQuestion(tempDir, {
+      id: 'IDEA-Q-001',
+      question: 'Critical battery chemistry constraints?',
+      materiality: 'MATERIAL',
+      resolution: 'UNRESOLVED',
+    });
+
+    const discPath = path.join(tempDir, '.development-kit', 'idea', 'discovery.json');
+    const bytesBefore = fs.readFileSync(discPath, 'utf8');
+
+    // 1. Supersession without PO authority fails
+    assert.throws(() => {
+      supersedeOpenQuestion(tempDir, 'IDEA-Q-001', {
+        id: 'IDEA-Q-002',
+        question: 'Rephrased question',
+        materiality: 'NON_MATERIAL',
+        resolvedBy: 'AI_AGENT',
+      });
+    }, (err) => err.code === 'DK_UNAUTHORIZED_SUPERSEDING');
+
+    assert.equal(fs.readFileSync(discPath, 'utf8'), bytesBefore, 'discovery.json must remain unchanged on failure');
+
+    // 2. Supersession with explicit resolvedBy = 'PRODUCT_OWNER' succeeds and creates POD
+    const result = supersedeOpenQuestion(tempDir, 'IDEA-Q-001', {
+      id: 'IDEA-Q-002',
+      question: 'Rephrased question',
+      materiality: 'NON_MATERIAL',
+      resolvedBy: 'PRODUCT_OWNER',
+    });
+    assert.equal(result.superseded.resolution, 'SUPERSEDED');
+    assert.equal(result.superseded.supersededBy, 'IDEA-Q-002');
+    assert.ok(result.superseded.supersessionDecision.decisionId);
+
+    // Verify POD on disk
+    const pod = loadPODecisionById(tempDir, result.superseded.supersessionDecision.decisionId);
+    assert.equal(pod.provenance, 'product-owner');
+    assert.equal(pod.status, 'APPROVED');
+    assert.equal(pod.decisionType, 'QUESTION_SUPERSESSION');
+    assert.equal(pod.decisionData.questionId, 'IDEA-Q-001');
+    assert.equal(pod.decisionData.supersededBy, 'IDEA-Q-002');
+
+    // Discovery reloads cleanly with validated POD evidence
+    const reloaded = loadDiscoveryState(tempDir);
+    assert.equal(reloaded.openQuestions[0].resolution, 'SUPERSEDED');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 10 (Defect 8): Material requirement supersession requires explicit PO authority regardless of origin', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+
+    const testOrigins = ['AI_PROPOSED', 'ASSUMED', 'RESEARCH_DERIVED', 'USER_STATED', 'USER_CONFIRMED'];
+
+    for (let i = 0; i < testOrigins.length; i++) {
+      const origin = testOrigins[i];
+      const oldId = 'IDEA-REQ-' + String((i + 1) * 10).padStart(3, '0');
+      const newId = 'IDEA-REQ-' + String((i + 1) * 10 + 1).padStart(3, '0');
+
+      recordRequirementCandidate(tempDir, {
+        id: oldId,
+        statement: 'Material requirement for origin ' + origin,
+        materiality: 'MATERIAL',
+        origin,
+        resolutionState: 'UNRESOLVED',
+      });
+
+      // Attempting to supersede without PRODUCT_OWNER authority fails
+      assert.throws(() => {
+        supersedeRequirementCandidate(tempDir, oldId, {
+          id: newId,
+          statement: 'Replacement statement',
+          confirmedBy: 'AI_AGENT',
+        });
+      }, (err) => err.code === 'DK_UNAUTHORIZED_SUPERSEDING');
+
+      // Superseding with explicit PRODUCT_OWNER succeeds
+      const superseded = supersedeRequirementCandidate(tempDir, oldId, {
+        id: newId,
+        statement: 'Replacement statement',
+        confirmedBy: 'PRODUCT_OWNER',
+      });
+      assert.equal(superseded.superseded.resolutionState, 'SUPERSEDED');
+    }
   } finally {
     cleanupTempDir(tempDir);
   }
