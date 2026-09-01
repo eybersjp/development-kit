@@ -321,16 +321,16 @@ const POLICY_SCENARIOS = [
   {
     completedCommand: '/dk-idea',
     context: { success: true },
-    expectedPrimary: '/dk-spec',
+    expectedPrimary: '/dk-idea',
     forbidden: ['/dk-build', '/dk-ship'],
-    reason: 'Idea discovery completed -> specification definition'
+    reason: 'Idea discovery without approved state continues discovery/approval'
   },
   {
     completedCommand: '/dk-idea',
     context: { blockers: ['ambiguous_core_scope'] },
-    expectedPrimary: '/dk-debug',
-    forbidden: ['/dk-spec', '/dk-tasks'],
-    reason: 'Blocker on idea stage halts progression'
+    expectedPrimary: '/dk-idea',
+    forbidden: ['/dk-build', '/dk-ship'],
+    reason: 'Product blocker on idea stage routes to /dk-idea'
   },
 
   // 3. /dk-research
@@ -705,7 +705,7 @@ test('CLI: Valid JSON output produces parseable JSON array', () => {
   assert.equal(res.status, 0);
   const parsed = JSON.parse(res.stdout);
   assert.ok(Array.isArray(parsed.recommendations));
-  assert.equal(parsed.recommendations[0].command, '/dk-spec');
+  assert.equal(parsed.recommendations[0].command, '/dk-idea');
   assert.equal(parsed.count, parsed.recommendations.length);
 });
 
@@ -805,8 +805,8 @@ test('Context JSON: Malformed outstandingApprovals field fails validation', () =
 test('Context File: Valid complete context file resolves cleanly', () => {
   const tempFile = path.join(tmpdir(), `valid-context-${Date.now()}.json`);
   writeFileSync(tempFile, JSON.stringify({
-    completedCommand: '/dk-idea',
-    lifecycleStage: 'UNDERSTAND',
+    completedCommand: '/dk-spec',
+    lifecycleStage: 'DEFINE',
     success: true
   }), 'utf8');
 
@@ -816,7 +816,7 @@ test('Context File: Valid complete context file resolves cleanly', () => {
     });
     assert.equal(res.status, 0);
     assert.match(res.stdout, /## Suggested Next Step/);
-    assert.match(res.stdout, /\/dk-spec/);
+    assert.match(res.stdout, /\/dk-design/);
   } finally {
     try { unlinkSync(tempFile); } catch {}
   }

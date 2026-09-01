@@ -11,6 +11,7 @@
   "bin": { "development-kit": "scripts/install-antigravity.mjs" },
   "files": [".agents/", "agents/", "skills/", "commands/", "hooks/", "templates/", "evals/", "runtime/", "schemas/", "scripts/", "AGENTS.md", "README.md", "LICENSE", "opencode.json"],
   "scripts": {
+    "test": "npm run release:validate",
     "validate": "node scripts/validate-skills.mjs && node --test scripts/antigravity-command-discovery.test.mjs scripts/release-workflow-contract.test.mjs",
     "skills:validate:test": "node --test scripts/validate-skills.test.mjs",
     "init": "node scripts/install-antigravity.mjs",
@@ -34,9 +35,10 @@
     "test:intelligence": "npm run intelligence:validate",
     "v071:validate": "node --test scripts/v071-regression.test.mjs",
     "design-authority:validate": "node --test scripts/design-authority.test.mjs",
+    "v091:validate": "node --test scripts/v091-field-hardening.test.mjs scripts/idea-contract-drift.test.mjs",
     "evals:validate": "node scripts/validate-evals.mjs",
     "autopilot:validate": "npm run autopilot:test && npm run evals:validate",
-    "release:validate": "npm run validate && npm run skills:validate:test && npm run doctor && npm run sync:validate:test && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run platform:validate && npm run research:validate && npm run next-step:test && npm run installer:validate:test && npm run orchestration:validate && npm run execution-safety:validate && npm run evidence:validate && npm run orchestration-core:validate && npm run orchestration-integration:validate && npm run v09-reliability:validate && npm run intelligence:validate && npm run v071:validate && npm run design-authority:validate && npm run autopilot:validate"
+    "release:validate": "npm run validate && npm run skills:validate:test && npm run doctor && npm run sync:validate:test && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run platform:validate && npm run research:validate && npm run next-step:test && npm run installer:validate:test && npm run orchestration:validate && npm run execution-safety:validate && npm run evidence:validate && npm run orchestration-core:validate && npm run orchestration-integration:validate && npm run v09-reliability:validate && npm run v091:validate && npm run intelligence:validate && npm run v071:validate && npm run design-authority:validate && npm run autopilot:validate"
   },
   "engines": { "node": ">=18.0.0" }
 }

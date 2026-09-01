@@ -14,6 +14,10 @@ import {
   prepareTaskRun,
   validatePlanModel,
   verifyFromContext,
+  validateIdeaBriefStructure,
+  computeIdeaStageState,
+  resolveCanonicalIdeaArtifact,
+  persistCanonicalIdeaBrief,
 } from '../runtime/orchestration/index.mjs';
 import { reconcileCanonicalArtifact } from '../runtime/orchestration/reconciliation.mjs';
 
@@ -70,6 +74,10 @@ function main() {
     case 'reconcile': return output(reconcileCanonicalArtifact({ ...payload, rootDir }));
     case 'plan-validate': return output(validatePlanModel(payload));
     case 'run-status': return output(loadCurrentRunState(payload.contractId, payload.runId, rootDir));
+    case 'idea-validate': return output(validateIdeaBriefStructure(payload.content || (payload.filePath ? fs.readFileSync(safeInputPath(rootDir, payload.filePath), 'utf8') : fs.readFileSync(resolveCanonicalIdeaArtifact(rootDir).absolutePath, 'utf8'))));
+    case 'idea-state': return output(computeIdeaStageState(rootDir));
+    case 'idea-persist': return output(persistCanonicalIdeaBrief({ rootDir, content: payload.content }));
+    case 'artifact-resolve': return output(resolveCanonicalIdeaArtifact(rootDir));
     default: throw new Error(`Unsupported orchestration operation: ${operation}`);
   }
 }

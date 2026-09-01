@@ -184,6 +184,7 @@
 * [control-center](03-reference/scripts/control-center.md)
 * [install-antigravity](03-reference/scripts/install-antigravity.md)
 * [install-platform-adapters](03-reference/scripts/install-platform-adapters.md)
+* [lifecycle](03-reference/scripts/lifecycle.md)
 * [next-step](03-reference/scripts/next-step.md)
 * [orchestration](03-reference/scripts/orchestration.md)
 * [sync-plugin](03-reference/scripts/sync-plugin.md)

@@ -3,15 +3,13 @@
  *
  * Centralized, context-aware engine that determines valid next `/dk-*` commands
  * based on lifecycle stage, command results, test/verification status, safety gates,
- * and explicit human approvals.
+ * computed IDEA state, and explicit human approvals.
  */
 
 import { CANONICAL_LIFECYCLE_STAGES, normalizeContext, RECOMMENDATION_PRIORITIES } from './types.mjs';
 import { defaultCommandRegistry, CommandRegistry } from './command-registry.mjs';
+import { computeIdeaStageState } from '../orchestration/idea-state.mjs';
 
-/**
- * Mapping from completed command to its canonical lifecycle stage.
- */
 export const COMMAND_TO_STAGE_MAP = Object.freeze({
   '/dk-idea': 'UNDERSTAND',
   '/dk-spec': 'DEFINE',
@@ -29,44 +27,26 @@ export const COMMAND_TO_STAGE_MAP = Object.freeze({
   '/dk-autopilot': 'LIFECYCLE_WIDE'
 });
 
-/**
- * NextStepResolver class
- */
 export class NextStepResolver {
-  /**
-   * @param {object} [options={}] Configuration options
-   * @param {CommandRegistry} [options.registry] Command registry to use
-   * @param {number} [options.maxRecommendations=3] Maximum number of recommendations to return
-   */
   constructor(options = {}) {
     this.registry = options.registry || defaultCommandRegistry;
     this.maxRecommendations = typeof options.maxRecommendations === 'number' ? options.maxRecommendations : 3;
   }
 
-  /**
-   * Resolves the suggested next steps given a NextStepContext.
-   *
-   * @param {object} rawContext - Execution and lifecycle context
-   * @param {object} [options={}] - Override options (e.g. maxRecommendations)
-   * @returns {Array<{ command: string, description: string, priority: 'primary'|'secondary', reason?: string }>}
-   */
   resolve(rawContext = {}, options = {}) {
     const ctx = normalizeContext(rawContext);
     const maxRecs = typeof options.maxRecommendations === 'number'
       ? options.maxRecommendations
       : this.maxRecommendations;
 
-    // 1. Workflow Complete: Omit guidance in terminal state
     if (ctx.isWorkflowComplete) {
       return [];
     }
 
-    // 2. Active Automation: Suppress intermediate recommendations
     if (ctx.isAutomated && !ctx.isPaused) {
       return [];
     }
 
-    // 3. Unknown Command Handling: If command is provided but not recognized, route safely to /dk-status
     if (ctx.completedCommand) {
       const normalizedCmd = ctx.completedCommand.startsWith('/dk-')
         ? ctx.completedCommand
@@ -84,7 +64,6 @@ export class NextStepResolver {
     const recommendations = [];
     const stage = this._determineEffectiveStage(ctx);
 
-    // 4. Paused State Handling
     if (ctx.isPaused) {
       recommendations.push({
         command: '/dk-status',
@@ -95,24 +74,40 @@ export class NextStepResolver {
       return this._filterAndFormatRecommendations(recommendations, ctx, maxRecs);
     }
 
-    // 5. Active Blockers Override Normal Progression
+    // Nuanced Blocker Handling
     if (ctx.blockers.length > 0) {
-      recommendations.push({
-        command: '/dk-debug',
-        description: `Investigate and resolve active blocker(s): ${ctx.blockers.join(', ')}.`,
-        priority: RECOMMENDATION_PRIORITIES.PRIMARY,
-        reason: 'Active blockers halt standard lifecycle progression.'
-      });
-      recommendations.push({
-        command: '/dk-status',
-        description: 'Inspect active blockers, pending gates, and current lifecycle state.',
-        priority: RECOMMENDATION_PRIORITIES.SECONDARY,
-        reason: 'Review overall workflow state.'
-      });
+      const isRuntimeBlocker = ctx.blockerType === 'RUNTIME_FRAMEWORK';
+      const isProductBlocker = ctx.blockerType === 'PRODUCT_DISCOVERY' || (!isRuntimeBlocker && (ctx.completedCommand === '/dk-idea' || stage === 'UNDERSTAND'));
+      if (!isRuntimeBlocker && isProductBlocker) {
+        recommendations.push({
+          command: '/dk-idea',
+          description: `Resolve active product/discovery blocker(s): ${ctx.blockers.join(', ')}.`,
+          priority: RECOMMENDATION_PRIORITIES.PRIMARY,
+          reason: 'Product discovery blockers require user clarification.'
+        });
+        recommendations.push({
+          command: '/dk-status',
+          description: 'Inspect active blockers, pending gates, and current lifecycle state.',
+          priority: RECOMMENDATION_PRIORITIES.SECONDARY,
+          reason: 'Review overall workflow state.'
+        });
+      } else {
+        recommendations.push({
+          command: '/dk-debug',
+          description: `Investigate and resolve active blocker(s): ${ctx.blockers.join(', ')}.`,
+          priority: RECOMMENDATION_PRIORITIES.PRIMARY,
+          reason: 'Active blockers halt standard lifecycle progression.'
+        });
+        recommendations.push({
+          command: '/dk-status',
+          description: 'Inspect active blockers, pending gates, and current lifecycle state.',
+          priority: RECOMMENDATION_PRIORITIES.SECONDARY,
+          reason: 'Review overall workflow state.'
+        });
+      }
       return this._filterAndFormatRecommendations(recommendations, ctx, maxRecs);
     }
 
-    // 6. Failures Override Normal Forward Progression
     const hasFailures = !ctx.success ||
       ctx.verificationStatus === 'failed' ||
       ctx.testsStatus === 'failed' ||
@@ -125,9 +120,7 @@ export class NextStepResolver {
       return this._filterAndFormatRecommendations(recommendations, ctx, maxRecs);
     }
 
-    // 7. Command & Stage Specific Success Progression
     this._resolveSuccessRecommendations(ctx, stage, recommendations);
-
     return this._filterAndFormatRecommendations(recommendations, ctx, maxRecs);
   }
 
@@ -217,7 +210,6 @@ export class NextStepResolver {
       return;
     }
 
-    // Default failure: systematic debugging
     recommendations.push({
       command: '/dk-debug',
       description: 'Investigate and resolve test or verification failures using systematic root-cause debugging.',
@@ -237,7 +229,6 @@ export class NextStepResolver {
       ? (ctx.completedCommand.startsWith('/dk-') ? ctx.completedCommand : (ctx.completedCommand.startsWith('/') ? ctx.completedCommand : `/dk-${ctx.completedCommand}`))
       : null;
 
-    // Command-specific explicit routing
     switch (cmd) {
       case '/dk-autopilot':
         recommendations.push({
@@ -249,12 +240,7 @@ export class NextStepResolver {
         break;
 
       case '/dk-idea':
-        recommendations.push({
-          command: '/dk-spec',
-          description: 'Create the minimum required specification artifacts for the approved concept.',
-          priority: RECOMMENDATION_PRIORITIES.PRIMARY,
-          reason: 'Idea discovery completed successfully.'
-        });
+        this._resolveIdeaStageRecommendations(ctx, recommendations);
         break;
 
       case '/dk-research':
@@ -351,8 +337,6 @@ export class NextStepResolver {
         break;
 
       case '/dk-simplify':
-        // Consequential Safety Rule: After /dk-simplify, ONLY /dk-test is recommended.
-        // /dk-ship is NEVER recommended immediately after /dk-simplify.
         recommendations.push({
           command: '/dk-test',
           description: 'Re-run the verification suite to confirm no regressions were introduced during simplification.',
@@ -381,7 +365,6 @@ export class NextStepResolver {
         break;
 
       case '/dk-ship':
-        // Terminal state: if workflow complete, empty. If not complete, review/debug.
         if (!ctx.isWorkflowComplete) {
           recommendations.push({
             command: '/dk-status',
@@ -397,8 +380,83 @@ export class NextStepResolver {
         break;
 
       default:
-        // Stage-based fallback
         this._resolveStageBasedRecommendations(ctx, stage, recommendations);
+        break;
+    }
+  }
+
+  _resolveIdeaStageRecommendations(ctx, recommendations) {
+    let ideaState;
+    try {
+      ideaState = computeIdeaStageState(ctx.rootDir);
+    } catch (_) {
+      ideaState = { state: 'DISCOVERY_IN_PROGRESS' };
+    }
+
+    switch (ideaState.state) {
+      case 'APPROVED':
+        recommendations.push({
+          command: '/dk-spec',
+          description: 'Create the minimum required specification artifacts for the approved concept.',
+          priority: RECOMMENDATION_PRIORITIES.PRIMARY,
+          reason: 'Idea discovery completed and approved by Product Owner.'
+        });
+        break;
+
+      case 'READY_FOR_APPROVAL':
+        recommendations.push({
+          command: '/dk-idea',
+          description: 'Obtain explicit Product Owner approval for the completed Idea Brief.',
+          priority: RECOMMENDATION_PRIORITIES.PRIMARY,
+          reason: 'Idea Brief is ready for final Product Owner approval.'
+        });
+        recommendations.push({
+          command: '/dk-status',
+          description: 'Inspect discovery state and requirement provenance.',
+          priority: RECOMMENDATION_PRIORITIES.SECONDARY,
+          reason: 'Review readiness details.'
+        });
+        break;
+
+      case 'DRAFT_READY':
+        recommendations.push({
+          command: '/dk-idea',
+          description: 'Resolve unconfirmed AI proposals or open questions in discovery.',
+          priority: RECOMMENDATION_PRIORITIES.PRIMARY,
+          reason: 'Draft brief complete; discovery questions require user confirmation.'
+        });
+        recommendations.push({
+          command: '/dk-status',
+          description: 'Inspect discovery status and unconfirmed candidate items.',
+          priority: RECOMMENDATION_PRIORITIES.SECONDARY,
+          reason: 'Review draft issues.'
+        });
+        break;
+
+      case 'BLOCKED':
+        recommendations.push({
+          command: ideaState.blockerType === 'RUNTIME_FRAMEWORK' ? '/dk-debug' : '/dk-idea',
+          description: `Resolve blocking condition: ${(ideaState.issues || []).map(i => i.message).join(', ')}.`,
+          priority: RECOMMENDATION_PRIORITIES.PRIMARY,
+          reason: 'IDEA stage is blocked.'
+        });
+        recommendations.push({
+          command: '/dk-status',
+          description: 'Inspect blocker details.',
+          priority: RECOMMENDATION_PRIORITIES.SECONDARY,
+          reason: 'Check status.'
+        });
+        break;
+
+      case 'NOT_STARTED':
+      case 'DISCOVERY_IN_PROGRESS':
+      default:
+        recommendations.push({
+          command: '/dk-idea',
+          description: 'Continue requirements interview and complete discovery.',
+          priority: RECOMMENDATION_PRIORITIES.PRIMARY,
+          reason: 'Idea discovery is in progress.'
+        });
         break;
     }
   }
@@ -406,12 +464,7 @@ export class NextStepResolver {
   _resolveStageBasedRecommendations(ctx, stage, recommendations) {
     switch (stage) {
       case 'UNDERSTAND':
-        recommendations.push({
-          command: '/dk-spec',
-          description: 'Create the minimum required specification artifacts for the approved concept.',
-          priority: RECOMMENDATION_PRIORITIES.PRIMARY,
-          reason: 'Define requirements.'
-        });
+        this._resolveIdeaStageRecommendations(ctx, recommendations);
         break;
       case 'DEFINE':
         recommendations.push({
@@ -470,7 +523,6 @@ export class NextStepResolver {
         });
         break;
       case 'COMPLETE':
-        // Consequential Safety Rule: /dk-ship requires explicit approval and all verification gates
         if (this._isShipEligible(ctx)) {
           recommendations.push({
             command: '/dk-ship',
@@ -505,8 +557,6 @@ export class NextStepResolver {
   }
 
   _isShipEligible(ctx) {
-    // /dk-ship is strictly consequential.
-    // Must explicitly satisfy all 8 conditions without defaulting, inferring, or skipping.
     return (
       ctx.success === true &&
       ctx.approvalStatus === 'approved' &&
@@ -531,15 +581,11 @@ export class NextStepResolver {
         ? item.command
         : (item.command.startsWith('/') ? item.command : `/dk-${item.command}`);
 
-      // Rule 1: Valid commands only — must exist in registry
       if (!this.registry.has(normalizedCmd)) {
         continue;
       }
 
-      // Rule 2: Consequential Safety Gate:
-      // If /dk-ship is encountered, verify eligibility
       if (normalizedCmd === '/dk-ship' && !this._isShipEligible(ctx)) {
-        // Consequential action blocked: replace with /dk-review if not seen
         if (!seenCommands.has('/dk-review')) {
           seenCommands.add('/dk-review');
           validRecs.push({
@@ -567,7 +613,6 @@ export class NextStepResolver {
       }
     }
 
-    // Ensure first item is primary, others secondary
     return validRecs.map((rec, index) => ({
       ...rec,
       priority: index === 0 ? RECOMMENDATION_PRIORITIES.PRIMARY : RECOMMENDATION_PRIORITIES.SECONDARY
@@ -575,13 +620,6 @@ export class NextStepResolver {
   }
 }
 
-/**
- * Convenience helper function using default resolver.
- *
- * @param {object} context
- * @param {object} [options]
- * @returns {Array<object>}
- */
 export function resolveNextStep(context, options) {
   const resolver = new NextStepResolver(options);
   return resolver.resolve(context, options);

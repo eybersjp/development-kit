@@ -2,9 +2,6 @@
  * Development Kit Next-Step Guidance — Types & Context Definitions
  */
 
-/**
- * Valid lifecycle stages in canonical order.
- */
 export const CANONICAL_LIFECYCLE_STAGES = Object.freeze([
   'UNDERSTAND',
   'DEFINE',
@@ -17,17 +14,11 @@ export const CANONICAL_LIFECYCLE_STAGES = Object.freeze([
   'COMPLETE'
 ]);
 
-/**
- * Valid priority levels for recommendations.
- */
 export const RECOMMENDATION_PRIORITIES = Object.freeze({
   PRIMARY: 'primary',
   SECONDARY: 'secondary'
 });
 
-/**
- * Valid safety levels for commands and actions.
- */
 export const SAFETY_LEVELS = Object.freeze({
   SAFE: 'safe',
   READ_ONLY: 'read_only',
@@ -35,61 +26,48 @@ export const SAFETY_LEVELS = Object.freeze({
   DESTRUCTIVE: 'destructive'
 });
 
-/**
- * Valid verification statuses.
- */
 export const VERIFICATION_STATUSES = Object.freeze([
   'passed',
   'failed',
   'unverified'
 ]);
 
-/**
- * Valid tests statuses.
- */
 export const TESTS_STATUSES = Object.freeze([
   'passed',
   'failed'
 ]);
 
-/**
- * Valid review statuses.
- */
 export const REVIEW_STATUSES = Object.freeze([
   'passed',
   'failed',
   'pending'
 ]);
 
-/**
- * Valid approval statuses.
- */
 export const APPROVAL_STATUSES = Object.freeze([
   'approved',
   'pending',
-  'rejected',
-  'not_required'
+  'rejected'
 ]);
 
-/**
- * Valid post-simplification verification statuses.
- */
 export const POST_SIMPLIFICATION_STATUSES = Object.freeze([
   'passed',
-  'failed',
-  'unverified',
-  'pending'
+  'failed'
 ]);
 
-/**
- * Validates the schema of a raw context object.
- *
- * @param {object} rawContext
- * @param {object} [registry] CommandRegistry instance
- * @returns {{ valid: boolean, error?: string }}
- */
-export function validateContextSchema(rawContext, registry) {
-  if (typeof rawContext !== 'object' || rawContext === null || Array.isArray(rawContext)) {
+export const DOCUMENTATION_STATUSES = Object.freeze([
+  'current',
+  'stale',
+  'missing'
+]);
+
+export const REPOSITORY_STATUSES = Object.freeze([
+  'clean',
+  'dirty',
+  'failed'
+]);
+
+export function validateContextSchema(rawContext, registry = null) {
+  if (rawContext === null || typeof rawContext !== 'object' || Array.isArray(rawContext)) {
     return { valid: false, error: 'Context must be a non-null object' };
   }
 
@@ -97,10 +75,12 @@ export function validateContextSchema(rawContext, registry) {
     if (typeof rawContext.completedCommand !== 'string' || !rawContext.completedCommand.trim()) {
       return { valid: false, error: 'Invalid completedCommand: must be a non-empty string' };
     }
-    const cmd = rawContext.completedCommand.trim();
-    const normCmd = cmd.startsWith('/dk-') ? cmd : (cmd.startsWith('/') ? cmd : `/dk-${cmd}`);
-    if (registry && !registry.has(normCmd)) {
-      return { valid: false, error: `Unknown command: ${rawContext.completedCommand}` };
+    if (registry && typeof registry.has === 'function') {
+      const cmdStr = rawContext.completedCommand.trim();
+      const normCmd = cmdStr.startsWith('/dk-') ? cmdStr : (cmdStr.startsWith('/') ? cmdStr : `/dk-${cmdStr}`);
+      if (!registry.has(normCmd)) {
+        return { valid: false, error: `Unknown command: ${rawContext.completedCommand}` };
+      }
     }
   }
 
@@ -108,10 +88,12 @@ export function validateContextSchema(rawContext, registry) {
     if (typeof rawContext.previousCommand !== 'string' || !rawContext.previousCommand.trim()) {
       return { valid: false, error: 'Invalid previousCommand: must be a non-empty string' };
     }
-    const prevCmd = rawContext.previousCommand.trim();
-    const normPrev = prevCmd.startsWith('/dk-') ? prevCmd : (prevCmd.startsWith('/') ? prevCmd : `/dk-${prevCmd}`);
-    if (registry && !registry.has(normPrev)) {
-      return { valid: false, error: `Unknown previousCommand: ${rawContext.previousCommand}` };
+    if (registry && typeof registry.has === 'function') {
+      const prevStr = rawContext.previousCommand.trim();
+      const normPrev = prevStr.startsWith('/dk-') ? prevStr : (prevStr.startsWith('/') ? prevStr : `/dk-${prevStr}`);
+      if (!registry.has(normPrev)) {
+        return { valid: false, error: `Unknown previousCommand: ${rawContext.previousCommand}` };
+      }
     }
   }
 
@@ -185,35 +167,31 @@ export function validateContextSchema(rawContext, registry) {
     }
   }
 
+  if (rawContext.documentationStatus !== undefined) {
+    if (typeof rawContext.documentationStatus !== 'string' || !DOCUMENTATION_STATUSES.includes(rawContext.documentationStatus.trim().toLowerCase())) {
+      return { valid: false, error: `Invalid documentation status: ${rawContext.documentationStatus}` };
+    }
+  }
+
+  if (rawContext.repositoryStatus !== undefined) {
+    if (typeof rawContext.repositoryStatus !== 'string' || !REPOSITORY_STATUSES.includes(rawContext.repositoryStatus.trim().toLowerCase())) {
+      return { valid: false, error: `Invalid repository status: ${rawContext.repositoryStatus}` };
+    }
+  }
+
   return { valid: true };
 }
 
-/**
- * Normalizes and validates a NextStepContext object.
- *
- * @param {object} rawContext - Raw input context
- * @returns {object} Normalized context
- */
 export function normalizeContext(rawContext = {}) {
-  if (typeof rawContext !== 'object' || rawContext === null) {
-    rawContext = {};
-  }
-
   const completedCommand = typeof rawContext.completedCommand === 'string'
     ? rawContext.completedCommand.trim()
     : undefined;
 
-  let lifecycleStage = typeof rawContext.lifecycleStage === 'string'
+  const lifecycleStage = typeof rawContext.lifecycleStage === 'string'
     ? rawContext.lifecycleStage.trim().toUpperCase()
     : undefined;
 
-  if (lifecycleStage && !CANONICAL_LIFECYCLE_STAGES.includes(lifecycleStage)) {
-    lifecycleStage = lifecycleStage.toUpperCase();
-  }
-
-  const success = typeof rawContext.success === 'boolean'
-    ? rawContext.success
-    : (rawContext.success === 'false' ? false : (rawContext.success === 'true' ? true : (rawContext.success === undefined ? true : Boolean(rawContext.success))));
+  const success = rawContext.success !== undefined ? Boolean(rawContext.success) : true;
 
   const verificationStatus = typeof rawContext.verificationStatus === 'string'
     ? rawContext.verificationStatus.trim().toLowerCase()
@@ -280,6 +258,8 @@ export function normalizeContext(rawContext = {}) {
     isPaused,
     isWorkflowComplete,
     previousCommand,
+    rootDir: rawContext.rootDir || process.cwd(),
+    blockerType: rawContext.blockerType || (rawContext.metadata && rawContext.metadata.blockerType) || null,
     metadata: typeof rawContext.metadata === 'object' && rawContext.metadata !== null ? rawContext.metadata : {}
   };
 }

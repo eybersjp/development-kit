@@ -214,14 +214,14 @@ test('distribution package (npm pack) includes all runtime, schemas, skills, scr
   const extractedNextStepScript = join(extractedRoot, 'scripts', 'next-step.mjs');
   const extractedAutopilotScript = join(extractedRoot, 'scripts', 'autopilot.mjs');
 
-  const nextStepExec = spawnSync(process.execPath, [extractedNextStepScript, '--command=/dk-idea'], {
+  const nextStepExec = spawnSync(process.execPath, [extractedNextStepScript, '--command=/dk-spec'], {
     cwd: extractedRoot,
     encoding: 'utf8',
     env: { ...process.env, NODE_PATH: '' }
   });
   assert.equal(nextStepExec.status, 0, `Next-step from tarball failed: ${nextStepExec.stderr}`);
   assert.match(nextStepExec.stdout, /## Suggested Next Step/);
-  assert.match(nextStepExec.stdout, /\/dk-spec/);
+  assert.match(nextStepExec.stdout, /\/dk-design/);
 
   const autopilotExec = spawnSync(
     process.execPath,
