@@ -14,7 +14,33 @@ import { spawnSync } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+export const ALLOWED_SCRIPTS = Object.freeze([
+  'lifecycle.mjs',
+  'orchestration.mjs',
+  'autopilot.mjs',
+  'next-step.mjs',
+  'bootstrap.mjs',
+  'control-center.mjs',
+  'sync-plugin.mjs',
+  'validate-docs.mjs',
+  'validate-skills.mjs',
+  'validate-evals.mjs',
+]);
+
 export function resolveScriptPath(scriptName, cwd = process.cwd()) {
+  if (!scriptName || typeof scriptName !== 'string') {
+    throw new Error('Script name must be a non-empty string');
+  }
+
+  // Reject directory traversal or path separators
+  if (scriptName.includes('/') || scriptName.includes('\\') || scriptName.includes('..')) {
+    throw new Error(`Invalid script name (traversal/separators forbidden): ${scriptName}`);
+  }
+
+  if (!ALLOWED_SCRIPTS.includes(scriptName)) {
+    throw new Error(`Script is not in allowlist: ${scriptName}`);
+  }
+
   const candidates = [
     // 1. Project local plugin directory relative to CWD
     path.join(cwd, '.agents', 'plugins', 'development-kit', 'scripts', scriptName),
@@ -39,20 +65,37 @@ function main() {
   const args = process.argv.slice(2);
   const scriptName = args[0];
   if (!scriptName) {
-    console.error(JSON.stringify({ success: false, error: 'Usage: node run.mjs <script-name> [args...]' }));
+    console.error(JSON.stringify({ success: false, code: 'DK_USAGE_ERROR', error: 'Usage: node run.mjs <script-name> [args...]' }));
     process.exit(1);
   }
 
-  const scriptPath = resolveScriptPath(scriptName);
+  let scriptPath;
+  try {
+    scriptPath = resolveScriptPath(scriptName);
+  } catch (err) {
+    console.error(JSON.stringify({ success: false, code: 'DK_SCRIPT_RESOLUTION_ERROR', error: err.message }));
+    process.exit(1);
+  }
+
   const child = spawnSync(process.execPath, [scriptPath, ...args.slice(1)], {
     stdio: 'inherit',
     cwd: process.cwd(),
     env: process.env,
   });
 
-  process.exit(child.status ?? 0);
+  if (child.error) {
+    console.error(JSON.stringify({ success: false, code: 'DK_SPAWN_ERROR', error: child.error.message }));
+    process.exit(1);
+  }
+
+  if (child.status === null || child.status === undefined) {
+    console.error(JSON.stringify({ success: false, code: 'DK_PROCESS_TERMINATED', error: 'Process terminated abnormally or via signal', signal: child.signal }));
+    process.exit(1);
+  }
+
+  process.exit(child.status);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main();
 }

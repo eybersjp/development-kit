@@ -72,6 +72,64 @@ export function getDiscoveryFilePath(rootDir = process.cwd()) {
   return path.join(getDiscoveryDir(rootDir), 'discovery.json');
 }
 
+export function validateDiscoveryStateStructure(data) {
+  if (!data || typeof data !== 'object') {
+    throw new DiscoveryStateError('Discovery state must be an object', 'DK_DISCOVERY_CORRUPT');
+  }
+  if (data.schemaVersion !== DISCOVERY_SCHEMA_VERSION) {
+    throw new DiscoveryStateError(`Invalid discovery schemaVersion: ${data.schemaVersion}`, 'DK_DISCOVERY_CORRUPT');
+  }
+  if (typeof data.revision !== 'number' || data.revision < 0) {
+    throw new DiscoveryStateError('Discovery revision must be a non-negative number', 'DK_DISCOVERY_CORRUPT');
+  }
+  if (!Array.isArray(data.requirements) || !Array.isArray(data.openQuestions)) {
+    throw new DiscoveryStateError('Discovery requirements and openQuestions must be arrays', 'DK_DISCOVERY_CORRUPT');
+  }
+
+  for (const r of data.requirements) {
+    if (!r || typeof r !== 'object') {
+      throw new DiscoveryStateError('Requirement entry must be an object', 'DK_DISCOVERY_CORRUPT');
+    }
+    if (!r.id || !/^IDEA-REQ-\d+$/i.test(r.id)) {
+      throw new DiscoveryStateError(`Requirement ID invalid: ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+    }
+    if (!r.statement || typeof r.statement !== 'string') {
+      throw new DiscoveryStateError(`Requirement statement invalid for ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+    }
+    if (!REQUIREMENT_ORIGINS.includes(r.origin)) {
+      throw new DiscoveryStateError(`Invalid requirement origin ${r.origin} in ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+    }
+    if (!RESOLUTION_STATES.includes(r.resolutionState)) {
+      throw new DiscoveryStateError(`Invalid resolutionState ${r.resolutionState} in ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+    }
+    if ((r.resolutionState === 'CONFIRMED' || r.resolutionState === 'ADOPTED') && r.confirmedBy !== 'PRODUCT_OWNER') {
+      throw new DiscoveryStateError(`Confirmed/Adopted requirement ${r.id} must be confirmedBy PRODUCT_OWNER (got ${r.confirmedBy})`, 'DK_DISCOVERY_CORRUPT');
+    }
+  }
+
+  for (const q of data.openQuestions) {
+    if (!q || typeof q !== 'object') {
+      throw new DiscoveryStateError('Question entry must be an object', 'DK_DISCOVERY_CORRUPT');
+    }
+    if (!q.id || !/^IDEA-Q-\d+$/i.test(q.id)) {
+      throw new DiscoveryStateError(`Question ID invalid: ${q.id}`, 'DK_DISCOVERY_CORRUPT');
+    }
+    if (!q.question || typeof q.question !== 'string') {
+      throw new DiscoveryStateError(`Question text invalid for ${q.id}`, 'DK_DISCOVERY_CORRUPT');
+    }
+    if (!QUESTION_RESOLUTIONS.includes(q.resolution)) {
+      throw new DiscoveryStateError(`Invalid question resolution ${q.resolution} in ${q.id}`, 'DK_DISCOVERY_CORRUPT');
+    }
+    if (q.resolution === 'ANSWERED' && q.resolvedBy !== 'PRODUCT_OWNER') {
+      throw new DiscoveryStateError(`ANSWERED question ${q.id} must be resolvedBy PRODUCT_OWNER`, 'DK_DISCOVERY_CORRUPT');
+    }
+    if (q.resolution === 'DEFERRED' && q.resolvedBy !== 'PRODUCT_OWNER') {
+      throw new DiscoveryStateError(`DEFERRED question ${q.id} must be resolvedBy PRODUCT_OWNER`, 'DK_DISCOVERY_CORRUPT');
+    }
+  }
+  return true;
+}
+
 export function loadDiscoveryState(rootDir = process.cwd()) {
   const filePath = getDiscoveryFilePath(rootDir);
   if (!fs.existsSync(filePath)) {
@@ -87,12 +145,11 @@ export function loadDiscoveryState(rootDir = process.cwd()) {
 
   try {
     const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    if (!Array.isArray(data.requirements) || !Array.isArray(data.openQuestions)) {
-      throw new Error('Discovery state structure invalid');
-    }
+    validateDiscoveryStateStructure(data);
     data.fingerprint = computeDiscoveryFingerprint(data);
     return data;
   } catch (err) {
+    if (err instanceof DiscoveryStateError) throw err;
     throw new DiscoveryStateError(`Corrupt discovery state: ${err.message}`, 'DK_DISCOVERY_CORRUPT');
   }
 }
@@ -139,15 +196,20 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
     throw new DiscoveryStateError(`Invalid resolutionState: ${resolutionState}`, 'DK_INVALID_RESOLUTION_STATE');
   }
 
-  if (origin === 'RESEARCH_DERIVED') {
-    if (resolutionState === 'ADOPTED' && confirmedBy !== 'PRODUCT_OWNER') {
-      throw new DiscoveryStateError('RESEARCH_DERIVED cannot be ADOPTED without explicit confirmedBy = PRODUCT_OWNER', 'DK_UNAUTHORIZED_ADOPTION');
-    }
+  if (origin === 'RESEARCH_DERIVED' && resolutionState === 'ADOPTED' && confirmedBy !== 'PRODUCT_OWNER') {
+    throw new DiscoveryStateError('Research-derived requirement adoption requires explicit confirmedBy = PRODUCT_OWNER', 'DK_UNAUTHORIZED_ADOPTION');
   }
-  if (origin === 'AI_PROPOSED' || origin === 'ASSUMED') {
-    if (resolutionState === 'CONFIRMED' && confirmedBy !== 'PRODUCT_OWNER') {
-      throw new DiscoveryStateError(`${origin} requirement cannot be CONFIRMED without explicit confirmedBy = PRODUCT_OWNER`, 'DK_UNAUTHORIZED_CONFIRMATION');
-    }
+
+  if (origin === 'AI_PROPOSED' && resolutionState === 'CONFIRMED' && confirmedBy !== 'PRODUCT_OWNER') {
+    throw new DiscoveryStateError('AI-proposed requirement confirmation requires explicit confirmedBy = PRODUCT_OWNER', 'DK_UNAUTHORIZED_CONFIRMATION');
+  }
+
+  if (origin === 'ASSUMED' && resolutionState === 'CONFIRMED' && confirmedBy !== 'PRODUCT_OWNER') {
+    throw new DiscoveryStateError('Assumed requirement confirmation requires explicit confirmedBy = PRODUCT_OWNER', 'DK_UNAUTHORIZED_CONFIRMATION');
+  }
+
+  if ((resolutionState === 'CONFIRMED' || resolutionState === 'ADOPTED') && confirmedBy !== 'PRODUCT_OWNER') {
+    throw new DiscoveryStateError(`Confirmed/Adopted requirement requires explicit confirmedBy = 'PRODUCT_OWNER'`, 'DK_UNAUTHORIZED_CONFIRMATION');
   }
 
   const state = loadDiscoveryState(rootDir);
@@ -211,8 +273,12 @@ export function recordOpenQuestion(rootDir = process.cwd(), {
     throw new DiscoveryStateError(`Invalid question resolution: ${resolution}`, 'DK_INVALID_QUESTION_RESOLUTION');
   }
 
-  if (resolution === 'ANSWERED' && !resolvedBy) {
-    throw new DiscoveryStateError('ANSWERED question requires explicit resolvedBy authority', 'DK_UNAUTHORIZED_RESOLUTION');
+  if (resolution === 'ANSWERED' && resolvedBy !== 'PRODUCT_OWNER') {
+    throw new DiscoveryStateError('ANSWERED question requires explicit resolvedBy = "PRODUCT_OWNER"', 'DK_UNAUTHORIZED_RESOLUTION');
+  }
+
+  if (resolution === 'DEFERRED' && resolvedBy !== 'PRODUCT_OWNER') {
+    throw new DiscoveryStateError('DEFERRED question requires explicit resolvedBy = "PRODUCT_OWNER"', 'DK_UNAUTHORIZED_DEFERRAL');
   }
 
   const state = loadDiscoveryState(rootDir);
@@ -223,7 +289,7 @@ export function recordOpenQuestion(rootDir = process.cwd(), {
     materiality,
     resolution,
     deferredTarget: resolution === 'DEFERRED' ? (deferredTarget || 'Future Ideas (Explicitly Deferred)') : null,
-    resolvedBy: resolution !== 'UNRESOLVED' ? (resolvedBy || 'PRODUCT_OWNER') : null,
+    resolvedBy: resolution !== 'UNRESOLVED' ? resolvedBy : null,
     notes,
     createdAt: existingIdx >= 0 ? state.openQuestions[existingIdx].createdAt : new Date().toISOString(),
     updatedAt: new Date().toISOString(),

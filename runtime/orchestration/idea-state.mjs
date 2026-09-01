@@ -30,6 +30,37 @@ export function getApprovalsFilePath(rootDir = process.cwd()) {
   return path.join(rootDir, '.development-kit', 'idea', 'approvals.json');
 }
 
+export function validateApprovalsHistoryStructure(data) {
+  if (!data || typeof data !== 'object') {
+    throw new IdeaStateError('Approvals history must be an object', 'DK_APPROVALS_CORRUPT');
+  }
+  if (!Array.isArray(data.approvals)) {
+    throw new IdeaStateError('Approvals data is malformed: approvals must be an array', 'DK_APPROVALS_CORRUPT');
+  }
+
+  for (const app of data.approvals) {
+    if (!app || typeof app !== 'object') {
+      throw new IdeaStateError('Approval record must be an object', 'DK_APPROVALS_CORRUPT');
+    }
+    if (!app.id || !/^APPR-IDEA-\d+-\d+$/i.test(app.id)) {
+      throw new IdeaStateError(`Invalid approval ID: ${app.id}`, 'DK_APPROVALS_CORRUPT');
+    }
+    if (!app.artifactFingerprint || !app.artifactFingerprint.startsWith('sha256:')) {
+      throw new IdeaStateError(`Invalid approval artifactFingerprint in ${app.id}`, 'DK_APPROVALS_CORRUPT');
+    }
+    if (typeof app.artifactRevision !== 'number' || app.artifactRevision <= 0) {
+      throw new IdeaStateError(`Invalid approval artifactRevision in ${app.id}`, 'DK_APPROVALS_CORRUPT');
+    }
+    if (app.approvingAuthority !== 'PRODUCT_OWNER') {
+      throw new IdeaStateError(`Unauthorized approvingAuthority ${app.approvingAuthority} in ${app.id}`, 'DK_APPROVALS_CORRUPT');
+    }
+    if (!app.approvedAt || isNaN(Date.parse(app.approvedAt))) {
+      throw new IdeaStateError(`Invalid approvedAt timestamp in ${app.id}`, 'DK_APPROVALS_CORRUPT');
+    }
+  }
+  return true;
+}
+
 export function loadApprovalsHistory(rootDir = process.cwd()) {
   const filePath = getApprovalsFilePath(rootDir);
   if (!fs.existsSync(filePath)) {
@@ -41,11 +72,10 @@ export function loadApprovalsHistory(rootDir = process.cwd()) {
 
   try {
     const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    if (!Array.isArray(data.approvals)) {
-      throw new Error('Approvals data is malformed');
-    }
+    validateApprovalsHistoryStructure(data);
     return data;
   } catch (err) {
+    if (err instanceof IdeaStateError) throw err;
     throw new IdeaStateError(`Corrupt approvals history: ${err.message}`, 'DK_APPROVALS_CORRUPT');
   }
 }
@@ -183,65 +213,102 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
   const mustSection = structValidation.sections.requirementsMust || '';
   const mustLines = mustSection.split('\n').map(l => l.trim()).filter(l => l.startsWith('-') || l.startsWith('*'));
   
-  const activeDiscoveryReqs = discoveryState.requirements.filter(r => r.resolutionState !== 'REJECTED' && r.resolutionState !== 'SUPERSEDED');
   const reqIssues = [];
+  const consumedReqIds = new Set();
 
   for (const line of mustLines) {
     const cleanLine = line.replace(/^[-*]\s*/, '').trim();
     if (!cleanLine || isCanonicalNone(cleanLine)) continue;
 
-    // Look for explicit candidate tag e.g. [IDEA-REQ-001] or search by matching statement/id
+    // Look for explicit candidate tag e.g. [IDEA-REQ-001]
     const tagMatch = cleanLine.match(/\[(IDEA-REQ-\d+)\]/i);
-    let matchedCand = null;
-
-    if (tagMatch) {
-      const candId = tagMatch[1].toUpperCase();
-      matchedCand = discoveryState.requirements.find(r => r.id.toUpperCase() === candId);
-      if (!matchedCand) {
-        reqIssues.push({ code: 'UNKNOWN_REQUIREMENT_REFERENCE', message: `Must item references unknown candidate ${candId}` });
-        continue;
-      }
-    } else {
-      matchedCand = activeDiscoveryReqs.find(r => cleanLine.includes(r.statement) || r.statement.includes(cleanLine));
+    if (!tagMatch) {
+      reqIssues.push({
+        code: 'UNBOUND_MUST_REQUIREMENT',
+        message: `Must requirement is missing explicit [IDEA-REQ-xxx] tag: "${cleanLine}"`,
+      });
+      continue;
     }
 
+    const candId = tagMatch[1].toUpperCase();
+    if (consumedReqIds.has(candId)) {
+      reqIssues.push({
+        code: 'DUPLICATE_REQUIREMENT_REFERENCE',
+        message: `Candidate ${candId} is bound to multiple Must requirements`,
+      });
+      continue;
+    }
+    consumedReqIds.add(candId);
+
+    const matchedCand = discoveryState.requirements.find(r => r.id.toUpperCase() === candId);
     if (!matchedCand) {
-      reqIssues.push({ code: 'UNBOUND_MUST_REQUIREMENT', message: `Must requirement has no active discovery candidate: "${cleanLine}"` });
+      reqIssues.push({
+        code: 'UNKNOWN_REQUIREMENT_REFERENCE',
+        message: `Must item references unknown candidate ${candId}`,
+      });
       continue;
     }
 
     if (matchedCand.resolutionState === 'REJECTED' || matchedCand.resolutionState === 'SUPERSEDED') {
-      reqIssues.push({ code: 'INVALID_REQUIREMENT_AUTHORITY', message: `Must item is bound to rejected/superseded candidate ${matchedCand.id}` });
+      reqIssues.push({
+        code: 'INVALID_REQUIREMENT_AUTHORITY',
+        message: `Must item is bound to rejected/superseded candidate ${matchedCand.id}`,
+      });
       continue;
     }
-  }
 
-  if (mustLines.length > 0 && activeDiscoveryReqs.length < mustLines.length) {
-    reqIssues.push({ code: 'INSUFFICIENT_DISCOVERY_CANDIDATES', message: `Idea Brief has ${mustLines.length} Must requirements but discovery only has ${activeDiscoveryReqs.length} active candidates` });
+    if (matchedCand.origin === 'RESEARCH_DERIVED' && (matchedCand.resolutionState !== 'ADOPTED' || matchedCand.confirmedBy !== 'PRODUCT_OWNER')) {
+      reqIssues.push({
+        code: 'UNADOPTED_RESEARCH_REQUIREMENT',
+        message: `Research-derived requirement ${matchedCand.id} must be explicitly ADOPTED by PRODUCT_OWNER before entering Must`,
+      });
+      continue;
+    }
+
+    if ((matchedCand.resolutionState !== 'CONFIRMED' && matchedCand.resolutionState !== 'ADOPTED') || matchedCand.confirmedBy !== 'PRODUCT_OWNER') {
+      reqIssues.push({
+        code: 'UNCONFIRMED_MUST_REQUIREMENT',
+        message: `Must item candidate ${matchedCand.id} is not CONFIRMED/ADOPTED by PRODUCT_OWNER`,
+      });
+      continue;
+    }
   }
 
   // 1-to-1 Open Questions ↔ IDEA-Q Binding Verification
   const qSection = structValidation.sections.openQuestions || '';
   const qLines = qSection.split('\n').map(l => l.trim()).filter(l => l.startsWith('-') || l.startsWith('*'));
+  const consumedQIds = new Set();
+
   for (const line of qLines) {
     const cleanQ = line.replace(/^[-*]\s*/, '').trim();
     if (!cleanQ || isCanonicalNone(cleanQ)) continue;
 
     const tagMatch = cleanQ.match(/\[(IDEA-Q-\d+)\]/i);
-    let matchedQ = null;
-    if (tagMatch) {
-      const qId = tagMatch[1].toUpperCase();
-      matchedQ = discoveryState.openQuestions.find(q => q.id.toUpperCase() === qId);
-      if (!matchedQ) {
-        reqIssues.push({ code: 'UNKNOWN_QUESTION_REFERENCE', message: `Open question references unknown candidate ${qId}` });
-        continue;
-      }
-    } else {
-      matchedQ = discoveryState.openQuestions.find(q => cleanQ.includes(q.question) || q.question.includes(cleanQ));
+    if (!tagMatch) {
+      reqIssues.push({
+        code: 'UNBOUND_OPEN_QUESTION',
+        message: `Open question is missing explicit [IDEA-Q-xxx] tag: "${cleanQ}"`,
+      });
+      continue;
     }
 
+    const qId = tagMatch[1].toUpperCase();
+    if (consumedQIds.has(qId)) {
+      reqIssues.push({
+        code: 'DUPLICATE_QUESTION_REFERENCE',
+        message: `Question candidate ${qId} is bound multiple times`,
+      });
+      continue;
+    }
+    consumedQIds.add(qId);
+
+    const matchedQ = discoveryState.openQuestions.find(q => q.id.toUpperCase() === qId);
     if (!matchedQ) {
-      reqIssues.push({ code: 'UNBOUND_OPEN_QUESTION', message: `Open question has no structured discovery record: "${cleanQ}"` });
+      reqIssues.push({
+        code: 'UNKNOWN_QUESTION_REFERENCE',
+        message: `Open question references unknown candidate ${qId}`,
+      });
+      continue;
     }
   }
 

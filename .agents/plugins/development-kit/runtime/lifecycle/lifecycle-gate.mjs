@@ -129,7 +129,30 @@ export async function executeLifecycleEntry({
   if (initialized) {
     try {
       ideaStage = computeIdeaStageState(rootDir);
-    } catch (_) {}
+      if (ideaStage.state === 'BLOCKED' && ideaStage.blockerType === 'RUNTIME_FRAMEWORK') {
+        const issue = ideaStage.issues?.[0];
+        return {
+          success: false,
+          command: normCmd,
+          classification,
+          bootstrapped: true,
+          identity,
+          error: `Lifecycle entry failed: Corrupt lifecycle state: ${issue?.message || 'Unknown framework state corruption'}`,
+          code: issue?.code || 'DK_LIFECYCLE_STATE_CORRUPT',
+          ideaStage,
+        };
+      }
+    } catch (err) {
+      return {
+        success: false,
+        command: normCmd,
+        classification,
+        bootstrapped: true,
+        identity,
+        error: `Lifecycle entry failed: Corrupt lifecycle state: ${err.message}`,
+        code: err.code || 'DK_LIFECYCLE_STATE_CORRUPT',
+      };
+    }
   }
 
   return {

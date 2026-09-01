@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { loadDiscoveryState } from '../orchestration/idea-discovery.mjs';
 
 export const ARTIFACT_REGISTRY_SCHEMA_VERSION = '1.0.0';
 
@@ -24,6 +25,41 @@ export function getRegistryPath(rootDir = process.cwd()) {
   return path.join(rootDir, '.development-kit', 'artifacts.json');
 }
 
+export function validateArtifactRegistryStructure(data) {
+  if (!data || typeof data !== 'object') {
+    throw new ArtifactRegistryError('Registry must be an object', 'DK_ARTIFACT_REGISTRY_CORRUPT');
+  }
+  if (data.schemaVersion !== ARTIFACT_REGISTRY_SCHEMA_VERSION) {
+    throw new ArtifactRegistryError(`Invalid registry schemaVersion: ${data.schemaVersion}`, 'DK_ARTIFACT_REGISTRY_CORRUPT');
+  }
+  if (!data.artifacts || typeof data.artifacts !== 'object' || Array.isArray(data.artifacts)) {
+    throw new ArtifactRegistryError('Registry artifacts must be an object map', 'DK_ARTIFACT_REGISTRY_CORRUPT');
+  }
+
+  for (const [key, item] of Object.entries(data.artifacts)) {
+    if (!item || typeof item !== 'object') {
+      throw new ArtifactRegistryError(`Registry artifact ${key} must be an object`, 'DK_ARTIFACT_REGISTRY_CORRUPT');
+    }
+    if (!item.canonicalPath || typeof item.canonicalPath !== 'string') {
+      throw new ArtifactRegistryError(`Registry artifact ${key} missing canonicalPath`, 'DK_ARTIFACT_REGISTRY_CORRUPT');
+    }
+    const rel = item.canonicalPath;
+    if (rel.startsWith('..') || path.isAbsolute(rel)) {
+      throw new ArtifactRegistryError(`Registry artifact ${key} path escapes root: ${rel}`, 'DK_ARTIFACT_PATH_ESCAPE');
+    }
+    if (key === 'IDEA_BRIEF' && rel !== 'idea-brief.md') {
+      throw new ArtifactRegistryError(`IDEA_BRIEF canonicalPath must be idea-brief.md (got ${rel})`, 'DK_ARTIFACT_REGISTRY_CORRUPT');
+    }
+    if (!item.fingerprint || !item.fingerprint.startsWith('sha256:')) {
+      throw new ArtifactRegistryError(`Registry artifact ${key} invalid fingerprint`, 'DK_ARTIFACT_REGISTRY_CORRUPT');
+    }
+    if (typeof item.revision !== 'number' || item.revision <= 0) {
+      throw new ArtifactRegistryError(`Registry artifact ${key} invalid revision`, 'DK_ARTIFACT_REGISTRY_CORRUPT');
+    }
+  }
+  return true;
+}
+
 export function loadArtifactRegistry(rootDir = process.cwd()) {
   const regPath = getRegistryPath(rootDir);
   if (!fs.existsSync(regPath)) {
@@ -35,11 +71,10 @@ export function loadArtifactRegistry(rootDir = process.cwd()) {
 
   try {
     const data = JSON.parse(fs.readFileSync(regPath, 'utf8'));
-    if (!data.artifacts || typeof data.artifacts !== 'object') {
-      return { schemaVersion: ARTIFACT_REGISTRY_SCHEMA_VERSION, artifacts: {} };
-    }
+    validateArtifactRegistryStructure(data);
     return data;
   } catch (err) {
+    if (err instanceof ArtifactRegistryError) throw err;
     throw new ArtifactRegistryError(`Corrupt artifact registry: ${err.message}`, 'DK_ARTIFACT_REGISTRY_CORRUPT');
   }
 }
@@ -256,6 +291,16 @@ export function persistCanonicalIdeaBrief({
     throw new ArtifactRegistryError('Content must be a non-empty string', 'DK_ARTIFACT_INVALID_CONTENT');
   }
 
+  let finalDiscRev = discoveryRevision;
+  let finalDiscFp = discoveryFingerprint;
+  if (finalDiscRev === null || finalDiscRev === undefined) {
+    try {
+      const disc = loadDiscoveryState(rootDir);
+      finalDiscRev = disc.revision;
+      finalDiscFp = disc.fingerprint;
+    } catch (_) {}
+  }
+
   const resolved = resolveCanonicalIdeaArtifact(rootDir, { verifyFingerprint: false });
   const targetAbs = path.resolve(rootDir, 'idea-brief.md');
   const tempPath = `${targetAbs}.tmp.${Date.now()}.${process.pid}`;
@@ -274,8 +319,8 @@ export function persistCanonicalIdeaBrief({
     lifecycleStage: 'UNDERSTAND',
     fingerprint,
     revision: newRevision,
-    discoveryRevision,
-    discoveryFingerprint,
+    discoveryRevision: finalDiscRev,
+    discoveryFingerprint: finalDiscFp,
   });
 
   return {
@@ -284,8 +329,8 @@ export function persistCanonicalIdeaBrief({
     absolutePath: targetAbs,
     fingerprint,
     revision: newRevision,
-    discoveryRevision,
-    discoveryFingerprint,
+    discoveryRevision: finalDiscRev,
+    discoveryFingerprint: finalDiscFp,
     record,
   };
 }

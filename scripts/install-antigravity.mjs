@@ -235,6 +235,20 @@ function installPlugin(targetDir, force = false) {
     }
   }
 
+  // Rewrite command markdown files inside pluginDir so commands execute via run.mjs
+  const pluginCommandsDir = join(pluginDir, 'commands');
+  if (existsSync(pluginCommandsDir)) {
+    const cmdFiles = readdirSync(pluginCommandsDir).filter((f) => f.endsWith('.md'));
+    for (const f of cmdFiles) {
+      const p = join(pluginCommandsDir, f);
+      let content = readFileSync(p, 'utf8');
+      // Replace "node scripts/<file>.mjs" with "node .agents/plugins/development-kit/scripts/run.mjs <file>.mjs"
+      content = content.replace(/node\s+scripts\/([a-zA-Z0-9_-]+\.mjs)/g, 'node .agents/plugins/development-kit/scripts/run.mjs $1');
+      writeFileSync(p, content, 'utf8');
+    }
+    console.log(`  ✓ plugin commands rewritten for project-local execution via run.mjs`);
+  }
+
   verifyPluginInstallation(pluginDir, packageMetadata.version);
 
   console.log('\nInstallation complete.');

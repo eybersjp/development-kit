@@ -41,7 +41,39 @@ function cleanupTempDir(dir) {
   } catch (_) {}
 }
 
-const VALID_BRIEF = `# Idea Brief: Solar Commissioning Manager\n\n## Problem\nField solar installers lack structured commissioning documentation tools.\n\n## Intended Users\nSolar EPC commissioning technicians and field project managers.\n\n## Success Criteria\n100% compliant commissioning sign-off records produced in PDF/JSON.\n\n## Requirements (Must)\n- Capture inverter DC string voltages and insulation resistance measurements.\n- Support offline checklist completion.\n\n## Preferences (Should)\n- None\n\n## Assumptions\n- Technicians have mobile tablets on site.\n\n## Constraints\n- Must operate without continuous cellular connectivity.\n\n## Risks\n- Extreme temperatures may affect tablet battery life.\n\n## Open Questions\n- None\n\n## Future Ideas (Explicitly Deferred)\n- Direct FLIR radiometric camera integration.\n`;
+const VALID_BRIEF = `# Idea Brief: Solar Commissioning Manager
+
+## Problem
+Field solar installers lack structured commissioning documentation tools.
+
+## Intended Users
+Solar EPC commissioning technicians and field project managers.
+
+## Success Criteria
+100% compliant commissioning sign-off records produced in PDF/JSON.
+
+## Requirements (Must)
+- [IDEA-REQ-001] Capture inverter DC string voltages and insulation resistance measurements.
+- [IDEA-REQ-002] Support offline checklist completion.
+
+## Preferences (Should)
+- None
+
+## Assumptions
+- Technicians have mobile tablets on site.
+
+## Constraints
+- Must operate without continuous cellular connectivity.
+
+## Risks
+- Extreme temperatures may affect tablet battery life.
+
+## Open Questions
+- None
+
+## Future Ideas (Explicitly Deferred)
+- Direct FLIR radiometric camera integration.
+`;
 
 test('Blocker 1: Packaged --project install executes lifecycle and orchestration from consumer project root', () => {
   const consumerDir = createTempDir('dk-consumer-field-');
@@ -57,15 +89,26 @@ test('Blocker 1: Packaged --project install executes lifecycle and orchestration
     assert.equal(fs.existsSync(path.join(consumerDir, 'scripts')), false, 'consumer root must not have scripts/');
     assert.equal(fs.existsSync(path.join(consumerDir, 'runtime')), false, 'consumer root must not have runtime/');
 
-    // Assert runner script can resolve in consumer project
-    const runnerPath = resolveScriptPath('lifecycle.mjs', consumerDir);
-    assert.ok(runnerPath.includes(path.join('.agents', 'plugins', 'development-kit', 'scripts')));
+    // Read the installed command markdown file directly from consumer project
+    const installedCmdPath = path.join(consumerDir, '.agents', 'plugins', 'development-kit', 'commands', 'dk-idea.md');
+    assert.ok(fs.existsSync(installedCmdPath), 'installed dk-idea.md must exist');
+    const cmdContent = fs.readFileSync(installedCmdPath, 'utf8');
 
-    // Execute lifecycle command exactly as installed command Markdown tells Antigravity
+    // Extract literal command from the code block
+    const match = cmdContent.match(/```bash\r?\n(node\s+[^\r\n]+)\r?\n```/);
+    assert.ok(match, 'Must find literal node execution line in dk-idea.md');
+    const literalCmd = match[1].trim();
+
+    // Parse command arguments
+    const parts = literalCmd.split(/\s+/);
+    assert.equal(parts[0], 'node');
+    const scriptRelative = parts[1];
+    const scriptArgs = parts.slice(2);
+
+    // Execute literal command exactly as installed command Markdown specifies from consumer project root
     const execRes = spawnSync(process.execPath, [
-      runnerPath,
-      '--command=dk-idea',
-      '--phase=entry',
+      path.join(consumerDir, scriptRelative),
+      ...scriptArgs,
     ], {
       cwd: consumerDir,
       encoding: 'utf8',
@@ -86,25 +129,32 @@ test('Blocker 2: Must ↔ IDEA-REQ exact 1-to-1 binding and adversarial cases', 
   try {
     bootstrapProject(tempDir);
 
-    // Case A: 1 discovery candidate + 2 Must requirements in brief -> BLOCK
+    // Case A: Missing explicit [IDEA-REQ-xxx] tag -> BLOCK
+    const untaggedBrief = VALID_BRIEF.replace('- [IDEA-REQ-001] ', '- ');
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-001',
-      statement: 'Capture inverter DC string voltages',
+      statement: 'Capture inverter DC string voltages and insulation resistance measurements.',
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
     });
-
-    persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF });
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-002',
+      statement: 'Support offline checklist completion.',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    persistCanonicalIdeaBrief({ rootDir: tempDir, content: untaggedBrief });
     const stageA = computeIdeaStageState(tempDir);
     assert.notEqual(stageA.state, 'READY_FOR_APPROVAL');
     assert.equal(stageA.state, 'DISCOVERY_IN_PROGRESS');
-    assert.ok(stageA.issues.some(i => i.code === 'INSUFFICIENT_DISCOVERY_CANDIDATES' || i.code === 'UNBOUND_MUST_REQUIREMENT'));
+    assert.ok(stageA.issues.some(i => i.code === 'UNBOUND_MUST_REQUIREMENT'));
 
     // Case B: Must references a REJECTED candidate -> BLOCK
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
-      statement: 'Support offline checklist completion',
+      statement: 'Support offline checklist completion.',
       origin: 'USER_CONFIRMED',
       resolutionState: 'REJECTED',
       confirmedBy: 'PRODUCT_OWNER',
@@ -112,48 +162,56 @@ test('Blocker 2: Must ↔ IDEA-REQ exact 1-to-1 binding and adversarial cases', 
     persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF });
     const stageB = computeIdeaStageState(tempDir);
     assert.notEqual(stageB.state, 'READY_FOR_APPROVAL');
-    assert.ok(stageB.issues.some(i => i.code === 'INVALID_REQUIREMENT_AUTHORITY' || i.code === 'INSUFFICIENT_DISCOVERY_CANDIDATES'));
+    assert.ok(stageB.issues.some(i => i.code === 'INVALID_REQUIREMENT_AUTHORITY'));
 
-    // Case C: Tagged unknown candidate -> BLOCK
-    const taggedBrief = VALID_BRIEF.replace('- Support offline checklist completion.', '- [IDEA-REQ-999] Support offline checklist completion.');
-    persistCanonicalIdeaBrief({ rootDir: tempDir, content: taggedBrief });
+    // Case C: Duplicate candidate reference in Must -> BLOCK
+    const dupBrief = VALID_BRIEF.replace('- [IDEA-REQ-002] Support offline checklist completion.', '- [IDEA-REQ-001] Duplicate reference to same candidate.');
+    persistCanonicalIdeaBrief({ rootDir: tempDir, content: dupBrief });
     const stageC = computeIdeaStageState(tempDir);
     assert.notEqual(stageC.state, 'READY_FOR_APPROVAL');
-    assert.ok(stageC.issues.some(i => i.code === 'UNKNOWN_REQUIREMENT_REFERENCE'));
+    assert.ok(stageC.issues.some(i => i.code === 'DUPLICATE_REQUIREMENT_REFERENCE'));
 
-    // Case D: All Must requirements properly bound -> ELIGIBLE
+    // Case D: Tagged unknown candidate -> BLOCK
+    const unknownBrief = VALID_BRIEF.replace('- [IDEA-REQ-002] Support offline checklist completion.', '- [IDEA-REQ-999] Unknown candidate.');
+    persistCanonicalIdeaBrief({ rootDir: tempDir, content: unknownBrief });
+    const stageD = computeIdeaStageState(tempDir);
+    assert.notEqual(stageD.state, 'READY_FOR_APPROVAL');
+    assert.ok(stageD.issues.some(i => i.code === 'UNKNOWN_REQUIREMENT_REFERENCE'));
+
+    // Case E: All Must requirements properly bound and CONFIRMED -> ELIGIBLE
     recordRequirementCandidate(tempDir, {
       id: 'IDEA-REQ-002',
-      statement: 'Support offline checklist completion',
+      statement: 'Support offline checklist completion.',
       origin: 'USER_CONFIRMED',
       resolutionState: 'CONFIRMED',
       confirmedBy: 'PRODUCT_OWNER',
     });
     persistCanonicalIdeaBrief({ rootDir: tempDir, content: VALID_BRIEF });
-    const stageD = computeIdeaStageState(tempDir);
-    assert.equal(stageD.state, 'READY_FOR_APPROVAL');
-
-    // Case E: Material Open Question in markdown missing structured candidate -> BLOCK
-    const qBrief = VALID_BRIEF.replace('## Open Questions\n- None', '## Open Questions\n- What tablet OS versions must be supported?');
-    persistCanonicalIdeaBrief({ rootDir: tempDir, content: qBrief });
     const stageE = computeIdeaStageState(tempDir);
-    assert.notEqual(stageE.state, 'READY_FOR_APPROVAL');
-    assert.ok(stageE.issues.some(i => i.code === 'UNBOUND_OPEN_QUESTION'));
+    assert.equal(stageE.state, 'READY_FOR_APPROVAL');
 
-    // Case F: Structured material question UNRESOLVED -> BLOCK
+    // Case F: Untagged Open Question -> BLOCK
+    const qUntaggedBrief = VALID_BRIEF.replace('## Open Questions\n- None', '## Open Questions\n- What tablet OS versions must be supported?');
+    persistCanonicalIdeaBrief({ rootDir: tempDir, content: qUntaggedBrief });
+    const stageF = computeIdeaStageState(tempDir);
+    assert.notEqual(stageF.state, 'READY_FOR_APPROVAL');
+    assert.ok(stageF.issues.some(i => i.code === 'UNBOUND_OPEN_QUESTION'));
+
+    // Case G: Tagged Open Question but UNRESOLVED in discovery -> BLOCK
+    const qTaggedBrief = VALID_BRIEF.replace('## Open Questions\n- None', '## Open Questions\n- [IDEA-Q-001] What tablet OS versions must be supported?');
     recordOpenQuestion(tempDir, {
       id: 'IDEA-Q-001',
       question: 'What tablet OS versions must be supported?',
       materiality: 'MATERIAL',
       resolution: 'UNRESOLVED',
     });
-    persistCanonicalIdeaBrief({ rootDir: tempDir, content: qBrief });
-    const stageF = computeIdeaStageState(tempDir);
-    assert.notEqual(stageF.state, 'READY_FOR_APPROVAL');
-    assert.equal(stageF.state, 'DRAFT_READY');
-    assert.ok(stageF.issues.some(i => i.code === 'UNRESOLVED_MATERIAL_QUESTION'));
+    persistCanonicalIdeaBrief({ rootDir: tempDir, content: qTaggedBrief });
+    const stageG = computeIdeaStageState(tempDir);
+    assert.notEqual(stageG.state, 'READY_FOR_APPROVAL');
+    assert.equal(stageG.state, 'DRAFT_READY');
+    assert.ok(stageG.issues.some(i => i.code === 'UNRESOLVED_MATERIAL_QUESTION'));
 
-    // Case G: Resolved/Deferred with valid authority -> ELIGIBLE
+    // Case H: Resolved/Deferred with valid authority -> ELIGIBLE
     recordOpenQuestion(tempDir, {
       id: 'IDEA-Q-001',
       question: 'What tablet OS versions must be supported?',
@@ -161,9 +219,9 @@ test('Blocker 2: Must ↔ IDEA-REQ exact 1-to-1 binding and adversarial cases', 
       resolution: 'ANSWERED',
       resolvedBy: 'PRODUCT_OWNER',
     });
-    persistCanonicalIdeaBrief({ rootDir: tempDir, content: qBrief });
-    const stageG = computeIdeaStageState(tempDir);
-    assert.equal(stageG.state, 'READY_FOR_APPROVAL');
+    persistCanonicalIdeaBrief({ rootDir: tempDir, content: qTaggedBrief });
+    const stageH = computeIdeaStageState(tempDir);
+    assert.equal(stageH.state, 'READY_FOR_APPROVAL');
   } finally {
     cleanupTempDir(tempDir);
   }
@@ -490,3 +548,67 @@ test('Restored: Identical duplicate canonical artifacts normalize to root', () =
     cleanupTempDir(tempDir);
   }
 });
+
+test('Hardened run.mjs: Rejects path traversal and scripts not in allowlist', () => {
+  const runnerScript = path.resolve('scripts/run.mjs');
+
+  // Traversal rejected
+  const travExec = spawnSync(process.execPath, [runnerScript, '../secret.mjs'], { encoding: 'utf8' });
+  assert.equal(travExec.status, 1);
+  const travParsed = JSON.parse(travExec.stderr);
+  assert.equal(travParsed.code, 'DK_SCRIPT_RESOLUTION_ERROR');
+
+  // Disallowed script rejected
+  const disExec = spawnSync(process.execPath, [runnerScript, 'unapproved.mjs'], { encoding: 'utf8' });
+  assert.equal(disExec.status, 1);
+  const disParsed = JSON.parse(disExec.stderr);
+  assert.equal(disParsed.code, 'DK_SCRIPT_RESOLUTION_ERROR');
+});
+
+test('Strict load validation: Corrupt discovery.json, approvals.json, and artifacts.json fail closed', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+
+    // Corrupt discovery.json with invalid candidate structure throws
+    const discPath = path.join(tempDir, '.development-kit', 'idea', 'discovery.json');
+    fs.mkdirSync(path.dirname(discPath), { recursive: true });
+    fs.writeFileSync(discPath, JSON.stringify({
+      schemaVersion: '1.0.0',
+      revision: 1,
+      requirements: [{ id: 'INVALID-ID', statement: 'bad' }],
+      openQuestions: [],
+    }), 'utf8');
+
+    assert.throws(() => {
+      loadDiscoveryState(tempDir);
+    }, (err) => err.code === 'DK_DISCOVERY_CORRUPT');
+
+    // Corrupt approvals.json with invalid authority throws
+    const appPath = path.join(tempDir, '.development-kit', 'idea', 'approvals.json');
+    fs.writeFileSync(appPath, JSON.stringify({
+      schemaVersion: '1.0.0',
+      approvals: [{ id: 'APPR-IDEA-1-1', artifactFingerprint: 'sha256:123', artifactRevision: 1, approvingAuthority: 'AI_AGENT', approvedAt: new Date().toISOString() }],
+    }), 'utf8');
+
+    assert.throws(() => {
+      loadApprovalsHistory(tempDir);
+    }, (err) => err.code === 'DK_APPROVALS_CORRUPT');
+
+    // Corrupt artifacts.json with non-idea-brief canonicalPath throws
+    const artPath = path.join(tempDir, '.development-kit', 'artifacts.json');
+    fs.writeFileSync(artPath, JSON.stringify({
+      schemaVersion: '1.0.0',
+      artifacts: {
+        IDEA_BRIEF: { canonicalPath: 'docs/custom-idea.md', fingerprint: 'sha256:123', revision: 1 },
+      },
+    }), 'utf8');
+
+    assert.throws(() => {
+      loadArtifactRegistry(tempDir);
+    }, (err) => err.code === 'DK_ARTIFACT_REGISTRY_CORRUPT');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
