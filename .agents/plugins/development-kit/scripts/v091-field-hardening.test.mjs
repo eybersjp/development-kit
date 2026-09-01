@@ -264,7 +264,7 @@ test('Blocker 3: Unsafe authority defaults removed, strict validation enforced',
 
     // persistApprovalRecord without approvingAuthority = PRODUCT_OWNER throws
     assert.throws(() => {
-      persistApprovalRecord(tempDir, { artifactFingerprint: 'sha256:123', artifactRevision: 1, approvingAuthority: 'AI_AGENT' });
+      persistApprovalRecord(tempDir, { artifactFingerprint: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', artifactRevision: 1, approvingAuthority: 'AI_AGENT' });
     }, (err) => err.code === 'DK_UNAUTHORIZED_APPROVAL');
   } finally {
     cleanupTempDir(tempDir);
@@ -607,6 +607,159 @@ test('Strict load validation: Corrupt discovery.json, approvals.json, and artifa
     assert.throws(() => {
       loadArtifactRegistry(tempDir);
     }, (err) => err.code === 'DK_ARTIFACT_REGISTRY_CORRUPT');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Global install: Literal global command executes from separate project root without local .agents', () => {
+  const fakeHome = createTempDir('dk-global-home-');
+  const projectDir = createTempDir('dk-global-consumer-');
+  try {
+    const installerScript = path.resolve('scripts/install-antigravity.mjs');
+    const instResult = spawnSync(process.execPath, [installerScript, '--global'], {
+      cwd: projectDir,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        HOME: fakeHome,
+        USERPROFILE: fakeHome,
+      },
+    });
+    assert.equal(instResult.status, 0, instResult.stderr || instResult.stdout);
+
+    // Global install location
+    const globalPluginDir = path.join(fakeHome, '.gemini', 'config', 'plugins', 'development-kit');
+    assert.ok(fs.existsSync(globalPluginDir), 'Global plugin dir must exist in fakeHome');
+
+    // Read installed dk-idea.md in global plugin
+    const globalIdeaCmd = path.join(globalPluginDir, 'commands', 'dk-idea.md');
+    assert.ok(fs.existsSync(globalIdeaCmd), 'Global dk-idea.md must exist');
+    const cmdContent = fs.readFileSync(globalIdeaCmd, 'utf8');
+
+    // Verify command references absolute global runner path
+    const match = cmdContent.match(/```bash\r?\n(node\s+[^\r\n]+)\r?\n```/);
+    assert.ok(match, 'Must find literal command in global dk-idea.md');
+    const literalCmd = match[1].trim();
+
+    // Verify literal command does NOT reference project-local .agents
+    assert.ok(!literalCmd.includes('.agents/plugins'), 'Global command must not reference local .agents');
+
+    // Execute global command from projectDir (which has no .agents)
+    assert.equal(fs.existsSync(path.join(projectDir, '.agents')), false);
+
+    // Parse and execute node "<globalRunScript>" scripts/lifecycle.mjs --command=dk-idea
+    const parts = literalCmd.match(/node\s+"([^"]+)"\s+(.+)/);
+    assert.ok(parts, 'Command should parse with quoted global path');
+    const runnerPath = parts[1];
+    const scriptArgs = parts[2].split(/\s+/);
+
+    const execRes = spawnSync(process.execPath, [runnerPath, ...scriptArgs], {
+      cwd: projectDir,
+      encoding: 'utf8',
+      env: { ...process.env, HOME: fakeHome, USERPROFILE: fakeHome, NODE_PATH: '' },
+    });
+    assert.equal(execRes.status, 0, execRes.stderr || execRes.stdout);
+    const parsed = JSON.parse(execRes.stdout);
+    assert.equal(parsed.success, true);
+    assert.equal(parsed.bootstrapped, true);
+  } finally {
+    cleanupTempDir(fakeHome);
+    cleanupTempDir(projectDir);
+  }
+});
+
+test('Statement binding & tag integrity: Content mismatch and multiple tags per line fail closed', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Capture inverter DC string voltages and insulation resistance measurements.',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-002',
+      statement: 'Support offline checklist completion.',
+      origin: 'USER_CONFIRMED',
+      resolutionState: 'CONFIRMED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+
+    // 1. Spoofed statement text under valid ID -> REQUIREMENT_CONTENT_MISMATCH
+    const spoofedBrief = VALID_BRIEF.replace(
+      '- [IDEA-REQ-001] Capture inverter DC string voltages and insulation resistance measurements.',
+      '- [IDEA-REQ-001] Totally different unapproved requirement statement.'
+    );
+    persistCanonicalIdeaBrief({ rootDir: tempDir, content: spoofedBrief });
+    const spoofStage = computeIdeaStageState(tempDir);
+    assert.equal(spoofStage.state, 'DISCOVERY_IN_PROGRESS');
+    assert.ok(spoofStage.issues.some(i => i.code === 'REQUIREMENT_CONTENT_MISMATCH'));
+
+    // 2. Multiple tags on single line -> MULTIPLE_REQUIREMENT_REFERENCES
+    const multiTagBrief = VALID_BRIEF.replace(
+      '- [IDEA-REQ-001] Capture inverter DC string voltages and insulation resistance measurements.',
+      '- [IDEA-REQ-001] [IDEA-REQ-002] Capture inverter DC string voltages and insulation resistance measurements.'
+    );
+    persistCanonicalIdeaBrief({ rootDir: tempDir, content: multiTagBrief });
+    const multiStage = computeIdeaStageState(tempDir);
+    assert.equal(multiStage.state, 'DISCOVERY_IN_PROGRESS');
+    assert.ok(multiStage.issues.some(i => i.code === 'MULTIPLE_REQUIREMENT_REFERENCES'));
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Discovery provenance immutability: Cannot overwrite origin on existing candidate', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Original statement',
+      origin: 'RESEARCH_DERIVED',
+      resolutionState: 'UNRESOLVED',
+    });
+
+    // Attempting to overwrite origin with USER_CONFIRMED throws DK_PROVENANCE_IMMUTABLE
+    assert.throws(() => {
+      recordRequirementCandidate(tempDir, {
+        id: 'IDEA-REQ-001',
+        statement: 'Original statement',
+        origin: 'USER_CONFIRMED',
+        resolutionState: 'CONFIRMED',
+        confirmedBy: 'PRODUCT_OWNER',
+      });
+    }, (err) => err.code === 'DK_PROVENANCE_IMMUTABLE');
+
+    // Valid adoption retains original RESEARCH_DERIVED origin
+    const adopted = recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Original statement',
+      origin: 'RESEARCH_DERIVED',
+      resolutionState: 'ADOPTED',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    assert.equal(adopted.origin, 'RESEARCH_DERIVED');
+    assert.equal(adopted.resolutionState, 'ADOPTED');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Legacy Unbound: Auto-discovered Idea Brief without discovery binding returns RECONCILIATION_REQUIRED', () => {
+  const tempDir = createTempDir();
+  try {
+    bootstrapProject(tempDir);
+    // Write physical idea-brief.md directly without registry
+    fs.writeFileSync(path.join(tempDir, 'idea-brief.md'), VALID_BRIEF, 'utf8');
+
+    // computeIdeaStageState will auto-discover it with discoveryRevision: null
+    const stage = computeIdeaStageState(tempDir);
+    assert.equal(stage.state, 'RECONCILIATION_REQUIRED');
+    assert.ok(stage.issues.some(i => i.code === 'DISCOVERY_BINDING_REQUIRED'));
   } finally {
     cleanupTempDir(tempDir);
   }

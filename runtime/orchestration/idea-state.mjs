@@ -45,14 +45,22 @@ export function validateApprovalsHistoryStructure(data) {
     if (!app.id || !/^APPR-IDEA-\d+-\d+$/i.test(app.id)) {
       throw new IdeaStateError(`Invalid approval ID: ${app.id}`, 'DK_APPROVALS_CORRUPT');
     }
-    if (!app.artifactFingerprint || !app.artifactFingerprint.startsWith('sha256:')) {
-      throw new IdeaStateError(`Invalid approval artifactFingerprint in ${app.id}`, 'DK_APPROVALS_CORRUPT');
+    if (!app.artifactFingerprint || !/^sha256:[a-f0-9]{64}$/i.test(app.artifactFingerprint)) {
+      throw new IdeaStateError(`Invalid approval artifactFingerprint (must be sha256:<64 hex>) in ${app.id}`, 'DK_APPROVALS_CORRUPT');
     }
-    if (typeof app.artifactRevision !== 'number' || app.artifactRevision <= 0) {
+    if (typeof app.artifactRevision !== 'number' || !Number.isInteger(app.artifactRevision) || app.artifactRevision <= 0) {
       throw new IdeaStateError(`Invalid approval artifactRevision in ${app.id}`, 'DK_APPROVALS_CORRUPT');
     }
     if (app.approvingAuthority !== 'PRODUCT_OWNER') {
       throw new IdeaStateError(`Unauthorized approvingAuthority ${app.approvingAuthority} in ${app.id}`, 'DK_APPROVALS_CORRUPT');
+    }
+    if (!Array.isArray(app.linkedPodIds)) {
+      throw new IdeaStateError(`Invalid linkedPodIds in ${app.id}: must be an array`, 'DK_APPROVALS_CORRUPT');
+    }
+    for (const podId of app.linkedPodIds) {
+      if (!podId || !/^POD-IDEA-REQ-\d+$/i.test(podId)) {
+        throw new IdeaStateError(`Invalid linked POD ID ${podId} in ${app.id}`, 'DK_APPROVALS_CORRUPT');
+      }
     }
     if (!app.approvedAt || isNaN(Date.parse(app.approvedAt))) {
       throw new IdeaStateError(`Invalid approvedAt timestamp in ${app.id}`, 'DK_APPROVALS_CORRUPT');
@@ -86,8 +94,11 @@ export function persistApprovalRecord(rootDir = process.cwd(), {
   approvingAuthority,
   linkedPodIds = [],
 } = {}) {
-  if (!artifactFingerprint || !artifactRevision) {
-    throw new IdeaStateError('artifactFingerprint and artifactRevision are required for approval', 'DK_INVALID_APPROVAL_PARAMS');
+  if (!artifactFingerprint || !/^sha256:[a-f0-9]{64}$/i.test(artifactFingerprint)) {
+    throw new IdeaStateError('artifactFingerprint must be a valid sha256:<64 hex> string', 'DK_INVALID_APPROVAL_PARAMS');
+  }
+  if (!artifactRevision || typeof artifactRevision !== 'number' || !Number.isInteger(artifactRevision) || artifactRevision <= 0) {
+    throw new IdeaStateError('artifactRevision must be a positive integer', 'DK_INVALID_APPROVAL_PARAMS');
   }
   if (approvingAuthority !== 'PRODUCT_OWNER') {
     throw new IdeaStateError(`Explicit approvingAuthority = 'PRODUCT_OWNER' required. Got: ${approvingAuthority}`, 'DK_UNAUTHORIZED_APPROVAL');
@@ -131,6 +142,11 @@ export function computeEffectiveApprovalStatus(rootDir = process.cwd(), currentF
   return { status: 'STALE', latestApproval: latest };
 }
 
+export function normalizeStatementText(text) {
+  if (!text) return '';
+  return text.toLowerCase().replace(/[\r\n\t]/g, ' ').replace(/[.,;:!?]/g, '').replace(/\s+/g, ' ').trim();
+}
+
 export function computeIdeaStageState(rootDir = process.cwd()) {
   const bootstrap = getProjectBootstrapStatus(rootDir);
   if (!bootstrap.initialized) {
@@ -145,7 +161,7 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
   try {
     artifact = resolveCanonicalIdeaArtifact(rootDir, { verifyFingerprint: true });
   } catch (err) {
-    if (err.code === 'DK_ARTIFACT_AUTHORITY_CONFLICT' || err.code === 'DK_ARTIFACT_FINGERPRINT_MISMATCH' || err.code === 'DK_ARTIFACT_REGISTRY_CORRUPT') {
+    if (err.code === 'DK_ARTIFACT_AUTHORITY_CONFLICT' || err.code === 'DK_ARTIFACT_FINGERPRINT_MISMATCH' || err.code === 'DK_ARTIFACT_REGISTRY_CORRUPT' || err.code === 'DK_ARTIFACT_MISSING') {
       return {
         state: 'BLOCKED',
         blockerType: 'RUNTIME_FRAMEWORK',
@@ -209,7 +225,20 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
     };
   }
 
-  // 1-to-1 MUST Requirements ↔ IDEA-REQ Binding Verification
+  // Unbound / Legacy Artifacts Check: Must have a valid discovery binding
+  if (artifact.discoveryRevision === null || artifact.discoveryRevision === undefined || !artifact.discoveryFingerprint) {
+    return {
+      state: 'RECONCILIATION_REQUIRED',
+      bootstrapped: true,
+      issues: [{
+        code: 'DISCOVERY_BINDING_REQUIRED',
+        message: 'Idea Brief is not bound to a discovery revision/fingerprint. An explicit idea-persist / reconciliation is required before approval eligibility.',
+      }],
+      artifact,
+    };
+  }
+
+  // 1-to-1 MUST Requirements ↔ IDEA-REQ Binding & Content Verification
   const mustSection = structValidation.sections.requirementsMust || '';
   const mustLines = mustSection.split('\n').map(l => l.trim()).filter(l => l.startsWith('-') || l.startsWith('*'));
   
@@ -220,17 +249,27 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
     const cleanLine = line.replace(/^[-*]\s*/, '').trim();
     if (!cleanLine || isCanonicalNone(cleanLine)) continue;
 
-    // Look for explicit candidate tag e.g. [IDEA-REQ-001]
-    const tagMatch = cleanLine.match(/\[(IDEA-REQ-\d+)\]/i);
-    if (!tagMatch) {
+    // Check for multiple IDEA-REQ tags on one line
+    const allMatches = cleanLine.match(/\[(IDEA-REQ-\d+)\]/gi);
+    if (!allMatches || allMatches.length === 0) {
       reqIssues.push({
         code: 'UNBOUND_MUST_REQUIREMENT',
         message: `Must requirement is missing explicit [IDEA-REQ-xxx] tag: "${cleanLine}"`,
       });
       continue;
     }
+    if (allMatches.length > 1) {
+      reqIssues.push({
+        code: 'MULTIPLE_REQUIREMENT_REFERENCES',
+        message: `Must requirement line contains multiple candidate IDs: "${cleanLine}"`,
+      });
+      continue;
+    }
 
-    const candId = tagMatch[1].toUpperCase();
+    const tagMatch = cleanLine.match(/^\[(IDEA-REQ-\d+)\]\s*(.*)$/i);
+    const candId = (tagMatch ? tagMatch[1] : allMatches[0].slice(1, -1)).toUpperCase();
+    const statementText = tagMatch ? tagMatch[2].trim() : cleanLine.replace(/\[(IDEA-REQ-\d+)\]/i, '').trim();
+
     if (consumedReqIds.has(candId)) {
       reqIssues.push({
         code: 'DUPLICATE_REQUIREMENT_REFERENCE',
@@ -245,6 +284,17 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
       reqIssues.push({
         code: 'UNKNOWN_REQUIREMENT_REFERENCE',
         message: `Must item references unknown candidate ${candId}`,
+      });
+      continue;
+    }
+
+    // Verify content / statement alignment
+    const normLine = normalizeStatementText(statementText);
+    const normCand = normalizeStatementText(matchedCand.statement);
+    if (!normLine || (!normLine.includes(normCand) && !normCand.includes(normLine))) {
+      reqIssues.push({
+        code: 'REQUIREMENT_CONTENT_MISMATCH',
+        message: `Must item ${candId} statement does not match discovery candidate statement. Expected: "${matchedCand.statement}", found: "${statementText}"`,
       });
       continue;
     }
@@ -274,7 +324,7 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
     }
   }
 
-  // 1-to-1 Open Questions ↔ IDEA-Q Binding Verification
+  // 1-to-1 Open Questions ↔ IDEA-Q Binding & Content Verification
   const qSection = structValidation.sections.openQuestions || '';
   const qLines = qSection.split('\n').map(l => l.trim()).filter(l => l.startsWith('-') || l.startsWith('*'));
   const consumedQIds = new Set();
@@ -283,16 +333,26 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
     const cleanQ = line.replace(/^[-*]\s*/, '').trim();
     if (!cleanQ || isCanonicalNone(cleanQ)) continue;
 
-    const tagMatch = cleanQ.match(/\[(IDEA-Q-\d+)\]/i);
-    if (!tagMatch) {
+    const allMatches = cleanQ.match(/\[(IDEA-Q-\d+)\]/gi);
+    if (!allMatches || allMatches.length === 0) {
       reqIssues.push({
         code: 'UNBOUND_OPEN_QUESTION',
         message: `Open question is missing explicit [IDEA-Q-xxx] tag: "${cleanQ}"`,
       });
       continue;
     }
+    if (allMatches.length > 1) {
+      reqIssues.push({
+        code: 'MULTIPLE_QUESTION_REFERENCES',
+        message: `Open question line contains multiple question IDs: "${cleanQ}"`,
+      });
+      continue;
+    }
 
-    const qId = tagMatch[1].toUpperCase();
+    const tagMatch = cleanQ.match(/^\[(IDEA-Q-\d+)\]\s*(.*)$/i);
+    const qId = (tagMatch ? tagMatch[1] : allMatches[0].slice(1, -1)).toUpperCase();
+    const qText = tagMatch ? tagMatch[2].trim() : cleanQ.replace(/\[(IDEA-Q-\d+)\]/i, '').trim();
+
     if (consumedQIds.has(qId)) {
       reqIssues.push({
         code: 'DUPLICATE_QUESTION_REFERENCE',
@@ -310,6 +370,16 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
       });
       continue;
     }
+
+    const normQLine = normalizeStatementText(qText);
+    const normQCand = normalizeStatementText(matchedQ.question);
+    if (!normQLine || (!normQLine.includes(normQCand) && !normQCand.includes(normQLine))) {
+      reqIssues.push({
+        code: 'QUESTION_CONTENT_MISMATCH',
+        message: `Open question ${qId} text does not match discovery question text. Expected: "${matchedQ.question}", found: "${qText}"`,
+      });
+      continue;
+    }
   }
 
   if (reqIssues.length > 0) {
@@ -321,18 +391,29 @@ export function computeIdeaStageState(rootDir = process.cwd()) {
     };
   }
 
-  if (artifact.discoveryRevision !== null && artifact.discoveryRevision !== undefined) {
-    if (discoveryState.revision !== artifact.discoveryRevision || (artifact.discoveryFingerprint && discoveryState.fingerprint !== artifact.discoveryFingerprint)) {
-      return {
-        state: 'DRAFT_READY',
-        bootstrapped: true,
-        issues: [{
-          code: 'DISCOVERY_REVISION_MISMATCH',
-          message: `Discovery state has changed (rev ${discoveryState.revision}) since Idea Brief was persisted (rev ${artifact.discoveryRevision})`,
-        }],
-        artifact,
-      };
-    }
+  // Unbound / Legacy Artifacts Check: Must have a valid discovery binding
+  if (artifact.discoveryRevision === null || artifact.discoveryRevision === undefined || !artifact.discoveryFingerprint) {
+    return {
+      state: 'RECONCILIATION_REQUIRED',
+      bootstrapped: true,
+      issues: [{
+        code: 'DISCOVERY_BINDING_REQUIRED',
+        message: 'Idea Brief is not bound to a discovery revision/fingerprint. An explicit idea-persist / reconciliation is required before approval eligibility.',
+      }],
+      artifact,
+    };
+  }
+
+  if (discoveryState.revision !== artifact.discoveryRevision || (artifact.discoveryFingerprint && discoveryState.fingerprint !== artifact.discoveryFingerprint)) {
+    return {
+      state: 'DRAFT_READY',
+      bootstrapped: true,
+      issues: [{
+        code: 'DISCOVERY_REVISION_MISMATCH',
+        message: `Discovery state has changed (rev ${discoveryState.revision}) since Idea Brief was persisted (rev ${artifact.discoveryRevision})`,
+      }],
+      artifact,
+    };
   }
 
   const discoveryReadiness = evaluateDiscoveryReadiness(rootDir);

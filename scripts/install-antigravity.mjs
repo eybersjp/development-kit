@@ -173,7 +173,7 @@ function verifyPluginInstallation(pluginDir, expectedVersion) {
   console.log(`  ✓ plugin integrity verified (version ${expectedVersion})`);
 }
 
-function installPlugin(targetDir, force = false) {
+function installPlugin(targetDir, force = false, mode = 'project') {
   const pluginDir = join(targetDir, 'plugins', 'development-kit');
   const packageMetadata = getPackageMetadata();
 
@@ -239,14 +239,17 @@ function installPlugin(targetDir, force = false) {
   const pluginCommandsDir = join(pluginDir, 'commands');
   if (existsSync(pluginCommandsDir)) {
     const cmdFiles = readdirSync(pluginCommandsDir).filter((f) => f.endsWith('.md'));
+    const runnerTarget = mode === 'global'
+      ? `"${join(pluginDir, 'scripts', 'run.mjs')}"`
+      : '.agents/plugins/development-kit/scripts/run.mjs';
+
     for (const f of cmdFiles) {
       const p = join(pluginCommandsDir, f);
       let content = readFileSync(p, 'utf8');
-      // Replace "node scripts/<file>.mjs" with "node .agents/plugins/development-kit/scripts/run.mjs <file>.mjs"
-      content = content.replace(/node\s+scripts\/([a-zA-Z0-9_-]+\.mjs)/g, 'node .agents/plugins/development-kit/scripts/run.mjs $1');
+      content = content.replace(/node\s+scripts\/([a-zA-Z0-9_-]+\.mjs)/g, `node ${runnerTarget} $1`);
       writeFileSync(p, content, 'utf8');
     }
-    console.log(`  ✓ plugin commands rewritten for project-local execution via run.mjs`);
+    console.log(`  ✓ plugin commands rewritten for ${mode} execution via ${runnerTarget}`);
   }
 
   verifyPluginInstallation(pluginDir, packageMetadata.version);
@@ -437,20 +440,21 @@ function main() {
   if (args.includes('--global')) {
     const globalDir = join(process.env.HOME || process.env.USERPROFILE || '~', '.gemini', 'config');
     if (!existsSync(globalDir)) mkdirSync(globalDir, { recursive: true });
-    installPlugin(globalDir, force);
+    installPlugin(globalDir, force, 'global');
     process.exit(0);
   }
 
   if (args.includes('--project')) {
     const projectDir = join(process.cwd(), '.agents');
     if (!existsSync(projectDir)) mkdirSync(projectDir, { recursive: true });
-    installPlugin(projectDir, force);
+    installPlugin(projectDir, force, 'project');
     process.exit(0);
   }
 
   const antigravityPath = detectAntigravity();
   if (antigravityPath) {
-    installPlugin(antigravityPath, force);
+    const mode = antigravityPath.includes('.gemini') ? 'global' : 'project';
+    installPlugin(antigravityPath, force, mode);
   } else {
     console.log('Antigravity configuration not found.');
     console.log('To install globally:      node scripts/install-antigravity.mjs --global');

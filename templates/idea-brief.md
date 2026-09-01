@@ -19,9 +19,9 @@ description: Template for documenting a refined product or feature idea.
 
 ## Requirements (Must)
 
-- [Requirement 1]
-- [Requirement 2]
-- [Requirement 3]
+- [IDEA-REQ-001] [Requirement 1]
+- [IDEA-REQ-002] [Requirement 2]
+- [IDEA-REQ-003] [Requirement 3]
 
 ## Preferences (Should)
 
@@ -45,8 +45,8 @@ description: Template for documenting a refined product or feature idea.
 
 ## Open Questions
 
-- [Question 1]
-- [Question 2]
+- [IDEA-Q-001] [Question 1]
+- [IDEA-Q-002] [Question 2]
 
 ## Future Ideas (Explicitly Deferred)
 

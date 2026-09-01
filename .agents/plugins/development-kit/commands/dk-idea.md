@@ -64,7 +64,7 @@ Test assumptions. Is this the real problem? Does it need to exist? Is there a si
 
 ### 4. Scope Definition
 Separate into:
-- Must have (1-to-1 bound to active `IDEA-REQ-xxx` candidates)
+- Must have (1-to-1 bound to active `[IDEA-REQ-xxx]` candidates matching their exact discovery statements)
 - Should have
 - Could have
 - Explicitly excluded
@@ -82,12 +82,12 @@ Document the output adhering to the 10 canonical sections matching `templates/id
 - Problem
 - Intended Users
 - Success Criteria
-- Requirements (Must)
+- Requirements (Must) (e.g. `- [IDEA-REQ-001] Capture inverter DC string voltages.`)
 - Preferences (Should)
 - Assumptions
 - Constraints
 - Risks
-- Open Questions
+- Open Questions (e.g. `- [IDEA-Q-001] What tablet OS versions must be supported?` or `- None`)
 - Future Ideas (Explicitly Deferred)
 
 Persist canonical `idea-brief.md` to project root and register in `.development-kit/artifacts.json` via:

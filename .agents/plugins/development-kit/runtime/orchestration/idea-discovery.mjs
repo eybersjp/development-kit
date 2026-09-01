@@ -34,6 +34,11 @@ export const QUESTION_RESOLUTIONS = Object.freeze([
   'REJECTED'
 ]);
 
+export const MATERIALITY_LEVELS = Object.freeze([
+  'MATERIAL',
+  'NON_MATERIAL',
+]);
+
 export class DiscoveryStateError extends Error {
   constructor(message, code = 'DK_DISCOVERY_ERROR', details = null) {
     super(message);
@@ -52,6 +57,9 @@ export function computeDiscoveryFingerprint(state) {
       materiality: r.materiality,
       resolutionState: r.resolutionState,
       confirmedBy: r.confirmedBy,
+      linkedPodId: r.linkedPodId || null,
+      supersedes: r.supersedes || null,
+      supersededBy: r.supersededBy || null,
     })),
     openQuestions: (state.openQuestions || []).map((q) => ({
       id: q.id,
@@ -59,6 +67,7 @@ export function computeDiscoveryFingerprint(state) {
       materiality: q.materiality,
       resolution: q.resolution,
       resolvedBy: q.resolvedBy,
+      deferredTarget: q.deferredTarget || null,
     })),
   };
   return `sha256:${crypto.createHash('sha256').update(JSON.stringify(normalized), 'utf8').digest('hex')}`;
@@ -99,6 +108,9 @@ export function validateDiscoveryStateStructure(data) {
     if (!REQUIREMENT_ORIGINS.includes(r.origin)) {
       throw new DiscoveryStateError(`Invalid requirement origin ${r.origin} in ${r.id}`, 'DK_DISCOVERY_CORRUPT');
     }
+    if (!MATERIALITY_LEVELS.includes(r.materiality)) {
+      throw new DiscoveryStateError(`Invalid requirement materiality ${r.materiality} in ${r.id}`, 'DK_DISCOVERY_CORRUPT');
+    }
     if (!RESOLUTION_STATES.includes(r.resolutionState)) {
       throw new DiscoveryStateError(`Invalid resolutionState ${r.resolutionState} in ${r.id}`, 'DK_DISCOVERY_CORRUPT');
     }
@@ -117,14 +129,14 @@ export function validateDiscoveryStateStructure(data) {
     if (!q.question || typeof q.question !== 'string') {
       throw new DiscoveryStateError(`Question text invalid for ${q.id}`, 'DK_DISCOVERY_CORRUPT');
     }
+    if (!MATERIALITY_LEVELS.includes(q.materiality)) {
+      throw new DiscoveryStateError(`Invalid question materiality ${q.materiality} in ${q.id}`, 'DK_DISCOVERY_CORRUPT');
+    }
     if (!QUESTION_RESOLUTIONS.includes(q.resolution)) {
       throw new DiscoveryStateError(`Invalid question resolution ${q.resolution} in ${q.id}`, 'DK_DISCOVERY_CORRUPT');
     }
-    if (q.resolution === 'ANSWERED' && q.resolvedBy !== 'PRODUCT_OWNER') {
-      throw new DiscoveryStateError(`ANSWERED question ${q.id} must be resolvedBy PRODUCT_OWNER`, 'DK_DISCOVERY_CORRUPT');
-    }
-    if (q.resolution === 'DEFERRED' && q.resolvedBy !== 'PRODUCT_OWNER') {
-      throw new DiscoveryStateError(`DEFERRED question ${q.id} must be resolvedBy PRODUCT_OWNER`, 'DK_DISCOVERY_CORRUPT');
+    if (q.materiality === 'MATERIAL' && q.resolution !== 'UNRESOLVED' && q.resolvedBy !== 'PRODUCT_OWNER') {
+      throw new DiscoveryStateError(`Material question ${q.id} disposition ${q.resolution} requires explicit resolvedBy = 'PRODUCT_OWNER'`, 'DK_DISCOVERY_CORRUPT');
     }
   }
   return true;
@@ -180,6 +192,8 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
   origin,
   resolutionState = 'UNRESOLVED',
   confirmedBy = null,
+  supersedes = null,
+  supersededBy = null,
   createPod = false,
   podStatement = null,
 } = {}) {
@@ -191,6 +205,9 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
   }
   if (!origin || !REQUIREMENT_ORIGINS.includes(origin)) {
     throw new DiscoveryStateError(`Explicit valid requirement origin required: ${origin}`, 'DK_INVALID_ORIGIN');
+  }
+  if (!MATERIALITY_LEVELS.includes(materiality)) {
+    throw new DiscoveryStateError(`Invalid materiality level: ${materiality}`, 'DK_INVALID_MATERIALITY');
   }
   if (!RESOLUTION_STATES.includes(resolutionState)) {
     throw new DiscoveryStateError(`Invalid resolutionState: ${resolutionState}`, 'DK_INVALID_RESOLUTION_STATE');
@@ -213,6 +230,18 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
   }
 
   const state = loadDiscoveryState(rootDir);
+  const existingIdx = state.requirements.findIndex((r) => r.id === id);
+
+  if (existingIdx >= 0) {
+    const existing = state.requirements[existingIdx];
+    if (existing.origin !== origin) {
+      throw new DiscoveryStateError(
+        `Requirement provenance origin is immutable for ${id} (existing: ${existing.origin}, attempted: ${origin})`,
+        'DK_PROVENANCE_IMMUTABLE'
+      );
+    }
+  }
+
   let linkedPodId = null;
 
   if (createPod && (resolutionState === 'CONFIRMED' || resolutionState === 'ADOPTED') && confirmedBy === 'PRODUCT_OWNER') {
@@ -228,7 +257,6 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
     linkedPodId = podId;
   }
 
-  const existingIdx = state.requirements.findIndex((r) => r.id === id);
   const reqObj = {
     id,
     statement: statement.trim(),
@@ -236,9 +264,9 @@ export function recordRequirementCandidate(rootDir = process.cwd(), {
     origin,
     resolutionState,
     confirmedBy: (resolutionState === 'CONFIRMED' || resolutionState === 'ADOPTED') ? confirmedBy : null,
-    linkedPodId,
-    supersedes: null,
-    supersededBy: null,
+    linkedPodId: linkedPodId || (existingIdx >= 0 ? state.requirements[existingIdx].linkedPodId : null),
+    supersedes: supersedes || (existingIdx >= 0 ? state.requirements[existingIdx].supersedes : null),
+    supersededBy: supersededBy || (existingIdx >= 0 ? state.requirements[existingIdx].supersededBy : null),
     createdAt: existingIdx >= 0 ? state.requirements[existingIdx].createdAt : new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -269,16 +297,15 @@ export function recordOpenQuestion(rootDir = process.cwd(), {
   if (!question || typeof question !== 'string' || !question.trim()) {
     throw new DiscoveryStateError('Question text is required', 'DK_INVALID_QUESTION');
   }
+  if (!MATERIALITY_LEVELS.includes(materiality)) {
+    throw new DiscoveryStateError(`Invalid materiality level: ${materiality}`, 'DK_INVALID_MATERIALITY');
+  }
   if (!QUESTION_RESOLUTIONS.includes(resolution)) {
     throw new DiscoveryStateError(`Invalid question resolution: ${resolution}`, 'DK_INVALID_QUESTION_RESOLUTION');
   }
 
-  if (resolution === 'ANSWERED' && resolvedBy !== 'PRODUCT_OWNER') {
-    throw new DiscoveryStateError('ANSWERED question requires explicit resolvedBy = "PRODUCT_OWNER"', 'DK_UNAUTHORIZED_RESOLUTION');
-  }
-
-  if (resolution === 'DEFERRED' && resolvedBy !== 'PRODUCT_OWNER') {
-    throw new DiscoveryStateError('DEFERRED question requires explicit resolvedBy = "PRODUCT_OWNER"', 'DK_UNAUTHORIZED_DEFERRAL');
+  if (materiality === 'MATERIAL' && resolution !== 'UNRESOLVED' && resolvedBy !== 'PRODUCT_OWNER') {
+    throw new DiscoveryStateError(`Material question ${resolution} resolution requires explicit resolvedBy = 'PRODUCT_OWNER'`, 'DK_UNAUTHORIZED_RESOLUTION');
   }
 
   const state = loadDiscoveryState(rootDir);

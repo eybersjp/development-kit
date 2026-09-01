@@ -47,14 +47,32 @@ export function validateArtifactRegistryStructure(data) {
     if (rel.startsWith('..') || path.isAbsolute(rel)) {
       throw new ArtifactRegistryError(`Registry artifact ${key} path escapes root: ${rel}`, 'DK_ARTIFACT_PATH_ESCAPE');
     }
-    if (key === 'IDEA_BRIEF' && rel !== 'idea-brief.md') {
-      throw new ArtifactRegistryError(`IDEA_BRIEF canonicalPath must be idea-brief.md (got ${rel})`, 'DK_ARTIFACT_REGISTRY_CORRUPT');
+    if (key === 'IDEA_BRIEF') {
+      if (rel !== 'idea-brief.md') {
+        throw new ArtifactRegistryError(`IDEA_BRIEF canonicalPath must be idea-brief.md (got ${rel})`, 'DK_ARTIFACT_REGISTRY_CORRUPT');
+      }
+      if (item.artifactType !== 'idea-brief') {
+        throw new ArtifactRegistryError(`IDEA_BRIEF artifactType must be 'idea-brief' (got ${item.artifactType})`, 'DK_ARTIFACT_REGISTRY_CORRUPT');
+      }
+      if (item.lifecycleStage !== 'UNDERSTAND') {
+        throw new ArtifactRegistryError(`IDEA_BRIEF lifecycleStage must be 'UNDERSTAND' (got ${item.lifecycleStage})`, 'DK_ARTIFACT_REGISTRY_CORRUPT');
+      }
     }
-    if (!item.fingerprint || !item.fingerprint.startsWith('sha256:')) {
-      throw new ArtifactRegistryError(`Registry artifact ${key} invalid fingerprint`, 'DK_ARTIFACT_REGISTRY_CORRUPT');
+    if (!item.fingerprint || !/^sha256:[a-f0-9]{64}$/i.test(item.fingerprint)) {
+      throw new ArtifactRegistryError(`Registry artifact ${key} invalid fingerprint (must be sha256:<64 hex>)`, 'DK_ARTIFACT_REGISTRY_CORRUPT');
     }
-    if (typeof item.revision !== 'number' || item.revision <= 0) {
+    if (typeof item.revision !== 'number' || !Number.isInteger(item.revision) || item.revision <= 0) {
       throw new ArtifactRegistryError(`Registry artifact ${key} invalid revision`, 'DK_ARTIFACT_REGISTRY_CORRUPT');
+    }
+    if (item.discoveryRevision !== null && item.discoveryRevision !== undefined) {
+      if (typeof item.discoveryRevision !== 'number' || !Number.isInteger(item.discoveryRevision) || item.discoveryRevision < 0) {
+        throw new ArtifactRegistryError(`Registry artifact ${key} invalid discoveryRevision`, 'DK_ARTIFACT_REGISTRY_CORRUPT');
+      }
+    }
+    if (item.discoveryFingerprint !== null && item.discoveryFingerprint !== undefined) {
+      if (!/^sha256:[a-f0-9]{64}$/i.test(item.discoveryFingerprint)) {
+        throw new ArtifactRegistryError(`Registry artifact ${key} invalid discoveryFingerprint`, 'DK_ARTIFACT_REGISTRY_CORRUPT');
+      }
     }
   }
   return true;
@@ -108,46 +126,52 @@ export function resolveCanonicalIdeaArtifact(rootDir = process.cwd(), { verifyFi
       throw new ArtifactRegistryError('Registered artifact path escapes project root', 'DK_ARTIFACT_PATH_ESCAPE');
     }
 
-    if (fs.existsSync(regAbs)) {
-      if (regRel === 'idea-brief.md' && legacyExists) {
-        const rootContent = fs.readFileSync(rootPath, 'utf8');
-        const legacyContent = fs.readFileSync(legacyPath, 'utf8');
-        const rootFp = computeSha256(rootContent);
-        const legFp = computeSha256(legacyContent);
-        if (rootFp !== legFp) {
-          throw new ArtifactRegistryError(
-            'Both idea-brief.md and docs/idea-brief.md exist with differing contents',
-            'DK_ARTIFACT_AUTHORITY_CONFLICT',
-            { rootFp, legFp }
-          );
-        } else {
-          fs.unlinkSync(legacyPath);
-        }
-      }
-
-      const actualContent = fs.readFileSync(regAbs, 'utf8');
-      const actualFp = computeSha256(actualContent);
-
-      if (verifyFingerprint && actualFp !== regRecord.fingerprint) {
-        throw new ArtifactRegistryError(
-          'Physical file fingerprint does not match registered artifact fingerprint',
-          'DK_ARTIFACT_FINGERPRINT_MISMATCH',
-          { registeredFingerprint: regRecord.fingerprint, actualFingerprint: actualFp }
-        );
-      }
-
-      return {
-        relativePath: regRel,
-        absolutePath: regAbs,
-        fingerprint: regRecord.fingerprint,
-        actualFingerprint: actualFp,
-        isFingerprintMismatch: actualFp !== regRecord.fingerprint,
-        revision: regRecord.revision || 1,
-        discoveryRevision: regRecord.discoveryRevision ?? null,
-        discoveryFingerprint: regRecord.discoveryFingerprint ?? null,
-        registered: true,
-      };
+    if (!fs.existsSync(regAbs)) {
+      throw new ArtifactRegistryError(
+        `Registered canonical artifact file is missing: ${regRel}`,
+        'DK_ARTIFACT_MISSING',
+        { canonicalPath: regRel, registeredFingerprint: regRecord.fingerprint }
+      );
     }
+
+    if (regRel === 'idea-brief.md' && legacyExists) {
+      const rootContent = fs.readFileSync(rootPath, 'utf8');
+      const legacyContent = fs.readFileSync(legacyPath, 'utf8');
+      const rootFp = computeSha256(rootContent);
+      const legFp = computeSha256(legacyContent);
+      if (rootFp !== legFp) {
+        throw new ArtifactRegistryError(
+          'Both idea-brief.md and docs/idea-brief.md exist with differing contents',
+          'DK_ARTIFACT_AUTHORITY_CONFLICT',
+          { rootFp, legFp }
+        );
+      } else {
+        fs.unlinkSync(legacyPath);
+      }
+    }
+
+    const actualContent = fs.readFileSync(regAbs, 'utf8');
+    const actualFp = computeSha256(actualContent);
+
+    if (verifyFingerprint && actualFp !== regRecord.fingerprint) {
+      throw new ArtifactRegistryError(
+        'Physical file fingerprint does not match registered artifact fingerprint',
+        'DK_ARTIFACT_FINGERPRINT_MISMATCH',
+        { registeredFingerprint: regRecord.fingerprint, actualFingerprint: actualFp }
+      );
+    }
+
+    return {
+      relativePath: regRel,
+      absolutePath: regAbs,
+      fingerprint: regRecord.fingerprint,
+      actualFingerprint: actualFp,
+      isFingerprintMismatch: actualFp !== regRecord.fingerprint,
+      revision: regRecord.revision || 1,
+      discoveryRevision: regRecord.discoveryRevision ?? null,
+      discoveryFingerprint: regRecord.discoveryFingerprint ?? null,
+      registered: true,
+    };
   }
 
   if (rootExists && legacyExists) {
@@ -284,22 +308,16 @@ export function registerArtifact({
 export function persistCanonicalIdeaBrief({
   rootDir = process.cwd(),
   content,
-  discoveryRevision = null,
-  discoveryFingerprint = null,
 }) {
   if (typeof content !== 'string' || !content.trim()) {
     throw new ArtifactRegistryError('Content must be a non-empty string', 'DK_ARTIFACT_INVALID_CONTENT');
   }
 
-  let finalDiscRev = discoveryRevision;
-  let finalDiscFp = discoveryFingerprint;
-  if (finalDiscRev === null || finalDiscRev === undefined) {
-    try {
-      const disc = loadDiscoveryState(rootDir);
-      finalDiscRev = disc.revision;
-      finalDiscFp = disc.fingerprint;
-    } catch (_) {}
-  }
+  // Authoritatively load and validate current discovery state.
+  // Must fail closed if discovery state is missing or corrupt.
+  const disc = loadDiscoveryState(rootDir);
+  const finalDiscRev = disc.revision;
+  const finalDiscFp = disc.fingerprint;
 
   const resolved = resolveCanonicalIdeaArtifact(rootDir, { verifyFingerprint: false });
   const targetAbs = path.resolve(rootDir, 'idea-brief.md');
@@ -329,6 +347,50 @@ export function persistCanonicalIdeaBrief({
     absolutePath: targetAbs,
     fingerprint,
     revision: newRevision,
+    discoveryRevision: finalDiscRev,
+    discoveryFingerprint: finalDiscFp,
+    record,
+  };
+}
+
+export function reconcileCanonicalIdeaBrief({
+  rootDir = process.cwd(),
+  overrideDiscoveryRevision = null,
+  overrideDiscoveryFingerprint = null,
+} = {}) {
+  const resolved = resolveCanonicalIdeaArtifact(rootDir, { verifyFingerprint: false });
+  if (!fs.existsSync(resolved.absolutePath)) {
+    throw new ArtifactRegistryError('Cannot reconcile: idea-brief.md does not exist', 'DK_ARTIFACT_MISSING');
+  }
+  const content = fs.readFileSync(resolved.absolutePath, 'utf8');
+  const fingerprint = computeSha256(content);
+
+  let finalDiscRev = overrideDiscoveryRevision;
+  let finalDiscFp = overrideDiscoveryFingerprint;
+  if (finalDiscRev === null || finalDiscRev === undefined) {
+    const disc = loadDiscoveryState(rootDir);
+    finalDiscRev = disc.revision;
+    finalDiscFp = disc.fingerprint;
+  }
+
+  const record = registerArtifact({
+    rootDir,
+    key: 'IDEA_BRIEF',
+    canonicalPath: 'idea-brief.md',
+    artifactType: 'idea-brief',
+    lifecycleStage: 'UNDERSTAND',
+    fingerprint,
+    revision: resolved.revision || 1,
+    discoveryRevision: finalDiscRev,
+    discoveryFingerprint: finalDiscFp,
+  });
+
+  return {
+    success: true,
+    canonicalPath: 'idea-brief.md',
+    absolutePath: resolved.absolutePath,
+    fingerprint,
+    revision: record.revision,
     discoveryRevision: finalDiscRev,
     discoveryFingerprint: finalDiscFp,
     record,
