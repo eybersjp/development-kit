@@ -1,10 +1,11 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * Development Kit Autopilot — Executable CLI Adapter
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { getCurrentState, saveStateRevision } from '../runtime/autopilot/state-store.mjs';
 import { getProjectIdentity } from '../runtime/autopilot/project-identity.mjs';
 import {
@@ -22,6 +23,9 @@ import {
 } from '../runtime/autopilot/transition-model.mjs';
 import { validateActionResult } from '../runtime/autopilot/validators.mjs';
 import { enforceAutopilotOrchestrationGate } from '../runtime/autopilot/orchestration-result-gate.mjs';
+import { resolveProjectRoot } from '../runtime/bootstrap/project-root.mjs';
+
+const __filename = fileURLToPath(import.meta.url);
 
 function parseArgs() {
   const options = {};
@@ -54,7 +58,22 @@ function requireWorkflow(currentState) {
 
 function main() {
   const options = parseArgs();
-  const rootDir = process.cwd();
+  const explicitRoot = options['root-dir'] || options.rootDir;
+  let rootDir;
+
+  try {
+    rootDir = resolveProjectRoot({
+      cwd: process.cwd(),
+      executablePath: __filename,
+      explicitRoot,
+    });
+  } catch (err) {
+    return respond(false, {
+      code: err.code || 'DK_PROJECT_ROOT_ERROR',
+      error: err.message,
+      details: err.details || null,
+    }, 1);
+  }
 
   if (options.init) {
     const autonomy = typeof options.autonomy === 'string' ? options.autonomy : 'guided-autopilot';

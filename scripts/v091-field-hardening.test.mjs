@@ -3500,3 +3500,98 @@ test('Candidate 13 (Defect 4): Public Command & Agent Contract integrity inspect
   assert.ok(agentContent.includes('idea-supersede-question'), 'Agent must include idea-supersede-question');
 });
 
+// ===========================================================================
+// Candidate 14: Project-Root Affinity & Path Resolution Tests
+// ===========================================================================
+
+test('Candidate 14 (Project Root): resolveProjectRoot handles spaces in paths and nested .agents invocation', async () => {
+  const baseDir = createTempDir('dk space test-');
+  try {
+    const agentsDir = path.join(baseDir, '.agents');
+    const pluginDir = path.join(agentsDir, 'plugins', 'development-kit');
+    const scriptsDir = path.join(pluginDir, 'scripts');
+    fs.mkdirSync(scriptsDir, { recursive: true });
+
+    const fakeScriptPath = path.join(scriptsDir, 'run.mjs');
+
+    const { resolveProjectRoot, ProjectRootError } = await import('../runtime/bootstrap/project-root.mjs');
+
+    // 1. Invocation with cwd = <project>
+    const rootFromProject = resolveProjectRoot({
+      cwd: baseDir,
+      executablePath: fakeScriptPath,
+    });
+    assert.equal(rootFromProject, baseDir);
+
+    // 2. Invocation with cwd = <project>/.agents
+    const rootFromAgents = resolveProjectRoot({
+      cwd: agentsDir,
+      executablePath: fakeScriptPath,
+    });
+    assert.equal(rootFromAgents, baseDir);
+
+    // 3. Invocation with cwd = <project>/.agents/plugins/development-kit/scripts
+    const rootFromScripts = resolveProjectRoot({
+      cwd: scriptsDir,
+      executablePath: fakeScriptPath,
+    });
+    assert.equal(rootFromScripts, baseDir);
+
+    // 4. Invocation from arbitrary cwd where script is inside project plugin
+    const otherDir = createTempDir('dk other-');
+    try {
+      const rootFromOther = resolveProjectRoot({
+        cwd: otherDir,
+        executablePath: fakeScriptPath,
+      });
+      assert.equal(rootFromOther, baseDir, 'Script path inside plugin must anchor project root even if cwd is elsewhere');
+    } finally {
+      cleanupTempDir(otherDir);
+    }
+  } finally {
+    cleanupTempDir(baseDir);
+  }
+});
+
+test('Candidate 14 (Project Root Conflict): resolveProjectRoot throws DK_PROJECT_ROOT_CONFLICT on conflicting identities', async () => {
+  const projA = createTempDir('dk projA-');
+  const projB = createTempDir('dk projB-');
+  try {
+    const dkA = path.join(projA, '.development-kit');
+    const dkB = path.join(projB, '.development-kit');
+    fs.mkdirSync(dkA, { recursive: true });
+    fs.mkdirSync(dkB, { recursive: true });
+    fs.writeFileSync(path.join(dkA, 'project.json'), JSON.stringify({ projectId: 'proj-A-123', frameworkVersion: '0.9.0' }));
+    fs.writeFileSync(path.join(dkB, 'project.json'), JSON.stringify({ projectId: 'proj-B-456', frameworkVersion: '0.9.0' }));
+
+    const fakeScriptInA = path.join(projA, '.agents', 'plugins', 'development-kit', 'scripts', 'run.mjs');
+
+    const { resolveProjectRoot } = await import('../runtime/bootstrap/project-root.mjs');
+
+    assert.throws(
+      () => resolveProjectRoot({ cwd: projB, executablePath: fakeScriptInA }),
+      (err) => err.code === 'DK_PROJECT_ROOT_CONFLICT'
+    );
+  } finally {
+    cleanupTempDir(projA);
+    cleanupTempDir(projB);
+  }
+});
+
+test('Candidate 14 (Mislocated State): checkMislocatedState throws DK_MISLOCATED_STATE if .agents/.development-kit exists', async () => {
+  const testDir = createTempDir('dk mislocated-');
+  try {
+    const mislocated = path.join(testDir, '.agents', '.development-kit');
+    fs.mkdirSync(mislocated, { recursive: true });
+
+    const { resolveProjectRoot } = await import('../runtime/bootstrap/project-root.mjs');
+
+    assert.throws(
+      () => resolveProjectRoot({ cwd: testDir }),
+      (err) => err.code === 'DK_MISLOCATED_STATE'
+    );
+  } finally {
+    cleanupTempDir(testDir);
+  }
+});
+

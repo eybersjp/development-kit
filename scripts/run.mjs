@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * Development Kit — Universal Command Dispatcher
  *
@@ -6,13 +6,19 @@
  * 1. project-local (.agents/plugins/development-kit/scripts/)
  * 2. repository-local (scripts/)
  * 3. global Antigravity configuration
+ *
+ * Canonical Project Root Invariant:
+ * Resolves canonical project root before spawning child scripts, ensuring child
+ * executes with cwd = canonical project root and receives --root-dir argument.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { resolveProjectRoot, ProjectRootError } from '../runtime/bootstrap/project-root.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export const ALLOWED_SCRIPTS = Object.freeze([
   'lifecycle.mjs',
@@ -66,9 +72,32 @@ function main() {
     process.exit(1);
   }
 
-  const child = spawnSync(process.execPath, [scriptPath, ...args.slice(1)], {
+  let canonicalRoot;
+  try {
+    canonicalRoot = resolveProjectRoot({
+      cwd: process.cwd(),
+      executablePath: __filename,
+    });
+  } catch (err) {
+    console.error(JSON.stringify({
+      success: false,
+      code: err.code || 'DK_PROJECT_ROOT_ERROR',
+      error: err.message,
+      details: err.details || null,
+    }));
+    process.exit(1);
+  }
+
+  // Check if args already provide --root-dir or --rootDir
+  const passArgs = [...args.slice(1)];
+  const hasExplicitRoot = passArgs.some((a) => a.startsWith('--root-dir=') || a.startsWith('--rootDir=') || a === '--root-dir' || a === '--rootDir');
+  if (!hasExplicitRoot && ['lifecycle.mjs', 'orchestration.mjs', 'autopilot.mjs', 'bootstrap.mjs', 'control-center.mjs', 'next-step.mjs'].includes(scriptName)) {
+    passArgs.push(`--root-dir=${canonicalRoot}`);
+  }
+
+  const child = spawnSync(process.execPath, [scriptPath, ...passArgs], {
     stdio: 'inherit',
-    cwd: process.cwd(),
+    cwd: canonicalRoot,
     env: process.env,
   });
 

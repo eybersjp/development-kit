@@ -196,3 +196,106 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
     try { fs.rmSync(consumerDir, { recursive: true, force: true }); } catch (_) {}
   }
 });
+
+test('Package Consumer: Candidate 14 Project-Root Affinity (execution from .agents creates .development-kit only at project root)', () => {
+  const packDir = createTempDir();
+  const consumerDir = createTempDir();
+  try {
+    // 1. Pack tarball
+    const rootPath = path.resolve('.');
+    const packRes = execSync(`npm pack "${rootPath}"`, { cwd: packDir, encoding: 'utf8' }).trim();
+    const tarballName = packRes.split('\n').pop().trim();
+    const tarballPath = path.join(packDir, tarballName);
+    execSync(`tar -xzf "${tarballPath}"`, { cwd: packDir });
+
+    const extractedPkgDir = path.join(packDir, 'package');
+    const installerInPkg = path.join(extractedPkgDir, 'scripts', 'install-antigravity.mjs');
+
+    // 2. Install --project into consumerDir
+    const installRun = spawnSync(process.execPath, [installerInPkg, '--project'], {
+      cwd: consumerDir,
+      encoding: 'utf8',
+    });
+    assert.equal(installRun.status, 0, installRun.stderr || installRun.stdout);
+
+    const agentsDir = path.join(consumerDir, '.agents');
+    const pluginScriptsDir = path.join(agentsDir, 'plugins', 'development-kit', 'scripts');
+    const runScriptPath = path.join(pluginScriptsDir, 'run.mjs');
+    const lifecycleScriptPath = path.join(pluginScriptsDir, 'lifecycle.mjs');
+    const orchScriptPath = path.join(pluginScriptsDir, 'orchestration.mjs');
+
+    // 3. Execution from cwd = consumerDir/.agents via runner
+    const execFromAgents = spawnSync(process.execPath, [
+      runScriptPath,
+      'lifecycle.mjs',
+      '--command=dk-idea',
+      '--phase=entry',
+    ], {
+      cwd: agentsDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(execFromAgents.status, 0, execFromAgents.stderr || execFromAgents.stdout);
+
+    // 4. Assert .development-kit ONLY exists at project root, NOT in .agents
+    assert.ok(fs.existsSync(path.join(consumerDir, '.development-kit')), 'Canonical project root .development-kit must exist');
+    assert.ok(!fs.existsSync(path.join(agentsDir, '.development-kit')), 'Mislocated .agents/.development-kit must NOT exist');
+
+    // 5. Direct invocation bypass of lifecycle.mjs from cwd = .agents
+    const directLifecycle = spawnSync(process.execPath, [
+      lifecycleScriptPath,
+      '--command=dk-idea',
+      '--phase=entry',
+    ], {
+      cwd: agentsDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(directLifecycle.status, 0, directLifecycle.stderr || directLifecycle.stdout);
+    assert.ok(!fs.existsSync(path.join(agentsDir, '.development-kit')), 'Direct lifecycle must never create .agents/.development-kit');
+
+    // 6. Direct invocation bypass of orchestration.mjs from cwd = .agents
+    const directOrch = spawnSync(process.execPath, [
+      orchScriptPath,
+      '--operation=idea-record-candidate',
+      '--input-json=' + JSON.stringify({
+        id: 'IDEA-REQ-001',
+        statement: 'Direct orchestration invoked from .agents directory',
+        origin: 'USER_STATED',
+      }),
+    ], {
+      cwd: agentsDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(directOrch.status, 0, directOrch.stderr || directOrch.stdout);
+    assert.ok(!fs.existsSync(path.join(agentsDir, '.development-kit')), 'Direct orchestration must never create .agents/.development-kit');
+
+    // 7. Verify discovery state is saved to canonical project root
+    const discPath = path.join(consumerDir, '.development-kit', 'idea', 'discovery.json');
+    assert.ok(fs.existsSync(discPath), 'discovery.json must exist in canonical project root');
+    const discData = JSON.parse(fs.readFileSync(discPath, 'utf8'));
+    assert.equal(discData.requirements.length, 1);
+    assert.equal(discData.requirements[0].id, 'IDEA-REQ-001');
+
+    // 8. Test mislocated state detection (fail closed)
+    const mislocatedDkDir = path.join(agentsDir, '.development-kit');
+    fs.mkdirSync(mislocatedDkDir, { recursive: true });
+    fs.writeFileSync(path.join(mislocatedDkDir, 'project.json'), JSON.stringify({ projectId: 'fake' }));
+
+    const failClosedRun = spawnSync(process.execPath, [
+      runScriptPath,
+      'lifecycle.mjs',
+      '--command=dk-idea',
+      '--phase=entry',
+    ], {
+      cwd: agentsDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(failClosedRun.status, 1, 'Must fail closed when mislocated .agents/.development-kit exists');
+  } finally {
+    try { fs.rmSync(packDir, { recursive: true, force: true }); } catch (_) {}
+    try { fs.rmSync(consumerDir, { recursive: true, force: true }); } catch (_) {}
+  }
+});

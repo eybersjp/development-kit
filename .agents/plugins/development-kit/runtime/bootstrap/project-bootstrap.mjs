@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Development Kit — Project Bootstrapper & Local State Initializer
  *
  * Ensures idempotent establishment of the required project-local runtime state
@@ -19,11 +19,15 @@ import path from 'node:path';
 import { getProjectIdentity } from '../autopilot/project-identity.mjs';
 import { LocalMemoryProvider } from '../intelligence/local-memory-provider.mjs';
 import { resolveEffectiveSettings, getProjectSettingsPath, DEFAULT_SETTINGS } from '../intelligence/settings.mjs';
+import { resolveProjectRoot } from './project-root.mjs';
+
+export { resolveProjectRoot, ProjectRootError } from './project-root.mjs';
 
 export function getProjectBootstrapStatus(rootDir = process.cwd()) {
-  const dkDir = path.join(rootDir, '.development-kit');
+  const canonicalRoot = resolveProjectRoot({ explicitRoot: rootDir });
+  const dkDir = path.join(canonicalRoot, '.development-kit');
   if (!fs.existsSync(dkDir)) {
-    return { initialized: false, dkDirExists: false };
+    return { initialized: false, dkDirExists: false, canonicalRoot };
   }
 
   const projectFile = path.join(dkDir, 'project.json');
@@ -36,22 +40,24 @@ export function getProjectBootstrapStatus(rootDir = process.cwd()) {
     dkDirExists: true,
     hasProjectJson: fs.existsSync(projectFile),
     hasWorkspaceId: fs.existsSync(workspaceFile),
-    hasMemoryManifest: fs.existsSync(memoryManifest)
+    hasMemoryManifest: fs.existsSync(memoryManifest),
+    canonicalRoot,
   };
 }
 
 export async function bootstrapProject(rootDir = process.cwd(), options = {}) {
   try {
-    const dkDir = path.join(rootDir, '.development-kit');
+    const canonicalRoot = resolveProjectRoot({ explicitRoot: rootDir });
+    const dkDir = path.join(canonicalRoot, '.development-kit');
     if (!fs.existsSync(dkDir)) {
       fs.mkdirSync(dkDir, { recursive: true });
     }
 
     // 1. Establish project & workspace identity (.development-kit/project.json & workspace-id)
-    const identity = getProjectIdentity(rootDir);
+    const identity = getProjectIdentity(canonicalRoot);
 
     // 2. Establish project settings if not existing (.development-kit/settings.json)
-    const settingsPath = getProjectSettingsPath(rootDir);
+    const settingsPath = getProjectSettingsPath(canonicalRoot);
     if (!fs.existsSync(settingsPath)) {
       const initialSettings = {
         controlCenter: {
@@ -74,15 +80,15 @@ export async function bootstrapProject(rootDir = process.cwd(), options = {}) {
     }
 
     // 4. Establish memory provider storage & index (.development-kit/intelligence/memory/)
-    const memoryProvider = new LocalMemoryProvider({ rootDir });
+    const memoryProvider = new LocalMemoryProvider({ rootDir: canonicalRoot });
     await memoryProvider.activate();
 
-    const effectiveSettings = resolveEffectiveSettings(rootDir);
+    const effectiveSettings = resolveEffectiveSettings(canonicalRoot);
 
     return {
       success: true,
       initialized: true,
-      rootDir,
+      rootDir: canonicalRoot,
       identity,
       settings: effectiveSettings
     };
@@ -91,7 +97,7 @@ export async function bootstrapProject(rootDir = process.cwd(), options = {}) {
       success: false,
       initialized: false,
       error: err.message,
-      code: 'ERROR_BOOTSTRAP_FAILED'
+      code: err.code || 'ERROR_BOOTSTRAP_FAILED'
     };
   }
 }
@@ -106,7 +112,8 @@ export class BootstrapError extends Error {
 }
 
 export function assertProjectBootstrapped(rootDir = process.cwd(), { requireMutatingState = true } = {}) {
-  const dkDir = path.join(rootDir, '.development-kit');
+  const canonicalRoot = resolveProjectRoot({ explicitRoot: rootDir });
+  const dkDir = path.join(canonicalRoot, '.development-kit');
   if (!fs.existsSync(dkDir) || !fs.statSync(dkDir).isDirectory()) {
     throw new BootstrapError('Project root lacks .development-kit directory', 'DK_BOOTSTRAP_MISSING');
   }
@@ -140,6 +147,6 @@ export function assertProjectBootstrapped(rootDir = process.cwd(), { requireMuta
     bootstrapped: true,
     projectId: projectData.projectId,
     frameworkVersion: projectData.frameworkVersion,
+    canonicalRoot,
   };
 }
-

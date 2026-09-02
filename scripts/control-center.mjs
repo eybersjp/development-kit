@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * Development Kit Control Center — Executable CLI Adapter
  *
@@ -6,20 +6,25 @@
  * Binds loopback only, prevents duplicate launches, and opens the browser interface.
  *
  * Usage:
- *   node scripts/control-center.mjs [--port=<port>] [--no-browser] [--status]
+ *   node scripts/control-center.mjs [--port=<port>] [--no-browser] [--status] [--root-dir=...]
  */
 
+import { fileURLToPath } from 'node:url';
 import { ControlCenterService, maybeAutoOpenControlCenter } from '../runtime/control-center/control-center-service.mjs';
 import { bootstrapProject } from '../runtime/bootstrap/project-bootstrap.mjs';
+import { resolveProjectRoot } from '../runtime/bootstrap/project-root.mjs';
+
+const __filename = fileURLToPath(import.meta.url);
 
 function parseArgs() {
   const args = process.argv.slice(2);
   const options = {};
-  for (const arg of args) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
     if (arg.startsWith('--')) {
       const parts = arg.substring(2).split('=');
       const key = parts[0];
-      const value = parts.length > 1 ? parts.slice(1).join('=') : true;
+      const value = parts.length > 1 ? parts.slice(1).join('=') : (args[i + 1] && !args[i + 1].startsWith('--') ? args[++i] : true);
       options[key] = value;
     }
   }
@@ -33,7 +38,19 @@ function respond(success, data, exitCode = 0) {
 
 async function main() {
   const options = parseArgs();
-  const rootDir = process.cwd();
+  const explicitRoot = options['root-dir'] || options.rootDir;
+  let rootDir;
+
+  try {
+    rootDir = resolveProjectRoot({
+      cwd: process.cwd(),
+      executablePath: __filename,
+      explicitRoot,
+    });
+  } catch (err) {
+    console.error(`Failed to start Control Center: ${err.message}`);
+    process.exit(1);
+  }
 
   // Ensure project is bootstrapped
   await bootstrapProject(rootDir);

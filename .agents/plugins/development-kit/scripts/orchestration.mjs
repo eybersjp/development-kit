@@ -1,7 +1,8 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   createRoleContext,
@@ -33,6 +34,9 @@ import {
   classifyRequirementScope,
 } from '../runtime/orchestration/index.mjs';
 import { reconcileCanonicalArtifact } from '../runtime/orchestration/reconciliation.mjs';
+import { resolveProjectRoot } from '../runtime/bootstrap/project-root.mjs';
+
+const __filename = fileURLToPath(import.meta.url);
 
 function parseArgs() {
   const options = {};
@@ -73,7 +77,13 @@ function fail(error) {
 function main() {
   const options = parseArgs();
   const operation = options.operation;
-  const rootDir = options['root-dir'] || options.rootDir || process.cwd();
+  const explicitRoot = options['root-dir'] || options.rootDir;
+  const rootDir = resolveProjectRoot({
+    cwd: process.cwd(),
+    executablePath: __filename,
+    explicitRoot,
+  });
+
   if (typeof operation !== 'string') throw new Error('Missing --operation');
   const payload = readPayload(options, rootDir);
 
