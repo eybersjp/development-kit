@@ -136,6 +136,8 @@ Before writing any new code, traverse this ladder:
 - The conductor is implementing code instead of delegating
 - Guessing or inventing project roots based on cwd instead of respecting authoritative runtime project root resolution
 - Improvising or searching for alternative script locations when an installed launcher fails instead of stopping and reporting the deterministic error
+- Resetting workflow state or asking initial discovery questions when persisted workflow checkpoint or discovery state exists ("Persist before asking. Rehydrate before proposing.")
+- Asking a user-facing question without first persisting the pending interaction checkpoint to disk
 
 ## Verification
 

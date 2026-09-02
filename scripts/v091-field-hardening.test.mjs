@@ -50,6 +50,15 @@ import {
   loadApprovalsHistory,
   approveCurrentIdeaBrief,
 } from '../runtime/orchestration/idea-state.mjs';
+import {
+  loadWorkflowCheckpoint,
+  persistWorkflowCheckpoint,
+  resolveIdeaWorkflowState,
+  recordDesignAuthoritySetup,
+  validateWorkflowStructure,
+  validateWorkflowConsistency,
+  IdeaWorkflowError,
+} from '../runtime/orchestration/idea-workflow.mjs';
 import { NextStepResolver } from '../runtime/next-step/resolver.mjs';
 import { validateIdeaBriefStructure } from '../runtime/orchestration/idea-schema.mjs';
 
@@ -3737,5 +3746,292 @@ test('Candidate 15 (BOM-free Executable Shebangs): all executable .mjs and .js f
     }
   }
 });
+
+test('Candidate 17 (Exact Candidate 16 Field State Regression): Rehydrate before propose resumes DESIGN_SYSTEM_SETUP without mutating or creating candidates', async () => {
+  const rootDir = createTempDir('dk-c16-regression-');
+  try {
+    await bootstrapProject(rootDir);
+
+    // 1. Setup exact C16 persisted state:
+    // IDEA-REQ-001..005 USER_STATED UNRESOLVED
+    for (let i = 1; i <= 5; i++) {
+      recordRequirementCandidate(rootDir, {
+        id: `IDEA-REQ-00${i}`,
+        statement: `User requirement ${i} statement`,
+        origin: 'USER_STATED',
+      });
+    }
+
+    // IDEA-REQ-006 AI_PROPOSED UNRESOLVED
+    recordRequirementCandidate(rootDir, {
+      id: 'IDEA-REQ-006',
+      statement: 'AI proposed requirement statement',
+      origin: 'AI_PROPOSED',
+    });
+
+    // IDEA-Q-001 ANSWERED by PRODUCT_OWNER with QUESTION_RESOLUTION POD
+    recordOpenQuestion(rootDir, {
+      id: 'IDEA-Q-001',
+      question: 'What platform should be supported?',
+      materiality: 'MATERIAL',
+    });
+    resolveOpenQuestion(rootDir, {
+      id: 'IDEA-Q-001',
+      resolution: 'ANSWERED',
+      resolvedBy: 'PRODUCT_OWNER',
+    });
+
+    // Workflow cursor was persisted at DESIGN_SYSTEM_SETUP turn
+    persistWorkflowCheckpoint(rootDir, {
+      currentPhase: 'DESIGN_SYSTEM_SETUP',
+      pendingInteraction: {
+        type: 'DESIGN_SYSTEM_SETUP',
+        id: 'INTERACTION-DESIGN-SETUP',
+        prompt: 'Design System Setup',
+        options: [
+          '1. Attach design references',
+          '2. Use an existing design.md',
+          '3. Derive the design system from an existing application',
+          '4. Create a new design direction without references',
+          '5. Defer for now (blocks first frontend implementation)',
+        ],
+      },
+    });
+
+    // Pre-resume snapshot
+    const discBefore = loadDiscoveryState(rootDir);
+    assert.equal(discBefore.requirements.length, 6);
+    assert.equal(discBefore.openQuestions.length, 1);
+    assert.equal(discBefore.openQuestions[0].resolution, 'ANSWERED');
+
+    // 2. Simulate fresh chat / complete process restart: execute lifecycle entry for /dk-idea
+    const entryResult = await executeLifecycleEntry({
+      rootDir,
+      command: '/dk-idea',
+      phase: 'entry',
+    });
+
+    assert.equal(entryResult.success, true);
+    assert.ok(entryResult.ideaWorkflow, 'Must return structured ideaWorkflow');
+    assert.equal(entryResult.ideaWorkflow.ideaStage, 'DISCOVERY_IN_PROGRESS');
+    assert.equal(entryResult.ideaWorkflow.workflowPhase, 'DESIGN_SYSTEM_SETUP');
+    assert.equal(entryResult.ideaWorkflow.action, 'RESUME_PENDING_INTERACTION');
+    assert.equal(entryResult.ideaWorkflow.pendingInteraction.type, 'DESIGN_SYSTEM_SETUP');
+    assert.equal(entryResult.ideaWorkflow.pendingInteraction.id, 'INTERACTION-DESIGN-SETUP');
+
+    // 3. Verify zero mutation during resume: no candidates added, no revision incremented
+    const discAfter = loadDiscoveryState(rootDir);
+    assert.equal(discAfter.revision, discBefore.revision);
+    assert.equal(discAfter.fingerprint, discBefore.fingerprint);
+    assert.equal(discAfter.requirements.length, 6);
+    assert.equal(discAfter.openQuestions.length, 1);
+  } finally {
+    cleanupTempDir(rootDir);
+  }
+});
+
+test('Candidate 17 (Lifecycle Stage Turns Resumption): Deterministic restart at every turn', async () => {
+  const rootDir = createTempDir('dk-c17-turns-');
+  try {
+    await bootstrapProject(rootDir);
+
+    // Turn A: Initial IDEA question is asked but unanswered
+    recordRequirementCandidate(rootDir, { id: 'IDEA-REQ-001', statement: 'Req 1', origin: 'USER_STATED' });
+    recordOpenQuestion(rootDir, { id: 'IDEA-Q-001', question: 'Initial discovery question?', materiality: 'MATERIAL' });
+    persistWorkflowCheckpoint(rootDir, {
+      currentPhase: 'REQUIREMENTS_INTERVIEW',
+      pendingInteraction: {
+        type: 'DISCOVERY_QUESTION',
+        id: 'IDEA-Q-001',
+        prompt: 'Initial discovery question?',
+      },
+    });
+
+    let state = resolveIdeaWorkflowState(rootDir);
+    assert.equal(state.workflowPhase, 'REQUIREMENTS_INTERVIEW');
+    assert.equal(state.pendingInteraction.type, 'DISCOVERY_QUESTION');
+    assert.equal(state.pendingInteraction.id, 'IDEA-Q-001');
+
+    // Turn B: After IDEA-Q-001 is answered -> Design System Setup pending
+    resolveOpenQuestion(rootDir, { id: 'IDEA-Q-001', resolution: 'ANSWERED', resolvedBy: 'PRODUCT_OWNER' });
+    persistWorkflowCheckpoint(rootDir, {
+      currentPhase: 'DESIGN_SYSTEM_SETUP',
+      pendingInteraction: {
+        type: 'DESIGN_SYSTEM_SETUP',
+        id: 'INTERACTION-DESIGN-SETUP',
+        prompt: 'Design System Setup',
+      },
+    });
+
+    state = resolveIdeaWorkflowState(rootDir);
+    assert.equal(state.workflowPhase, 'DESIGN_SYSTEM_SETUP');
+    assert.equal(state.pendingInteraction.type, 'DESIGN_SYSTEM_SETUP');
+
+    // Turn C: After Design System Setup answered -> Idea Challenge pending
+    recordDesignAuthoritySetup(rootDir, { disposition: 'DEFERRED', confirmedBy: 'PRODUCT_OWNER' });
+    state = resolveIdeaWorkflowState(rootDir);
+    assert.equal(state.workflowPhase, 'IDEA_CHALLENGE');
+    assert.equal(state.pendingInteraction.type, 'IDEA_CHALLENGE');
+
+    // Turn D: Requirement confirmation pending
+    persistWorkflowCheckpoint(rootDir, {
+      currentPhase: 'REQUIREMENT_CONFIRMATION',
+      pendingInteraction: {
+        type: 'REQUIREMENT_CONFIRMATION',
+        id: 'INTERACTION-REQ-CONFIRMATION',
+        prompt: 'Do you confirm these exact statements?',
+      },
+    });
+    state = resolveIdeaWorkflowState(rootDir);
+    assert.equal(state.workflowPhase, 'REQUIREMENT_CONFIRMATION');
+    assert.equal(state.pendingInteraction.type, 'REQUIREMENT_CONFIRMATION');
+
+    // Turn E: Scope confirmation pending
+    confirmRequirementCandidate(rootDir, { id: 'IDEA-REQ-001', confirmedBy: 'PRODUCT_OWNER' });
+    persistWorkflowCheckpoint(rootDir, {
+      currentPhase: 'SCOPE_CONFIRMATION',
+      pendingInteraction: {
+        type: 'SCOPE_CONFIRMATION',
+        id: 'INTERACTION-SCOPE-CONFIRMATION',
+        prompt: 'Do you confirm scope?',
+      },
+    });
+    state = resolveIdeaWorkflowState(rootDir);
+    assert.equal(state.workflowPhase, 'SCOPE_CONFIRMATION');
+    assert.equal(state.pendingInteraction.type, 'SCOPE_CONFIRMATION');
+
+    // Turn F: Idea Brief approval pending
+    classifyRequirementScope(rootDir, { id: 'IDEA-REQ-001', scopeDisposition: 'MUST', confirmedBy: 'PRODUCT_OWNER' });
+    const briefContent = `# Idea Brief: Solar App\n\n## Problem\nProblem text\n\n## Intended Users\nUser text\n\n## Success Criteria\nSuccess text\n\n## Requirements (Must)\n- [IDEA-REQ-001] Req 1\n\n## Preferences (Should)\n- None\n\n## Assumptions\n- None\n\n## Constraints\n- None\n\n## Risks\n- None\n\n## Open Questions\n- None\n\n## Future Ideas (Explicitly Deferred)\n- None\n`;
+    const disc = loadDiscoveryState(rootDir);
+    persistCanonicalIdeaBrief({
+      rootDir,
+      content: briefContent,
+      discoveryRevision: disc.revision,
+      discoveryFingerprint: disc.fingerprint,
+    });
+    persistWorkflowCheckpoint(rootDir, {
+      currentPhase: 'BRIEF_APPROVAL',
+      pendingInteraction: {
+        type: 'BRIEF_APPROVAL',
+        id: 'INTERACTION-BRIEF-APPROVAL',
+        prompt: 'Approve brief?',
+      },
+    });
+    state = resolveIdeaWorkflowState(rootDir);
+    assert.equal(state.workflowPhase, 'BRIEF_APPROVAL');
+    assert.equal(state.pendingInteraction.type, 'BRIEF_APPROVAL');
+
+    // Turn G: APPROVED -> Resumes COMPLETE
+    approveCurrentIdeaBrief(rootDir, { approvingAuthority: 'PRODUCT_OWNER' });
+    persistWorkflowCheckpoint(rootDir, {
+      currentPhase: 'COMPLETE',
+      pendingInteraction: null,
+      status: 'COMPLETED',
+    });
+    state = resolveIdeaWorkflowState(rootDir);
+    assert.equal(state.ideaStage, 'APPROVED');
+    assert.equal(state.workflowPhase, 'COMPLETE');
+    assert.equal(state.action, 'COMPLETE');
+    assert.equal(state.recommendedNextCommand, '/dk-spec');
+  } finally {
+    cleanupTempDir(rootDir);
+  }
+});
+
+test('Candidate 17 (Fail-Closed Robustness): Corrupt cursor or invalid references fail closed', async () => {
+  const rootDir = createTempDir('dk-c17-failclosed-');
+  try {
+    await bootstrapProject(rootDir);
+
+    // 1. Corrupt JSON in workflow.json
+    const workflowPath = path.join(rootDir, '.development-kit', 'idea', 'workflow.json');
+    fs.mkdirSync(path.dirname(workflowPath), { recursive: true });
+    fs.writeFileSync(workflowPath, '{ corrupt json');
+
+    assert.throws(
+      () => resolveIdeaWorkflowState(rootDir),
+      (err) => {
+        assert.ok(err instanceof IdeaWorkflowError);
+        assert.equal(err.code, 'DK_WORKFLOW_CORRUPT');
+        return true;
+      }
+    );
+
+    // 2. Pending interaction references unknown question ID in a clean directory
+    const dir2 = createTempDir('dk-c17-dir2-');
+    try {
+      await bootstrapProject(dir2);
+      recordRequirementCandidate(dir2, { id: 'IDEA-REQ-001', statement: 'Req 1', origin: 'USER_STATED' });
+      persistWorkflowCheckpoint(dir2, {
+        currentPhase: 'REQUIREMENTS_INTERVIEW',
+        pendingInteraction: {
+          type: 'DISCOVERY_QUESTION',
+          id: 'IDEA-Q-999', // Unknown
+          prompt: 'Unknown question prompt',
+        },
+      });
+
+      assert.throws(
+        () => resolveIdeaWorkflowState(dir2),
+        (err) => {
+          assert.ok(err instanceof IdeaWorkflowError);
+          assert.equal(err.code, 'DK_UNKNOWN_PENDING_QUESTION');
+          return true;
+        }
+      );
+    } finally {
+      cleanupTempDir(dir2);
+    }
+
+    // 3. Cursor claims approval but ideaStage is NOT_STARTED -> Consistency error
+    const disc = loadDiscoveryState(rootDir);
+    fs.writeFileSync(workflowPath, JSON.stringify({
+      schemaVersion: '1.0.0',
+      workflowRevision: 1,
+      currentPhase: 'BRIEF_APPROVAL',
+      pendingInteraction: {
+        type: 'BRIEF_APPROVAL',
+        id: 'INTERACTION-BRIEF-APPROVAL',
+      },
+      discoveryRevision: disc.revision,
+      discoveryFingerprint: disc.fingerprint,
+      status: 'PENDING',
+    }));
+
+    // In this state, requirements exist but brief is not drafted; ideaStage is DISCOVERY_IN_PROGRESS
+    // If we test with NOT_STARTED state (empty discovery)
+    const emptyProj = createTempDir('dk-empty-fail-');
+    try {
+      await bootstrapProject(emptyProj);
+      const emptyDisc = loadDiscoveryState(emptyProj);
+      const emptyWorkflowPath = path.join(emptyProj, '.development-kit', 'idea', 'workflow.json');
+      fs.mkdirSync(path.dirname(emptyWorkflowPath), { recursive: true });
+      fs.writeFileSync(emptyWorkflowPath, JSON.stringify({
+        schemaVersion: '1.0.0',
+        workflowRevision: 1,
+        currentPhase: 'REQUIREMENT_CONFIRMATION',
+        pendingInteraction: null,
+        discoveryRevision: emptyDisc.revision,
+        discoveryFingerprint: emptyDisc.fingerprint,
+        status: 'PENDING',
+      }));
+
+      assert.throws(
+        () => resolveIdeaWorkflowState(emptyProj),
+        (err) => {
+          assert.ok(err instanceof IdeaWorkflowError);
+          assert.equal(err.code, 'DK_WORKFLOW_CONSISTENCY_ERROR');
+          return true;
+        }
+      );
+    } finally {
+      cleanupTempDir(emptyProj);
+    }
+  } finally {
+    cleanupTempDir(rootDir);
+  }
+});
+
 
 

@@ -12,6 +12,7 @@
 import path from 'node:path';
 import { bootstrapProject, getProjectBootstrapStatus, assertProjectBootstrapped } from '../bootstrap/project-bootstrap.mjs';
 import { computeIdeaStageState } from '../orchestration/idea-state.mjs';
+import { resolveIdeaWorkflowState } from '../orchestration/idea-workflow.mjs';
 
 export const COMMAND_ENTRY_TAXONOMY = Object.freeze({
   '/dk-idea': 'PROJECT_MUTATING',
@@ -126,6 +127,7 @@ export async function executeLifecycleEntry({
   }
 
   let ideaStage = null;
+  let ideaWorkflow = null;
   if (initialized) {
     try {
       ideaStage = computeIdeaStageState(rootDir);
@@ -141,6 +143,23 @@ export async function executeLifecycleEntry({
           code: issue?.code || 'DK_LIFECYCLE_STATE_CORRUPT',
           ideaStage,
         };
+      }
+
+      if (normCmd === '/dk-idea') {
+        try {
+          ideaWorkflow = resolveIdeaWorkflowState(rootDir);
+        } catch (err) {
+          return {
+            success: false,
+            command: normCmd,
+            classification,
+            bootstrapped: true,
+            identity,
+            error: `Lifecycle entry failed: Corrupt idea workflow cursor: ${err.message}`,
+            code: err.code || 'DK_WORKFLOW_CORRUPT',
+            ideaStage,
+          };
+        }
       }
     } catch (err) {
       return {
@@ -162,6 +181,7 @@ export async function executeLifecycleEntry({
     bootstrapped: initialized,
     identity,
     ideaStage,
+    ideaWorkflow,
     rootDir,
   };
 }

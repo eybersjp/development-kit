@@ -17,7 +17,14 @@ At session start or command invocation, execute the centralized lifecycle entry 
 ```bash
 node scripts/lifecycle.mjs --command=dk-idea --phase=entry
 ```
-This establishes and validates project bootstrap, binds project identity, and sets up structured discovery state.
+This establishes and validates project bootstrap, binds project identity, sets up structured discovery state, and deterministically computes `ideaWorkflow` (resuming any pending interaction).
+
+> [!IMPORTANT]
+> **Host / Agent Resumption Contract ("Persist before asking. Rehydrate before proposing.")**:
+> - On a fresh chat or command invocation, chat prose and in-memory conversation history are non-authoritative. Never assume a project is new or restart discovery merely because the conversation history is empty.
+> - Always execute lifecycle entry first to load the authoritative `ideaWorkflow` state (`node scripts/orchestration.mjs --operation=idea-workflow-state` or lifecycle output).
+> - If persisted state indicates discovery is in progress or a pending interaction exists, resume and re-present that exact pending interaction. Do NOT present initial new-project onboarding, do not invent new requirement candidates, do not reset IDs, and do not re-ask already resolved questions.
+> - Before asking ANY user-facing question (discovery question, Design System Setup, Idea Challenge, requirement confirmation, scope confirmation, or Idea Brief approval) and returning control to the user, persist that interaction to disk as `PENDING` via `node scripts/orchestration.mjs --operation=idea-checkpoint-persist`.
 
 > [!NOTE]
 > **Runtime Project Root Authority & Deterministic Launcher**:
@@ -73,7 +80,11 @@ When an open question is answered or deferred, execute the dedicated question re
 node scripts/orchestration.mjs --operation=idea-resolve-question --input-json='{"id":"IDEA-Q-001","resolution":"ANSWERED","resolvedBy":"PRODUCT_OWNER"}'
 ```
 
-If the project includes a visual user interface, prompt early for visual references as a single dedicated turn:
+If the project includes a visual user interface, prompt early for visual references as a single dedicated turn.
+Before asking, persist the interaction checkpoint:
+```bash
+node scripts/orchestration.mjs --operation=idea-checkpoint-persist --input-json='{"currentPhase":"DESIGN_SYSTEM_SETUP","pendingInteraction":{"type":"DESIGN_SYSTEM_SETUP","id":"INTERACTION-DESIGN-SETUP","prompt":"Design System Setup"}}'
+```
 
 ```text
 Design System Setup
@@ -96,6 +107,11 @@ Options:
 3. Derive the design system from an existing application
 4. Create a new design direction without references
 5. Defer for now (blocks first frontend implementation)
+```
+
+When the user selects an option, record the setup decision:
+```bash
+node scripts/orchestration.mjs --operation=idea-design-setup --input-json='{"disposition":"DEFERRED","confirmedBy":"PRODUCT_OWNER"}'
 ```
 
 ### 3. Idea Challenge

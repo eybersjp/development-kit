@@ -137,4 +137,5 @@ export * from './po-decisions.mjs';
 export * from './idea-schema.mjs';
 export * from './idea-discovery.mjs';
 export * from './idea-state.mjs';
+export * from './idea-workflow.mjs';
 export * from '../artifacts/artifact-registry.mjs';

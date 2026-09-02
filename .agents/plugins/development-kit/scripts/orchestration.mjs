@@ -32,6 +32,10 @@ import {
   persistApprovalRecord,
   approveCurrentIdeaBrief,
   classifyRequirementScope,
+  loadWorkflowCheckpoint,
+  persistWorkflowCheckpoint,
+  resolveIdeaWorkflowState,
+  recordDesignAuthoritySetup,
 } from '../runtime/orchestration/index.mjs';
 import { reconcileCanonicalArtifact } from '../runtime/orchestration/reconciliation.mjs';
 import { resolveProjectRoot } from '../runtime/bootstrap/project-root.mjs';
@@ -56,8 +60,20 @@ function safeInputPath(rootDir, inputPath) {
   return resolved;
 }
 
+function cleanJsonString(str) {
+  if (typeof str !== 'string') return str;
+  let s = str.trim();
+  if ((s.startsWith("'") && s.endsWith("'")) || (s.startsWith('"') && s.endsWith('"') && s.startsWith('"{'))) {
+    s = s.slice(1, -1);
+  }
+  return s;
+}
+
 function readPayload(options, rootDir) {
-  if (typeof options['input-json'] === 'string') return JSON.parse(options['input-json']);
+  if (typeof options['input-json'] === 'string') {
+    const raw = cleanJsonString(options['input-json']);
+    return JSON.parse(raw);
+  }
   if (typeof options['input-file'] === 'string') {
     const resolved = safeInputPath(rootDir, options['input-file']);
     return JSON.parse(fs.readFileSync(resolved, 'utf8'));
@@ -124,6 +140,10 @@ function main() {
         linkedPodIds: payload.linkedPodIds || [],
       }));
     }
+    case 'idea-workflow-state': return output(resolveIdeaWorkflowState(rootDir));
+    case 'idea-checkpoint-load': return output(loadWorkflowCheckpoint(rootDir));
+    case 'idea-checkpoint-persist': return output(persistWorkflowCheckpoint(rootDir, payload));
+    case 'idea-design-setup': return output(recordDesignAuthoritySetup(rootDir, payload));
     case 'artifact-resolve': return output(resolveCanonicalIdeaArtifact(rootDir));
     case 'artifact-reconcile': return output(reconcileCanonicalIdeaBrief({ rootDir }));
     default: throw new Error(`Unsupported orchestration operation: ${operation}`);
