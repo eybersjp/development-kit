@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * Development Kit Project Bootstrap — Executable CLI Adapter
  *

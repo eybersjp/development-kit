@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * Development Kit Next-Step Guidance — Executable CLI
  *

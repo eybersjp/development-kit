@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Development Kit — Project Bootstrapper & Local State Initializer
  *
  * Ensures idempotent establishment of the required project-local runtime state

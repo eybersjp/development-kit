@@ -299,3 +299,139 @@ test('Package Consumer: Candidate 14 Project-Root Affinity (execution from .agen
     try { fs.rmSync(consumerDir, { recursive: true, force: true }); } catch (_) {}
   }
 });
+
+test('Package Consumer: Candidate 15 Path with Spaces & Root Affinity Proof', () => {
+  const packDir = createTempDir();
+  const tempBase = createTempDir();
+  const consumerDir = path.join(tempBase, 'DK Candidate 15 Space Test');
+  fs.mkdirSync(consumerDir, { recursive: true });
+
+  try {
+    // 1. Pack tarball
+    const rootPath = path.resolve('.');
+    const packRes = execSync(`npm pack "${rootPath}"`, { cwd: packDir, encoding: 'utf8' }).trim();
+    const tarballName = packRes.split('\n').pop().trim();
+    const tarballPath = path.join(packDir, tarballName);
+    execSync(`tar -xzf "${tarballPath}"`, { cwd: packDir });
+
+    const extractedPkgDir = path.join(packDir, 'package');
+    const installerInPkg = path.join(extractedPkgDir, 'scripts', 'install-antigravity.mjs');
+
+    // 2. Install --project into consumerDir with spaces in path
+    const installRun = spawnSync(process.execPath, [installerInPkg, '--project'], {
+      cwd: consumerDir,
+      encoding: 'utf8',
+    });
+    assert.equal(installRun.status, 0, installRun.stderr || installRun.stdout);
+
+    const agentsDir = path.join(consumerDir, '.agents');
+    const pluginScriptsDir = path.join(agentsDir, 'plugins', 'development-kit', 'scripts');
+    const runScriptPath = path.join(pluginScriptsDir, 'run.mjs');
+    const lifecycleScriptPath = path.join(pluginScriptsDir, 'lifecycle.mjs');
+    const orchScriptPath = path.join(pluginScriptsDir, 'orchestration.mjs');
+
+    // 3. Execute entry from project root
+    const rootEntry = spawnSync(process.execPath, [
+      runScriptPath,
+      'lifecycle.mjs',
+      '--command=dk-idea',
+      '--phase=entry',
+    ], {
+      cwd: consumerDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(rootEntry.status, 0, rootEntry.stderr || rootEntry.stdout);
+    const rootEntryData = JSON.parse(rootEntry.stdout);
+    assert.equal(rootEntryData.success, true);
+    assert.ok(rootEntryData.identity?.projectId, 'Must have projectId');
+
+    // 4. Record candidate from project root
+    const rootRecord = spawnSync(process.execPath, [
+      runScriptPath,
+      'orchestration.mjs',
+      '--operation=idea-record-candidate',
+      '--input-json=' + JSON.stringify({
+        id: 'IDEA-REQ-001',
+        statement: 'Candidate recorded from project root with spaces',
+        origin: 'USER_STATED',
+      }),
+    ], {
+      cwd: consumerDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(rootRecord.status, 0, rootRecord.stderr || rootRecord.stdout);
+
+    // Read discovery state after root invocation
+    const discPath = path.join(consumerDir, '.development-kit', 'idea', 'discovery.json');
+    const discAfterRoot = JSON.parse(fs.readFileSync(discPath, 'utf8'));
+
+    // 5. Execute entry from .agents directory
+    const agentsEntry = spawnSync(process.execPath, [
+      runScriptPath,
+      'lifecycle.mjs',
+      '--command=dk-idea',
+      '--phase=entry',
+    ], {
+      cwd: agentsDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(agentsEntry.status, 0, agentsEntry.stderr || agentsEntry.stdout);
+    const agentsEntryData = JSON.parse(agentsEntry.stdout);
+
+    // 6. Direct invocation of lifecycle.mjs from .agents
+    const directLife = spawnSync(process.execPath, [
+      lifecycleScriptPath,
+      '--command=dk-idea',
+      '--phase=entry',
+    ], {
+      cwd: agentsDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(directLife.status, 0, directLife.stderr || directLife.stdout);
+    const directLifeData = JSON.parse(directLife.stdout);
+
+    // 7. Direct invocation of orchestration.mjs from .agents to query state
+    const directState = spawnSync(process.execPath, [
+      orchScriptPath,
+      '--operation=idea-state',
+    ], {
+      cwd: agentsDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(directState.status, 0, directState.stderr || directState.stdout);
+
+    // 8. Assert root and .agents invocations resolve the exact SAME:
+    // - projectId
+    // - workspace identity
+    // - discovery revision
+    // - discovery fingerprint
+    assert.equal(agentsEntryData.identity.projectId, rootEntryData.identity.projectId, 'projectId must match between root and .agents');
+    assert.equal(directLifeData.identity.projectId, rootEntryData.identity.projectId, 'projectId must match for direct lifecycle');
+
+    const projectFile = path.join(consumerDir, '.development-kit', 'project.json');
+    const wsFile = path.join(consumerDir, '.development-kit', 'workspace-id');
+    const projectIdentity = JSON.parse(fs.readFileSync(projectFile, 'utf8'));
+    const wsIdentity = fs.readFileSync(wsFile, 'utf8').trim();
+
+    assert.equal(rootEntryData.identity.projectId, projectIdentity.projectId);
+    assert.ok(wsIdentity.length > 0, 'Workspace identity must be non-empty');
+
+    const discAfterAgents = JSON.parse(fs.readFileSync(discPath, 'utf8'));
+    assert.equal(discAfterAgents.revision, discAfterRoot.revision, 'Discovery revision must match');
+    assert.equal(discAfterAgents.fingerprint, discAfterRoot.fingerprint, 'Discovery fingerprint must match');
+
+    // 9. Assert exactly ONE .development-kit directory exists at project root, and ZERO nested ones
+    assert.ok(fs.existsSync(path.join(consumerDir, '.development-kit')), 'Root .development-kit must exist');
+    assert.ok(!fs.existsSync(path.join(consumerDir, '.agents', '.development-kit')), 'Nested .agents/.development-kit must not exist');
+    assert.ok(!fs.existsSync(path.join(consumerDir, '.agents', 'plugins', 'development-kit', '.development-kit')), 'Nested plugin .development-kit must not exist');
+  } finally {
+    try { fs.rmSync(packDir, { recursive: true, force: true }); } catch (_) {}
+    try { fs.rmSync(tempBase, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+

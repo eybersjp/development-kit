@@ -134,6 +134,7 @@ Before writing any new code, traverse this ladder:
 - Dependencies are added without justification
 - Code is written but no tests exist for it
 - The conductor is implementing code instead of delegating
+- Guessing or inventing project roots based on cwd instead of respecting authoritative runtime project root resolution
 
 ## Verification
 

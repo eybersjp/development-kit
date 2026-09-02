@@ -3595,3 +3595,116 @@ test('Candidate 14 (Mislocated State): checkMislocatedState throws DK_MISLOCATED
   }
 });
 
+test('Candidate 15 (Explicit Root vs Installation Root Authority): resolveProjectRoot rejects redirection to another project', async () => {
+  const projA = createTempDir('dk projA-');
+  const projB = createTempDir('dk projB-');
+  try {
+    const fakeScriptInA = path.join(projA, '.agents', 'plugins', 'development-kit', 'scripts', 'run.mjs');
+    const { resolveProjectRoot } = await import('../runtime/bootstrap/project-root.mjs');
+
+    // 1. A plugin script + explicitRoot A -> PASS
+    const rootA = resolveProjectRoot({ explicitRoot: projA, executablePath: fakeScriptInA });
+    assert.equal(rootA, projA);
+
+    // 2. A plugin script + explicitRoot A/.agents -> PASS (canonicalizes to A)
+    const rootAAgents = resolveProjectRoot({ explicitRoot: path.join(projA, '.agents'), executablePath: fakeScriptInA });
+    assert.equal(rootAAgents, projA);
+
+    // 3. A plugin script + explicitRoot B -> DK_PROJECT_ROOT_CONFLICT
+    assert.throws(
+      () => resolveProjectRoot({ explicitRoot: projB, executablePath: fakeScriptInA }),
+      (err) => err.code === 'DK_PROJECT_ROOT_CONFLICT'
+    );
+
+    // 4. Even when neither project is bootstrapped, installation authority must not be redirected
+    assert.throws(
+      () => resolveProjectRoot({ explicitRoot: projB, executablePath: fakeScriptInA }),
+      (err) => err.code === 'DK_PROJECT_ROOT_CONFLICT'
+    );
+  } finally {
+    cleanupTempDir(projA);
+    cleanupTempDir(projB);
+  }
+});
+
+test('Candidate 15 (Real Ancestor Project-Root Discovery): resolveProjectRoot finds canonical parent from deep subdirs', async () => {
+  const proj = createTempDir('dk ancestor proj-');
+  try {
+    const dkA = path.join(proj, '.development-kit');
+    fs.mkdirSync(dkA, { recursive: true });
+    fs.writeFileSync(path.join(dkA, 'project.json'), JSON.stringify({ projectId: 'ancestor-proj', frameworkVersion: '0.9.0' }));
+
+    const deepSubdir = path.join(proj, 'src', 'features', 'moduleA');
+    fs.mkdirSync(deepSubdir, { recursive: true });
+
+    const { resolveProjectRoot } = await import('../runtime/bootstrap/project-root.mjs');
+
+    // 1. cwd = project -> project
+    assert.equal(resolveProjectRoot({ cwd: proj }), proj);
+
+    // 2. cwd = project/src/features/moduleA -> project
+    assert.equal(resolveProjectRoot({ cwd: deepSubdir }), proj);
+
+    // 3. cwd = project/.agents -> project
+    const agentsDir = path.join(proj, '.agents');
+    assert.equal(resolveProjectRoot({ cwd: agentsDir }), proj);
+
+    // 4. cwd = project/.agents/plugins/development-kit/scripts -> project
+    const pluginScripts = path.join(proj, '.agents', 'plugins', 'development-kit', 'scripts');
+    assert.equal(resolveProjectRoot({ cwd: pluginScripts }), proj);
+
+    // 5. Global/standalone script execution with cwd in deep subdir -> project
+    const fakeGlobalScript = path.join(createTempDir('dk global-'), 'scripts', 'run.mjs');
+    assert.equal(resolveProjectRoot({ cwd: deepSubdir, executablePath: fakeGlobalScript }), proj);
+
+    // 6. Conflicting DKF markers in ancestor chain fail closed
+    const childProj = path.join(proj, 'packages', 'child');
+    const dkChild = path.join(childProj, '.development-kit');
+    fs.mkdirSync(dkChild, { recursive: true });
+    fs.writeFileSync(path.join(dkChild, 'project.json'), JSON.stringify({ projectId: 'child-proj', frameworkVersion: '0.9.0' }));
+
+    const deepChild = path.join(childProj, 'src');
+    fs.mkdirSync(deepChild, { recursive: true });
+
+    assert.throws(
+      () => resolveProjectRoot({ cwd: deepChild }),
+      (err) => err.code === 'DK_PROJECT_ROOT_CONFLICT'
+    );
+  } finally {
+    cleanupTempDir(proj);
+  }
+});
+
+test('Candidate 15 (BOM-free Executable Shebangs): all executable .mjs and .js files start with ASCII shebang or code', () => {
+  function walk(dir) {
+    let files = [];
+    for (const f of fs.readdirSync(dir)) {
+      if (f === 'node_modules' || f === '.git') continue;
+      const full = path.join(dir, f);
+      const stat = fs.statSync(full);
+      if (stat.isDirectory()) {
+        files = files.concat(walk(full));
+      } else if (f.endsWith('.mjs') || f.endsWith('.js')) {
+        files.push(full);
+      }
+    }
+    return files;
+  }
+
+  const scripts = walk(path.resolve('.'));
+  assert.ok(scripts.length > 50, 'Must check repository scripts');
+
+  for (const file of scripts) {
+    const buf = fs.readFileSync(file);
+    const hasBom = buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF;
+    assert.equal(hasBom, false, `File must not contain UTF-8 BOM: ${file}`);
+
+    const text = buf.toString('utf8');
+    if (text.startsWith('#!')) {
+      assert.equal(buf[0], 0x23, `Shebang must start with byte '#' (0x23) in ${file}`);
+      assert.equal(buf[1], 0x21, `Shebang must start with byte '!' (0x21) in ${file}`);
+    }
+  }
+});
+
+

@@ -19,6 +19,11 @@ node scripts/lifecycle.mjs --command=dk-idea --phase=entry
 ```
 This establishes and validates project bootstrap, binds project identity, and sets up structured discovery state.
 
+> [!NOTE]
+> **Runtime Project Root Authority**:
+> The runtime project root is resolved deterministically by the universal dispatcher and runtime adapters. Do NOT guess or invent project roots based on `process.cwd()`. If a command execution or dispatcher invocation encounters an issue, do not search the filesystem or guess fallback directories; runtime project root remains authoritative.
+
+
 ## Workflow
 
 ### 1. Understand & Initial Minimal Turn
