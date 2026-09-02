@@ -143,15 +143,46 @@ test('Blocker 1: Packaged --project install executes lifecycle and orchestration
     assert.ok(match, 'Must find literal node execution line in dk-idea.md');
     const literalCmd = match[1].trim();
 
-    // Parse command arguments
-    const parts = literalCmd.split(/\s+/);
+    // Parse command arguments respecting quotes
+    function parseTokens(cmd) {
+      const tokens = [];
+      let current = '';
+      let inQuotes = false;
+      let quoteChar = '';
+      for (let i = 0; i < cmd.length; i++) {
+        const c = cmd[i];
+        if (inQuotes) {
+          if (c === quoteChar) {
+            inQuotes = false;
+          } else {
+            current += c;
+          }
+        } else {
+          if (c === '"' || c === "'") {
+            inQuotes = true;
+            quoteChar = c;
+          } else if (/\s/.test(c)) {
+            if (current.length > 0) {
+              tokens.push(current);
+              current = '';
+            }
+          } else {
+            current += c;
+          }
+        }
+      }
+      if (current.length > 0) tokens.push(current);
+      return tokens;
+    }
+
+    const parts = parseTokens(literalCmd);
     assert.equal(parts[0], 'node');
-    const scriptRelative = parts[1];
+    const scriptPath = parts[1];
     const scriptArgs = parts.slice(2);
 
     // Execute literal command exactly as installed command Markdown specifies from consumer project root
     const execRes = spawnSync(process.execPath, [
-      path.join(consumerDir, scriptRelative),
+      scriptPath,
       ...scriptArgs,
     ], {
       cwd: consumerDir,

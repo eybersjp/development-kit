@@ -135,6 +135,7 @@ Before writing any new code, traverse this ladder:
 - Code is written but no tests exist for it
 - The conductor is implementing code instead of delegating
 - Guessing or inventing project roots based on cwd instead of respecting authoritative runtime project root resolution
+- Improvising or searching for alternative script locations when an installed launcher fails instead of stopping and reporting the deterministic error
 
 ## Verification
 

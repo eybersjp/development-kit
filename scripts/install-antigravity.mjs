@@ -235,13 +235,11 @@ function installPlugin(targetDir, force = false, mode = 'project') {
     }
   }
 
-  // Rewrite command markdown files inside pluginDir so commands execute via run.mjs
+  // Rewrite command markdown files inside pluginDir so commands execute deterministically via run.mjs
   const pluginCommandsDir = join(pluginDir, 'commands');
   if (existsSync(pluginCommandsDir)) {
     const cmdFiles = readdirSync(pluginCommandsDir).filter((f) => f.endsWith('.md'));
-    const runnerTarget = mode === 'global'
-      ? `"${join(pluginDir, 'scripts', 'run.mjs')}"`
-      : '.agents/plugins/development-kit/scripts/run.mjs';
+    const runnerTarget = `"${join(pluginDir, 'scripts', 'run.mjs')}"`;
 
     for (const f of cmdFiles) {
       const p = join(pluginCommandsDir, f);

@@ -270,3 +270,42 @@ test('isolated execution fails cleanly when runtime is deliberately removed (no 
   );
   assert.ok(!negativeResult.stdout.includes('## Suggested Next Step'));
 });
+
+test('Candidate 16 (Installer Regression): Project installation produces cwd-independent launcher and rejects relative path', (t) => {
+  const tempTarget = createTempDir('dk candidate16 installer test ');
+  t.after(() => {
+    rmSync(tempTarget, { recursive: true, force: true });
+    assert.ok(!existsSync(tempTarget));
+  });
+
+  const installResult = spawnSync(process.execPath, [INSTALLER_SCRIPT, '--project'], {
+    cwd: tempTarget,
+    encoding: 'utf8',
+  });
+  assert.equal(installResult.status, 0, installResult.stderr || installResult.stdout);
+
+  const pluginCmds = join(tempTarget, '.agents', 'plugins', 'development-kit', 'commands');
+  const ideaCmdPath = join(pluginCmds, 'dk-idea.md');
+  const statusCmdPath = join(pluginCmds, 'dk-status.md');
+  const specCmdPath = join(pluginCmds, 'dk-spec.md');
+
+  assert.ok(existsSync(ideaCmdPath));
+  assert.ok(existsSync(statusCmdPath));
+  assert.ok(existsSync(specCmdPath));
+
+  const ideaContent = readFileSync(ideaCmdPath, 'utf8');
+  const statusContent = readFileSync(statusCmdPath, 'utf8');
+  const specContent = readFileSync(specCmdPath, 'utf8');
+
+  // Must NOT use old relative path
+  assert.equal(ideaContent.includes('node .agents/plugins/development-kit/scripts/run.mjs'), false, 'Must reject old relative launcher');
+  assert.equal(statusContent.includes('node .agents/plugins/development-kit/scripts/run.mjs'), false, 'Must reject old relative launcher');
+  assert.equal(specContent.includes('node .agents/plugins/development-kit/scripts/run.mjs'), false, 'Must reject old relative launcher');
+
+  // Must contain properly quoted absolute path to run.mjs
+  const expectedRunner = join(tempTarget, '.agents', 'plugins', 'development-kit', 'scripts', 'run.mjs');
+  assert.ok(ideaContent.includes(`node "${expectedRunner}" lifecycle.mjs --command=dk-idea --phase=entry`));
+  assert.ok(statusContent.includes(`node "${expectedRunner}" lifecycle.mjs --command=dk-status --phase=entry`));
+  assert.ok(specContent.includes(`node "${expectedRunner}" lifecycle.mjs --command=dk-spec --phase=entry`));
+});
+

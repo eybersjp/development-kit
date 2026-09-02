@@ -72,14 +72,46 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
     const match = cmdContent.match(/```bash\r?\n(node\s+[^\r\n]+)\r?\n```/);
     assert.ok(match, 'Must find literal node execution in dk-idea.md');
     const literalCmd = match[1].trim();
-    const parts = literalCmd.split(/\s+/);
+
+    function parseTokens(cmd) {
+      const tokens = [];
+      let current = '';
+      let inQuotes = false;
+      let quoteChar = '';
+      for (let i = 0; i < cmd.length; i++) {
+        const c = cmd[i];
+        if (inQuotes) {
+          if (c === quoteChar) {
+            inQuotes = false;
+          } else {
+            current += c;
+          }
+        } else {
+          if (c === '"' || c === "'") {
+            inQuotes = true;
+            quoteChar = c;
+          } else if (/\s/.test(c)) {
+            if (current.length > 0) {
+              tokens.push(current);
+              current = '';
+            }
+          } else {
+            current += c;
+          }
+        }
+      }
+      if (current.length > 0) tokens.push(current);
+      return tokens;
+    }
+
+    const parts = parseTokens(literalCmd);
     assert.equal(parts[0], 'node');
-    const scriptRelative = parts[1];
+    const scriptPath = parts[1];
     const scriptArgs = parts.slice(2);
 
     // 6. Execute literal lifecycle command from consumer root
     const execLife = spawnSync(process.execPath, [
-      path.join(consumerDir, scriptRelative),
+      scriptPath,
       ...scriptArgs,
     ], {
       cwd: consumerDir,
@@ -93,7 +125,7 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
 
     // 7. Execute literal orchestration command via installed runner
     const execOrch = spawnSync(process.execPath, [
-      path.join(consumerDir, scriptRelative),
+      scriptPath,
       'orchestration.mjs',
       '--operation=idea-record-candidate',
       '--input-json=' + JSON.stringify({
@@ -113,7 +145,7 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
 
     // 8. Execute supersession for candidate via installed runner
     const execSupReq = spawnSync(process.execPath, [
-      path.join(consumerDir, scriptRelative),
+      scriptPath,
       'orchestration.mjs',
       '--operation=idea-supersede-candidate',
       '--input-json=' + JSON.stringify({
@@ -138,7 +170,7 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
 
     // 9. Execute record and supersede for question via installed runner
     const execQ = spawnSync(process.execPath, [
-      path.join(consumerDir, scriptRelative),
+      scriptPath,
       'orchestration.mjs',
       '--operation=idea-record-question',
       '--input-json=' + JSON.stringify({
@@ -154,7 +186,7 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
     assert.equal(execQ.status, 0, execQ.stderr || execQ.stdout);
 
     const execSupQ = spawnSync(process.execPath, [
-      path.join(consumerDir, scriptRelative),
+      scriptPath,
       'orchestration.mjs',
       '--operation=idea-supersede-question',
       '--input-json=' + JSON.stringify({
@@ -434,4 +466,176 @@ test('Package Consumer: Candidate 15 Path with Spaces & Root Affinity Proof', ()
     try { fs.rmSync(tempBase, { recursive: true, force: true }); } catch (_) {}
   }
 });
+
+test('Package Consumer: Candidate 16 Installed Markdown Command Launcher Execution (Standard & Path with Spaces)', () => {
+  function parseCommandLine(cmdStr) {
+    const tokens = [];
+    let current = '';
+    let inQuotes = false;
+    let quoteChar = '';
+
+    for (let i = 0; i < cmdStr.length; i++) {
+      const c = cmdStr[i];
+      if (inQuotes) {
+        if (c === quoteChar) {
+          inQuotes = false;
+        } else {
+          current += c;
+        }
+      } else {
+        if (c === '"' || c === "'") {
+          inQuotes = true;
+          quoteChar = c;
+        } else if (/\s/.test(c)) {
+          if (current.length > 0) {
+            tokens.push(current);
+            current = '';
+          }
+        } else {
+          current += c;
+        }
+      }
+    }
+    if (current.length > 0) {
+      tokens.push(current);
+    }
+    return tokens;
+  }
+
+  function extractLifecycleCommand(markdownPath) {
+    assert.ok(fs.existsSync(markdownPath), `Markdown file must exist at ${markdownPath}`);
+    const content = fs.readFileSync(markdownPath, 'utf8');
+    const match = content.match(/```(?:bash|sh)?\r?\n(node\s+[^\r\n]+)\r?\n```/);
+    assert.ok(match && match[1], `Failed to extract lifecycle command from ${markdownPath}`);
+    return match[1].trim();
+  }
+
+  const packDir = createTempDir();
+  const tempBase = createTempDir();
+  const consumerDir = path.join(tempBase, 'DK Candidate 16 Installed Command Test');
+  fs.mkdirSync(consumerDir, { recursive: true });
+
+  try {
+    // 1. Pack distribution package
+    const rootPath = path.resolve('.');
+    const packRes = execSync(`npm pack "${rootPath}"`, { cwd: packDir, encoding: 'utf8' }).trim();
+    const tarballName = packRes.split('\n').pop().trim();
+    const tarballPath = path.join(packDir, tarballName);
+    execSync(`tar -xzf "${tarballPath}"`, { cwd: packDir });
+
+    const extractedPkgDir = path.join(packDir, 'package');
+    const installerInPkg = path.join(extractedPkgDir, 'scripts', 'install-antigravity.mjs');
+
+    // 2. Install --project into consumerDir containing spaces in path
+    const installRun = spawnSync(process.execPath, [installerInPkg, '--project'], {
+      cwd: consumerDir,
+      encoding: 'utf8',
+    });
+    assert.equal(installRun.status, 0, installRun.stderr || installRun.stdout);
+
+    const agentsDir = path.join(consumerDir, '.agents');
+    const pluginCmdsDir = path.join(agentsDir, 'plugins', 'development-kit', 'commands');
+
+    // 3. Extract commands directly from installed markdown artifacts
+    const ideaCmdPath = path.join(pluginCmdsDir, 'dk-idea.md');
+    const statusCmdPath = path.join(pluginCmdsDir, 'dk-status.md');
+    const specCmdPath = path.join(pluginCmdsDir, 'dk-spec.md');
+
+    const ideaCmdStr = extractLifecycleCommand(ideaCmdPath);
+    const statusCmdStr = extractLifecycleCommand(statusCmdPath);
+    const specCmdStr = extractLifecycleCommand(specCmdPath);
+
+    // Verify commands do not contain relative run.mjs or relative scripts/
+    assert.equal(ideaCmdStr.includes('node .agents/plugins/development-kit/scripts/run.mjs'), false);
+    assert.equal(ideaCmdStr.includes('node scripts/lifecycle.mjs'), false);
+
+    const ideaTokens = parseCommandLine(ideaCmdStr);
+    const statusTokens = parseCommandLine(statusCmdStr);
+    const specTokens = parseCommandLine(specCmdStr);
+
+    assert.equal(ideaTokens[0], 'node');
+    assert.equal(statusTokens[0], 'node');
+    assert.equal(specTokens[0], 'node');
+
+    // 4. Execute /dk-idea literal installed command from project root
+    const rootIdeaRun = spawnSync(ideaTokens[0], ideaTokens.slice(1), {
+      cwd: consumerDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(rootIdeaRun.status, 0, rootIdeaRun.stderr || rootIdeaRun.stdout);
+    const rootIdeaData = JSON.parse(rootIdeaRun.stdout);
+    assert.equal(rootIdeaData.success, true);
+    assert.ok(rootIdeaData.identity?.projectId);
+
+    // Assert project root has .development-kit and .agents does NOT
+    assert.ok(fs.existsSync(path.join(consumerDir, '.development-kit')));
+    assert.ok(!fs.existsSync(path.join(consumerDir, '.agents', '.development-kit')));
+
+    // 5. Execute identical /dk-idea literal installed command from .agents
+    const agentsIdeaRun = spawnSync(ideaTokens[0], ideaTokens.slice(1), {
+      cwd: agentsDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(agentsIdeaRun.status, 0, agentsIdeaRun.stderr || agentsIdeaRun.stdout);
+    const agentsIdeaData = JSON.parse(agentsIdeaRun.stdout);
+    assert.equal(agentsIdeaData.success, true);
+    assert.equal(agentsIdeaData.identity.projectId, rootIdeaData.identity.projectId);
+    assert.ok(!fs.existsSync(path.join(consumerDir, '.agents', '.development-kit')));
+
+    // 6. Execute /dk-status literal installed command from .agents
+    const agentsStatusRun = spawnSync(statusTokens[0], statusTokens.slice(1), {
+      cwd: agentsDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(agentsStatusRun.status, 0, agentsStatusRun.stderr || agentsStatusRun.stdout);
+    const agentsStatusData = JSON.parse(agentsStatusRun.stdout);
+    assert.equal(agentsStatusData.success, true);
+    assert.equal(agentsStatusData.identity.projectId, rootIdeaData.identity.projectId);
+
+    // 7. Execute /dk-status literal installed command from project root
+    const rootStatusRun = spawnSync(statusTokens[0], statusTokens.slice(1), {
+      cwd: consumerDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(rootStatusRun.status, 0, rootStatusRun.stderr || rootStatusRun.stdout);
+    const rootStatusData = JSON.parse(rootStatusRun.stdout);
+    assert.equal(rootStatusData.success, true);
+    assert.equal(rootStatusData.identity.projectId, rootIdeaData.identity.projectId);
+
+    // 8. Execute /dk-spec literal installed command from .agents
+    const agentsSpecRun = spawnSync(specTokens[0], specTokens.slice(1), {
+      cwd: agentsDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(agentsSpecRun.status, 0, agentsSpecRun.stderr || agentsSpecRun.stdout);
+    const agentsSpecData = JSON.parse(agentsSpecRun.stdout);
+    assert.equal(agentsSpecData.success, true);
+    assert.equal(agentsSpecData.identity.projectId, rootIdeaData.identity.projectId);
+
+    // 9. Execute /dk-spec literal installed command from project root
+    const rootSpecRun = spawnSync(specTokens[0], specTokens.slice(1), {
+      cwd: consumerDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(rootSpecRun.status, 0, rootSpecRun.stderr || rootSpecRun.stdout);
+    const rootSpecData = JSON.parse(rootSpecRun.stdout);
+    assert.equal(rootSpecData.success, true);
+    assert.equal(rootSpecData.identity.projectId, rootIdeaData.identity.projectId);
+
+    // 10. Assert state integrity: exactly 1 .development-kit directory exists at root
+    assert.ok(fs.existsSync(path.join(consumerDir, '.development-kit')));
+    assert.ok(!fs.existsSync(path.join(consumerDir, '.agents', '.development-kit')));
+    assert.ok(!fs.existsSync(path.join(consumerDir, '.agents', 'plugins', 'development-kit', '.development-kit')));
+  } finally {
+    try { fs.rmSync(packDir, { recursive: true, force: true }); } catch (_) {}
+    try { fs.rmSync(tempBase, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
 
