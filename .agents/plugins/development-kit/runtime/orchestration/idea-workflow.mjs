@@ -9,8 +9,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { loadDiscoveryState, computeDiscoveryFingerprint } from './idea-discovery.mjs';
-import { computeIdeaStageState } from './idea-state.mjs';
+import {
+  loadDiscoveryState,
+  computeDiscoveryFingerprint,
+  confirmRequirementCandidate,
+  adoptRequirementCandidate,
+  supersedeRequirementCandidate,
+  resolveOpenQuestion,
+  classifyRequirementScope,
+} from './idea-discovery.mjs';
+import { computeIdeaStageState, approveCurrentIdeaBrief } from './idea-state.mjs';
 
 export const IDEA_WORKFLOW_SCHEMA_VERSION = '1.0.0';
 
@@ -40,6 +48,8 @@ export const INTERACTION_STATUSES = Object.freeze([
   'PENDING',
   'CONSUMED',
   'COMPLETED',
+  'IN_PROGRESS',
+  'NOT_STARTED',
 ]);
 
 export const LEGAL_WORKFLOW_TRANSITIONS = Object.freeze({
@@ -164,9 +174,48 @@ export function loadWorkflowCheckpoint(rootDir = process.cwd()) {
   }
 }
 
-/**
- * Load Canonical Design Authority State
- */
+export const VALID_DESIGN_SYSTEM_STATUSES = Object.freeze([
+  'not_required',
+  'unconfigured',
+  'deferred',
+  'references_requested',
+  'references_received',
+  'generating',
+  'draft',
+  'awaiting_approval',
+  'approved',
+  'amendment_pending',
+  'superseded',
+]);
+
+export const VALID_DESIGN_SYSTEM_DISPOSITIONS = Object.freeze([
+  'ATTACH_REFERENCES',
+  'EXISTING_DESIGN_MD',
+  'DERIVE_EXISTING_APP',
+  'NEW_DIRECTION',
+  'DEFERRED',
+  'NOT_REQUIRED',
+]);
+
+export function validateDesignSystemStateStructure(data) {
+  if (!data || typeof data !== 'object') {
+    throw new IdeaWorkflowError('Invalid design-system-state.json: must be a JSON object', 'DK_DESIGN_STATE_CORRUPT');
+  }
+  if (data.schemaVersion !== 1) {
+    throw new IdeaWorkflowError(`Invalid design-system-state schemaVersion: ${data.schemaVersion}`, 'DK_DESIGN_STATE_CORRUPT');
+  }
+  if (!VALID_DESIGN_SYSTEM_STATUSES.includes(data.status)) {
+    throw new IdeaWorkflowError(`Invalid design-system-state status: ${data.status}`, 'DK_DESIGN_STATE_CORRUPT');
+  }
+  if (data.disposition !== null && data.disposition !== undefined && !VALID_DESIGN_SYSTEM_DISPOSITIONS.includes(data.disposition)) {
+    throw new IdeaWorkflowError(`Invalid design-system-state disposition: ${data.disposition}`, 'DK_DESIGN_STATE_CORRUPT');
+  }
+  if (data.updatedAt && isNaN(Date.parse(data.updatedAt))) {
+    throw new IdeaWorkflowError(`Invalid updatedAt in design-system-state.json: ${data.updatedAt}`, 'DK_DESIGN_STATE_CORRUPT');
+  }
+  return true;
+}
+
 export function loadDesignSystemState(rootDir = process.cwd()) {
   const filePath = getDesignSystemStateFilePath(rootDir);
   if (!fs.existsSync(filePath)) {
@@ -174,15 +223,15 @@ export function loadDesignSystemState(rootDir = process.cwd()) {
   }
   try {
     const raw = fs.readFileSync(filePath, 'utf8');
-    return JSON.parse(raw);
+    const data = JSON.parse(raw);
+    validateDesignSystemStateStructure(data);
+    return data;
   } catch (err) {
+    if (err instanceof IdeaWorkflowError) throw err;
     throw new IdeaWorkflowError(`Corrupt design-system-state.json: ${err.message}`, 'DK_DESIGN_STATE_CORRUPT');
   }
 }
 
-/**
- * Persist Canonical Design Authority State
- */
 export function persistDesignSystemState(rootDir = process.cwd(), stateData = {}) {
   const filePath = getDesignSystemStateFilePath(rootDir);
   const dir = path.dirname(filePath);
@@ -197,16 +246,13 @@ export function persistDesignSystemState(rootDir = process.cwd(), stateData = {}
     details: stateData.details || null,
     updatedAt: new Date().toISOString(),
   };
+  validateDesignSystemStateStructure(payload);
   const tempPath = `${filePath}.tmp.${Date.now()}.${process.pid}`;
   fs.writeFileSync(tempPath, JSON.stringify(payload, null, 2) + '\n', 'utf8');
   fs.renameSync(tempPath, filePath);
   return payload;
 }
 
-/**
- * Low-level workflow checkpoint persistence (internal runtime / test use).
- * Enforces discovery binding, content-bound fingerprint, transition validity, and monotonic revision.
- */
 export function persistWorkflowCheckpoint(rootDir = process.cwd(), checkpointData = {}) {
   const disc = loadDiscoveryState(rootDir);
   const dir = path.join(rootDir, '.development-kit', 'idea');
@@ -218,7 +264,6 @@ export function persistWorkflowCheckpoint(rootDir = process.cwd(), checkpointDat
   const currentPhase = checkpointData.currentPhase || 'INITIAL_DISCOVERY';
 
   if (existing) {
-    // Check workflow transition validity
     if (!isValidWorkflowTransition(existing.currentPhase, currentPhase)) {
       throw new IdeaWorkflowError(
         `Invalid workflow transition from ${existing.currentPhase} to ${currentPhase}`,
@@ -227,7 +272,6 @@ export function persistWorkflowCheckpoint(rootDir = process.cwd(), checkpointDat
     }
   }
 
-  // Monotonic revision enforcement
   let nextRevision = existing ? (existing.workflowRevision || 0) + 1 : 1;
   if (typeof checkpointData.workflowRevision === 'number') {
     if (existing && checkpointData.workflowRevision <= (existing.workflowRevision || 0)) {
@@ -264,7 +308,6 @@ export function persistWorkflowCheckpoint(rootDir = process.cwd(), checkpointDat
     };
   }
 
-  // Bind canonical Design Authority status
   const canonicalDesign = loadDesignSystemState(rootDir);
   const designSnapshot = canonicalDesign ? canonicalDesign.status : null;
 
@@ -290,93 +333,51 @@ export function persistWorkflowCheckpoint(rootDir = process.cwd(), checkpointDat
   return payload;
 }
 
-/**
- * Validates consistency between coarse ideaStage, discoveryState, and workflow checkpoint.
- * Fails closed if impossible combinations, broken links, or binding mismatches are detected.
- */
 export function validateWorkflowConsistency(rootDir = process.cwd(), { ideaStage, discoveryState, checkpoint } = {}) {
   const stage = ideaStage || computeIdeaStageState(rootDir);
   const disc = discoveryState || loadDiscoveryState(rootDir);
   const cp = checkpoint !== undefined ? checkpoint : loadWorkflowCheckpoint(rootDir);
 
-  // If stage is BLOCKED by runtime framework, propagate
   if (stage.state === 'BLOCKED' && stage.blockerType === 'RUNTIME_FRAMEWORK') {
     throw new IdeaWorkflowError(`Lifecycle state is BLOCKED: ${stage.issues?.[0]?.message}`, stage.issues?.[0]?.code || 'DK_LIFECYCLE_STATE_CORRUPT');
   }
 
   if (cp) {
-    // 1. Enforce Discovery Revision and Fingerprint Binding
-    // Special case: If cp recorded a pending interaction that was satisfied/consumed by a discovery mutation,
-    // the workflow is transitioning out of that pending state to derive the next phase.
-    const isAnsweredDiscoveryQuestion =
-      cp.status === 'PENDING' &&
-      cp.pendingInteraction &&
-      cp.pendingInteraction.type === 'DISCOVERY_QUESTION' &&
-      cp.pendingInteraction.id &&
-      disc.openQuestions.some(
-        (q) =>
-          q.id.toUpperCase() === cp.pendingInteraction.id.toUpperCase() &&
-          ['ANSWERED', 'DEFERRED', 'REJECTED', 'SUPERSEDED'].includes(q.resolution)
+    if (cp.discoveryRevision !== disc.revision) {
+      throw new IdeaWorkflowError(
+        `Workflow discoveryRevision (${cp.discoveryRevision}) does not match discovery.json revision (${disc.revision})`,
+        'DK_WORKFLOW_DISCOVERY_BINDING_MISMATCH'
       );
-
-    const isSatisfiedRequirementConfirmation =
-      cp.status === 'PENDING' &&
-      cp.pendingInteraction &&
-      cp.pendingInteraction.type === 'REQUIREMENT_CONFIRMATION' &&
-      disc.requirements.length > 0 &&
-      disc.requirements.every((r) => r.resolutionState !== 'UNRESOLVED');
-
-    const isSatisfiedScopeConfirmation =
-      cp.status === 'PENDING' &&
-      cp.pendingInteraction &&
-      cp.pendingInteraction.type === 'SCOPE_CONFIRMATION' &&
-      disc.requirements.length > 0 &&
-      disc.requirements.every((r) => r.resolutionState === 'SUPERSEDED' || r.resolutionState === 'REJECTED' || (r.scopeDisposition && r.scopeDisposition !== 'UNCLASSIFIED'));
-
-    const isTransitioningConsumedState = isAnsweredDiscoveryQuestion || isSatisfiedRequirementConfirmation || isSatisfiedScopeConfirmation;
-
-    if (!isTransitioningConsumedState) {
-      if (cp.discoveryRevision !== disc.revision) {
-        throw new IdeaWorkflowError(
-          `Workflow discoveryRevision (${cp.discoveryRevision}) does not match discovery.json revision (${disc.revision})`,
-          'DK_WORKFLOW_DISCOVERY_BINDING_MISMATCH'
-        );
-      }
-      if (cp.discoveryFingerprint !== disc.fingerprint) {
-        throw new IdeaWorkflowError(
-          `Workflow discoveryFingerprint (${cp.discoveryFingerprint}) does not match discovery.json fingerprint (${disc.fingerprint})`,
-          'DK_WORKFLOW_DISCOVERY_BINDING_MISMATCH'
-        );
-      }
+    }
+    if (cp.discoveryFingerprint !== disc.fingerprint) {
+      throw new IdeaWorkflowError(
+        `Workflow discoveryFingerprint (${cp.discoveryFingerprint}) does not match discovery.json fingerprint (${disc.fingerprint})`,
+        'DK_WORKFLOW_DISCOVERY_BINDING_MISMATCH'
+      );
     }
 
-    // 2. NOT_STARTED consistency: cannot be in advanced phase
     if (stage.state === 'NOT_STARTED') {
       if (cp.currentPhase !== 'INITIAL_DISCOVERY' && cp.currentPhase !== 'COMPLETE') {
         throw new IdeaWorkflowError('Idea stage is NOT_STARTED but workflow cursor indicates advanced phase', 'DK_WORKFLOW_CONSISTENCY_ERROR');
       }
     }
 
-    // 3. DISCOVERY_IN_PROGRESS consistency: cannot be COMPLETE
     if (stage.state === 'DISCOVERY_IN_PROGRESS') {
       if (cp.currentPhase === 'COMPLETE') {
         throw new IdeaWorkflowError('Idea stage is DISCOVERY_IN_PROGRESS but workflow cursor is COMPLETE', 'DK_WORKFLOW_CONSISTENCY_ERROR');
       }
     }
 
-    // 4. APPROVED consistency: cannot have pending interaction (unless transitioning from satisfied BRIEF_APPROVAL)
     if (stage.state === 'APPROVED') {
-      if (cp.status === 'PENDING' && cp.pendingInteraction && cp.pendingInteraction.type !== 'NONE' && cp.pendingInteraction.type !== 'BRIEF_APPROVAL') {
+      if (cp.status === 'PENDING' && cp.pendingInteraction && cp.pendingInteraction.type !== 'NONE') {
         throw new IdeaWorkflowError('Idea stage is APPROVED but workflow cursor has a pending interaction', 'DK_WORKFLOW_CONSISTENCY_ERROR');
       }
     }
 
-    // 5. COMPLETE phase consistency: only allowed when Idea Stage is APPROVED
     if (cp.currentPhase === 'COMPLETE' && stage.state !== 'APPROVED' && stage.state !== 'NOT_STARTED') {
       throw new IdeaWorkflowError(`Workflow cursor is COMPLETE but idea stage is ${stage.state} (must be APPROVED)`, 'DK_WORKFLOW_CONSISTENCY_ERROR');
     }
 
-    // 6. READY_FOR_APPROVAL consistency: cannot have early interview/design/challenge pending
     if (stage.state === 'READY_FOR_APPROVAL') {
       if (['INITIAL_DISCOVERY', 'REQUIREMENTS_INTERVIEW', 'DESIGN_SYSTEM_SETUP', 'IDEA_CHALLENGE'].includes(cp.currentPhase)) {
         throw new IdeaWorkflowError(
@@ -386,7 +387,6 @@ export function validateWorkflowConsistency(rootDir = process.cwd(), { ideaStage
       }
     }
 
-    // 7. BRIEF_APPROVAL consistency: only when brief is READY_FOR_APPROVAL
     if (cp.currentPhase === 'BRIEF_APPROVAL' && stage.state !== 'READY_FOR_APPROVAL' && stage.state !== 'APPROVED') {
       throw new IdeaWorkflowError(
         `Workflow cursor is BRIEF_APPROVAL but Idea Brief is not READY_FOR_APPROVAL (state is ${stage.state})`,
@@ -394,7 +394,6 @@ export function validateWorkflowConsistency(rootDir = process.cwd(), { ideaStage
       );
     }
 
-    // 8. SCOPE_CONFIRMATION consistency: active requirements must not be UNRESOLVED
     if (cp.currentPhase === 'SCOPE_CONFIRMATION') {
       const unconfirmed = disc.requirements.filter(
         (r) => r.resolutionState === 'UNRESOLVED' && r.resolutionState !== 'SUPERSEDED' && r.resolutionState !== 'REJECTED'
@@ -407,7 +406,6 @@ export function validateWorkflowConsistency(rootDir = process.cwd(), { ideaStage
       }
     }
 
-    // 9. REQUIREMENT_CONFIRMATION consistency: active requirement candidates must exist
     if (cp.currentPhase === 'REQUIREMENT_CONFIRMATION') {
       const activeCandidates = disc.requirements.filter(
         (r) => r.resolutionState !== 'SUPERSEDED' && r.resolutionState !== 'REJECTED'
@@ -420,7 +418,6 @@ export function validateWorkflowConsistency(rootDir = process.cwd(), { ideaStage
       }
     }
 
-    // 10. DESIGN_SYSTEM_SETUP consistency: if canonical design authority is already resolved, cannot be pending setup
     if (cp.currentPhase === 'DESIGN_SYSTEM_SETUP' && cp.status === 'PENDING') {
       const designState = loadDesignSystemState(rootDir);
       if (designState && designState.status && designState.status !== 'unconfigured') {
@@ -431,7 +428,6 @@ export function validateWorkflowConsistency(rootDir = process.cwd(), { ideaStage
       }
     }
 
-    // 11. Discovery question binding
     if (cp.pendingInteraction && cp.pendingInteraction.type === 'DISCOVERY_QUESTION') {
       const qId = cp.pendingInteraction.id;
       if (qId) {
@@ -446,10 +442,6 @@ export function validateWorkflowConsistency(rootDir = process.cwd(), { ideaStage
   return true;
 }
 
-/**
- * Determines whether Design Authority is applicable based on canonical design state,
- * explicit metadata, or discovery requirements.
- */
 export function isDesignAuthorityApplicable(rootDir = process.cwd(), disc = null) {
   const canonical = loadDesignSystemState(rootDir);
   if (canonical && canonical.status === 'not_required') {
@@ -459,8 +451,8 @@ export function isDesignAuthorityApplicable(rootDir = process.cwd(), disc = null
     return true;
   }
   const discovery = disc || loadDiscoveryState(rootDir);
-  // Check if any confirmed/stated requirement explicitly mentions non-visual / backend-only
   const isExplicitBackend = discovery.requirements.some((r) =>
+    (r.origin === 'USER_STATED' || r.resolutionState === 'CONFIRMED' || r.resolutionState === 'ADOPTED') &&
     r.resolutionState !== 'REJECTED' && r.resolutionState !== 'SUPERSEDED' &&
     /\b(backend[- ]only|cli[- ]only|headless|non[- ]visual|no[- ]ui|library[- ]only)\b/i.test(r.statement)
   );
@@ -470,18 +462,18 @@ export function isDesignAuthorityApplicable(rootDir = process.cwd(), disc = null
   return true;
 }
 
-/**
- * Resolves the deterministic resume interaction and current idea workflow position.
- * Pure read-only operation: does NOT mutate disk or registry.
- */
-export function resolveIdeaWorkflowState(rootDir = process.cwd()) {
+export function resolveIdeaWorkflowState(rootDir = process.cwd(), { bypassCheckpointValidation = false } = {}) {
   const ideaStage = computeIdeaStageState(rootDir);
   const disc = loadDiscoveryState(rootDir);
   const cp = loadWorkflowCheckpoint(rootDir);
 
-  validateWorkflowConsistency(rootDir, { ideaStage, discoveryState: disc, checkpoint: cp });
+  if (!bypassCheckpointValidation) {
+    validateWorkflowConsistency(rootDir, { ideaStage, discoveryState: disc, checkpoint: cp });
+  }
 
-  // 1. If APPROVED, workflow is complete
+  // APPROVED is authoritative: the idea lifecycle overrides any stale checkpoint state.
+  // This check must come before the checkpoint resume guard so that a PENDING BRIEF_APPROVAL
+  // checkpoint is never resumed after approveCurrentIdeaBrief() has run.
   if (ideaStage.state === 'APPROVED') {
     return {
       ideaStage: 'APPROVED',
@@ -494,49 +486,35 @@ export function resolveIdeaWorkflowState(rootDir = process.cwd()) {
     };
   }
 
-  // 2. If an active checkpoint with PENDING interaction exists, resume it directly
   if (cp && cp.status === 'PENDING' && cp.pendingInteraction) {
-    let isSatisfied = false;
-    if (cp.pendingInteraction.type === 'DISCOVERY_QUESTION' && cp.pendingInteraction.id) {
-      const q = disc.openQuestions.find((item) => item.id.toUpperCase() === cp.pendingInteraction.id.toUpperCase());
-      if (q && (q.resolution === 'ANSWERED' || q.resolution === 'DEFERRED' || q.resolution === 'REJECTED' || q.resolution === 'SUPERSEDED')) {
-        isSatisfied = true;
+    if (cp.discoveryRevision === disc.revision && cp.discoveryFingerprint === disc.fingerprint) {
+      // Staleness guard: if the checkpoint phase is DESIGN_SYSTEM_SETUP but canonical
+      // design authority is already resolved, the checkpoint is stale. Fall through to
+      // determineNextInteractionFromDiscovery so the correct next interaction is computed.
+      let checkpointIsStale = false;
+      if (cp.currentPhase === 'DESIGN_SYSTEM_SETUP') {
+        const designState = loadDesignSystemState(rootDir);
+        if (designState && designState.status !== 'unconfigured') {
+          checkpointIsStale = true;
+        }
       }
-    } else if (cp.pendingInteraction.type === 'REQUIREMENT_CONFIRMATION') {
-      if (disc.requirements.length > 0 && disc.requirements.every((r) => r.resolutionState !== 'UNRESOLVED')) {
-        isSatisfied = true;
-      }
-    } else if (cp.pendingInteraction.type === 'SCOPE_CONFIRMATION') {
-      if (disc.requirements.length > 0 && disc.requirements.every((r) => r.resolutionState === 'SUPERSEDED' || r.resolutionState === 'REJECTED' || (r.scopeDisposition && r.scopeDisposition !== 'UNCLASSIFIED'))) {
-        isSatisfied = true;
+      if (!checkpointIsStale) {
+        return {
+          ideaStage: ideaStage.state,
+          workflowPhase: cp.currentPhase,
+          pendingInteraction: cp.pendingInteraction,
+          status: 'PENDING',
+          checkpoint: cp,
+          action: 'RESUME_PENDING_INTERACTION',
+          recommendedNextCommand: '/dk-idea',
+        };
       }
     }
-
-    if (isSatisfied) {
-      return determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp);
-    }
-
-    return {
-      ideaStage: ideaStage.state,
-      workflowPhase: cp.currentPhase,
-      pendingInteraction: cp.pendingInteraction,
-      status: 'PENDING',
-      checkpoint: cp,
-      action: 'RESUME_PENDING_INTERACTION',
-      recommendedNextCommand: '/dk-idea',
-    };
   }
 
-  // 3. Otherwise, derive deterministic next action from authoritative discovery and idea stage
-  return determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp);
-}
-
-function determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp) {
-  const hasDiscovery = disc.requirements.length > 0 || disc.openQuestions.length > 0;
-
-  if (!hasDiscovery && ideaStage.state === 'NOT_STARTED') {
+  if (disc.requirements.length === 0 && disc.openQuestions.length === 0) {
     return {
-      ideaStage: 'NOT_STARTED',
+      ideaStage: ideaStage.state,
       workflowPhase: 'INITIAL_DISCOVERY',
       pendingInteraction: null,
       status: 'NOT_STARTED',
@@ -546,7 +524,10 @@ function determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp) {
     };
   }
 
-  // Check if there are unresolved open questions
+  return determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp);
+}
+
+function determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp) {
   const unresolvedQuestions = disc.openQuestions.filter((q) => q.resolution === 'UNRESOLVED');
   if (unresolvedQuestions.length > 0) {
     const nextQ = unresolvedQuestions[0];
@@ -568,7 +549,6 @@ function determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp) {
     };
   }
 
-  // Check Design Authority setup
   const isApplicable = isDesignAuthorityApplicable(rootDir, disc);
   const canonicalDesign = loadDesignSystemState(rootDir);
   const designSetupDone = canonicalDesign && canonicalDesign.status && canonicalDesign.status !== 'unconfigured';
@@ -598,7 +578,6 @@ function determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp) {
     };
   }
 
-  // Check Idea Challenge
   const ideaChallengeDone = cp && (
     cp.currentPhase === 'REQUIREMENT_CONFIRMATION' ||
     cp.currentPhase === 'SCOPE_CONFIRMATION' ||
@@ -606,7 +585,7 @@ function determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp) {
     cp.currentPhase === 'BRIEF_APPROVAL' ||
     cp.currentPhase === 'COMPLETE'
   );
-  if (!ideaChallengeDone && (cp?.currentPhase === 'DESIGN_SYSTEM_SETUP' || (!isApplicable && (!cp || cp.currentPhase === 'REQUIREMENTS_INTERVIEW')))) {
+  if (!ideaChallengeDone && (designSetupDone || cp?.currentPhase === 'DESIGN_SYSTEM_SETUP' || (!isApplicable && (!cp || cp.currentPhase === 'REQUIREMENTS_INTERVIEW')))) {
     const pi = {
       type: 'IDEA_CHALLENGE',
       id: 'INTERACTION-IDEA-CHALLENGE',
@@ -629,7 +608,6 @@ function determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp) {
     };
   }
 
-  // Check unconfirmed requirements
   const unconfirmedRequirements = disc.requirements.filter((r) => r.resolutionState === 'UNRESOLVED');
   if (unconfirmedRequirements.length > 0) {
     const pi = {
@@ -657,7 +635,6 @@ function determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp) {
     };
   }
 
-  // Check unclassified scope dispositions
   const unclassifiedRequirements = disc.requirements.filter(
     (r) => r.resolutionState !== 'SUPERSEDED' && r.resolutionState !== 'REJECTED' && (!r.scopeDisposition || r.scopeDisposition === 'UNCLASSIFIED')
   );
@@ -687,7 +664,6 @@ function determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp) {
     };
   }
 
-  // If READY_FOR_APPROVAL
   if (ideaStage.state === 'READY_FOR_APPROVAL') {
     const pi = {
       type: 'BRIEF_APPROVAL',
@@ -711,7 +687,6 @@ function determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp) {
     };
   }
 
-  // Fallback for draft ready or reconciliation
   return {
     ideaStage: ideaStage.state,
     workflowPhase: 'BRIEF_DRAFT',
@@ -723,12 +698,8 @@ function determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp) {
   };
 }
 
-/**
- * Public operation to present/persist the expected runtime-derived interaction.
- * Restricts callers from setting arbitrary phases or manufacturing workflow position.
- */
 export function presentCurrentInteraction(rootDir = process.cwd(), payload = {}) {
-  const state = resolveIdeaWorkflowState(rootDir);
+  const state = resolveIdeaWorkflowState(rootDir, { bypassCheckpointValidation: true });
 
   if (!state.pendingInteraction) {
     if (state.workflowPhase === 'COMPLETE') {
@@ -752,7 +723,6 @@ export function presentCurrentInteraction(rootDir = process.cwd(), payload = {})
     });
   }
 
-  // If payload supplies interactionId or fingerprint, verify match with runtime derived
   if (payload.expectedInteractionId && payload.expectedInteractionId !== state.pendingInteraction.id) {
     throw new IdeaWorkflowError(
       `expectedInteractionId mismatch: got ${payload.expectedInteractionId}, runtime derived ${state.pendingInteraction.id}`,
@@ -773,10 +743,7 @@ export function presentCurrentInteraction(rootDir = process.cwd(), payload = {})
   });
 }
 
-/**
- * Validates that an active matching pending interaction exists before consuming a Product Owner response.
- */
-export function validatePendingInteractionForConsumption(rootDir = process.cwd(), expectedType, expectedId = null) {
+export function validatePendingInteractionForConsumption(rootDir = process.cwd(), expectedType, expectedId = null, expectedFingerprint = null) {
   const cp = loadWorkflowCheckpoint(rootDir);
   if (!cp) {
     throw new IdeaWorkflowError(
@@ -817,6 +784,13 @@ export function validatePendingInteractionForConsumption(rootDir = process.cwd()
     );
   }
 
+  if (expectedFingerprint && expectedFingerprint !== cp.pendingInteraction.fingerprint) {
+    throw new IdeaWorkflowError(
+      `Caller expected interaction fingerprint mismatch (${expectedFingerprint} !== ${cp.pendingInteraction.fingerprint})`,
+      'DK_INTERACTION_FINGERPRINT_MISMATCH'
+    );
+  }
+
   const disc = loadDiscoveryState(rootDir);
   if (cp.discoveryRevision !== disc.revision || cp.discoveryFingerprint !== disc.fingerprint) {
     throw new IdeaWorkflowError(
@@ -828,37 +802,36 @@ export function validatePendingInteractionForConsumption(rootDir = process.cwd()
   return cp;
 }
 
-/**
- * Record Design Authority Setup decision into canonical design-system-state.json and advance workflow
- */
-export function recordDesignAuthoritySetup(rootDir = process.cwd(), { disposition, confirmedBy, details = null } = {}) {
-  if (!disposition) {
-    throw new IdeaWorkflowError('Design system disposition is required', 'DK_INVALID_DESIGN_SETUP');
+export function recordDesignAuthoritySetup(rootDir = process.cwd(), {
+  disposition,
+  confirmedBy,
+  details = null,
+  expectedInteractionFingerprint = null,
+} = {}) {
+  if (!disposition || !VALID_DESIGN_SYSTEM_DISPOSITIONS.includes(disposition)) {
+    throw new IdeaWorkflowError(`Invalid design system setup disposition: ${disposition}`, 'DK_INVALID_DESIGN_SETUP');
   }
   if (!confirmedBy || confirmedBy !== 'PRODUCT_OWNER') {
     throw new IdeaWorkflowError("Explicit confirmedBy = 'PRODUCT_OWNER' required for design setup", 'DK_UNAUTHORIZED_DESIGN_SETUP');
   }
 
-  // Validate that DESIGN_SYSTEM_SETUP is the active pending interaction
-  validatePendingInteractionForConsumption(rootDir, 'DESIGN_SYSTEM_SETUP', 'INTERACTION-DESIGN-SETUP');
+  validatePendingInteractionForConsumption(rootDir, 'DESIGN_SYSTEM_SETUP', 'INTERACTION-DESIGN-SETUP', expectedInteractionFingerprint);
 
-  // Map disposition to canonical status
   let canonicalStatus = 'unconfigured';
-  if (disposition === 'DEFERRED' || disposition === 'defer') {
+  if (disposition === 'DEFERRED') {
     canonicalStatus = 'deferred';
-  } else if (disposition === 'ATTACH_REFERENCES' || disposition === 'references_requested') {
+  } else if (disposition === 'ATTACH_REFERENCES') {
     canonicalStatus = 'references_requested';
-  } else if (disposition === 'EXISTING_DESIGN_MD' || disposition === 'existing') {
+  } else if (disposition === 'EXISTING_DESIGN_MD') {
     canonicalStatus = 'draft';
-  } else if (disposition === 'DERIVE_EXISTING_APP' || disposition === 'reference_analysis') {
+  } else if (disposition === 'DERIVE_EXISTING_APP') {
     canonicalStatus = 'references_received';
-  } else if (disposition === 'NEW_DIRECTION' || disposition === 'create_required') {
+  } else if (disposition === 'NEW_DIRECTION') {
     canonicalStatus = 'unconfigured';
-  } else if (disposition === 'NOT_REQUIRED' || disposition === 'not_required') {
+  } else if (disposition === 'NOT_REQUIRED') {
     canonicalStatus = 'not_required';
   }
 
-  // 1. Persist/update canonical Design Authority state in .development-kit/design-system-state.json
   persistDesignSystemState(rootDir, {
     status: canonicalStatus,
     disposition,
@@ -866,35 +839,19 @@ export function recordDesignAuthoritySetup(rootDir = process.cwd(), { dispositio
     details: details || null,
   });
 
-  // 2. Advance workflow cursor to IDEA_CHALLENGE
-  const pi = {
-    type: 'IDEA_CHALLENGE',
-    id: 'INTERACTION-IDEA-CHALLENGE',
-    prompt: 'Challenge assumptions and test whether this is the real problem.',
-    options: [
-      '1. Proceed with current problem formulation',
-      '2. Challenge problem definition',
-      '3. Custom write-in',
-    ],
-  };
-  pi.fingerprint = computeInteractionFingerprint(pi);
-
-  return persistWorkflowCheckpoint(rootDir, {
-    currentPhase: 'IDEA_CHALLENGE',
-    pendingInteraction: pi,
-    status: 'PENDING',
-  });
+  return presentCurrentInteraction(rootDir);
 }
 
-/**
- * Record Idea Challenge response and advance workflow to REQUIREMENT_CONFIRMATION
- */
-export function recordIdeaChallengeResponse(rootDir = process.cwd(), { response, confirmedBy } = {}) {
+export function recordIdeaChallengeResponse(rootDir = process.cwd(), {
+  response,
+  confirmedBy,
+  expectedInteractionFingerprint = null,
+} = {}) {
   if (!confirmedBy || confirmedBy !== 'PRODUCT_OWNER') {
     throw new IdeaWorkflowError("Explicit confirmedBy = 'PRODUCT_OWNER' required for idea challenge", 'DK_UNAUTHORIZED_IDEA_CHALLENGE');
   }
 
-  validatePendingInteractionForConsumption(rootDir, 'IDEA_CHALLENGE', 'INTERACTION-IDEA-CHALLENGE');
+  validatePendingInteractionForConsumption(rootDir, 'IDEA_CHALLENGE', 'INTERACTION-IDEA-CHALLENGE', expectedInteractionFingerprint);
 
   const disc = loadDiscoveryState(rootDir);
   const pi = {
@@ -919,3 +876,124 @@ export function recordIdeaChallengeResponse(rootDir = process.cwd(), { response,
   });
 }
 
+export function consumeDiscoveryQuestionResponse(rootDir = process.cwd(), {
+  questionId,
+  resolution = 'ANSWERED',
+  resolvedBy,
+  deferredTarget = null,
+  notes = null,
+  expectedInteractionFingerprint = null,
+} = {}) {
+  if (!questionId) {
+    throw new IdeaWorkflowError('questionId is required to consume question response', 'DK_INVALID_QUESTION_ID');
+  }
+  if (!resolvedBy || resolvedBy !== 'PRODUCT_OWNER') {
+    throw new IdeaWorkflowError("Explicit resolvedBy = 'PRODUCT_OWNER' required to resolve discovery question", 'DK_UNAUTHORIZED_RESOLUTION');
+  }
+
+  validatePendingInteractionForConsumption(rootDir, 'DISCOVERY_QUESTION', questionId, expectedInteractionFingerprint);
+
+  resolveOpenQuestion(rootDir, {
+    id: questionId,
+    resolution,
+    resolvedBy,
+    deferredTarget,
+    notes,
+  });
+
+  return presentCurrentInteraction(rootDir);
+}
+
+export function consumeRequirementConfirmation(rootDir = process.cwd(), {
+  action = 'CONFIRM',
+  confirmedBy,
+  candidateIds = null,
+  modifications = [],
+  expectedInteractionFingerprint = null,
+} = {}) {
+  if (!confirmedBy || confirmedBy !== 'PRODUCT_OWNER') {
+    throw new IdeaWorkflowError("Explicit confirmedBy = 'PRODUCT_OWNER' required for requirement confirmation", 'DK_UNAUTHORIZED_CONFIRMATION');
+  }
+
+  validatePendingInteractionForConsumption(rootDir, 'REQUIREMENT_CONFIRMATION', 'INTERACTION-REQ-CONFIRMATION', expectedInteractionFingerprint);
+
+  if (action === 'MODIFY') {
+    if (!Array.isArray(modifications) || modifications.length === 0) {
+      throw new IdeaWorkflowError('action=MODIFY requires modifications array', 'DK_INVALID_MODIFICATION');
+    }
+    for (const mod of modifications) {
+      supersedeRequirementCandidate(rootDir, mod.oldId, mod.newCandidate);
+    }
+    return presentCurrentInteraction(rootDir);
+  }
+
+  const disc = loadDiscoveryState(rootDir);
+  const activeUnresolved = disc.requirements.filter((r) => r.resolutionState === 'UNRESOLVED');
+  const targetIds = candidateIds ? candidateIds.map(id => id.toUpperCase()) : activeUnresolved.map(r => r.id.toUpperCase());
+
+  for (const req of activeUnresolved) {
+    if (targetIds.includes(req.id.toUpperCase())) {
+      if (req.origin === 'RESEARCH_DERIVED') {
+        adoptRequirementCandidate(rootDir, { id: req.id, confirmedBy });
+      } else {
+        confirmRequirementCandidate(rootDir, { id: req.id, confirmedBy });
+      }
+    }
+  }
+
+  return presentCurrentInteraction(rootDir);
+}
+
+export function consumeRequirementModification(rootDir = process.cwd(), {
+  oldId,
+  newCandidate,
+  expectedInteractionFingerprint = null,
+} = {}) {
+  validatePendingInteractionForConsumption(rootDir, 'REQUIREMENT_CONFIRMATION', 'INTERACTION-REQ-CONFIRMATION', expectedInteractionFingerprint);
+
+  supersedeRequirementCandidate(rootDir, oldId, newCandidate);
+
+  return presentCurrentInteraction(rootDir);
+}
+
+export function consumeScopeConfirmation(rootDir = process.cwd(), {
+  scopeMapping = {},
+  confirmedBy,
+  expectedInteractionFingerprint = null,
+} = {}) {
+  if (!confirmedBy || confirmedBy !== 'PRODUCT_OWNER') {
+    throw new IdeaWorkflowError("Explicit confirmedBy = 'PRODUCT_OWNER' required for scope confirmation", 'DK_UNAUTHORIZED_SCOPE_CLASSIFICATION');
+  }
+
+  validatePendingInteractionForConsumption(rootDir, 'SCOPE_CONFIRMATION', 'INTERACTION-SCOPE-CONFIRMATION', expectedInteractionFingerprint);
+
+  const disc = loadDiscoveryState(rootDir);
+  const activeReqs = disc.requirements.filter((r) => r.resolutionState !== 'SUPERSEDED' && r.resolutionState !== 'REJECTED');
+
+  for (const req of activeReqs) {
+    const desiredScope = scopeMapping[req.id] || scopeMapping[req.id.toUpperCase()] || req.scopeDisposition || 'MUST';
+    classifyRequirementScope(rootDir, {
+      id: req.id,
+      scopeDisposition: desiredScope,
+      confirmedBy,
+    });
+  }
+
+  return presentCurrentInteraction(rootDir);
+}
+
+export function consumeBriefApproval(rootDir = process.cwd(), {
+  approvingAuthority,
+  linkedPodIds = [],
+  expectedInteractionFingerprint = null,
+} = {}) {
+  if (!approvingAuthority || approvingAuthority !== 'PRODUCT_OWNER') {
+    throw new IdeaWorkflowError("Explicit approvingAuthority = 'PRODUCT_OWNER' required for brief approval", 'DK_UNAUTHORIZED_APPROVAL');
+  }
+
+  validatePendingInteractionForConsumption(rootDir, 'BRIEF_APPROVAL', 'INTERACTION-BRIEF-APPROVAL', expectedInteractionFingerprint);
+
+  approveCurrentIdeaBrief(rootDir, { approvingAuthority, linkedPodIds });
+
+  return presentCurrentInteraction(rootDir);
+}

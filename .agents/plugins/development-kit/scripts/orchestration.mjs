@@ -38,6 +38,11 @@ import {
   resolveIdeaWorkflowState,
   recordDesignAuthoritySetup,
   recordIdeaChallengeResponse,
+  consumeDiscoveryQuestionResponse,
+  consumeRequirementConfirmation,
+  consumeRequirementModification,
+  consumeScopeConfirmation,
+  consumeBriefApproval,
 } from '../runtime/orchestration/index.mjs';
 import { reconcileCanonicalArtifact } from '../runtime/orchestration/reconciliation.mjs';
 import { resolveProjectRoot } from '../runtime/bootstrap/project-root.mjs';
@@ -127,16 +132,50 @@ function main() {
       }));
     }
     case 'idea-record-candidate': return output(recordRequirementCandidate(rootDir, payload));
-    case 'idea-confirm-candidate': return output(confirmRequirementCandidate(rootDir, payload));
-    case 'idea-adopt-candidate': return output(adoptRequirementCandidate(rootDir, payload));
+    case 'idea-confirm-candidate': {
+      if (payload.validateWorkflowPendingInteraction) {
+        return output(consumeRequirementConfirmation(rootDir, { candidateIds: payload.id ? [payload.id] : null, confirmedBy: payload.confirmedBy, expectedInteractionFingerprint: payload.expectedInteractionFingerprint }));
+      }
+      return output(confirmRequirementCandidate(rootDir, payload));
+    }
+    case 'idea-adopt-candidate': {
+      if (payload.validateWorkflowPendingInteraction) {
+        return output(consumeRequirementConfirmation(rootDir, { candidateIds: payload.id ? [payload.id] : null, confirmedBy: payload.confirmedBy, expectedInteractionFingerprint: payload.expectedInteractionFingerprint }));
+      }
+      return output(adoptRequirementCandidate(rootDir, payload));
+    }
     case 'idea-reject-candidate': return output(rejectRequirementCandidate(rootDir, payload));
-    case 'idea-supersede-candidate': return output(supersedeRequirementCandidate(rootDir, payload.oldId, payload.newCandidate));
-    case 'idea-classify-scope': return output(classifyRequirementScope(rootDir, payload));
+    case 'idea-confirm-requirements': return output(consumeRequirementConfirmation(rootDir, payload));
+    case 'idea-supersede-candidate': {
+      if (payload.validateWorkflowPendingInteraction) {
+        return output(consumeRequirementModification(rootDir, payload));
+      }
+      return output(supersedeRequirementCandidate(rootDir, payload.oldId, payload.newCandidate));
+    }
+    case 'idea-classify-scope': {
+      if (payload.validateWorkflowPendingInteraction) {
+        return output(consumeScopeConfirmation(rootDir, { scopeMapping: payload.id ? { [payload.id]: payload.scopeDisposition } : (payload.scopeMapping || {}), confirmedBy: payload.confirmedBy, expectedInteractionFingerprint: payload.expectedInteractionFingerprint }));
+      }
+      return output(classifyRequirementScope(rootDir, payload));
+    }
+    case 'idea-confirm-scope': return output(consumeScopeConfirmation(rootDir, payload));
     case 'idea-record-question': return output(recordOpenQuestion(rootDir, payload));
-    case 'idea-resolve-question': return output(resolveOpenQuestion(rootDir, payload));
+    case 'idea-resolve-question': {
+      if (payload.validateWorkflowPendingInteraction) {
+        return output(consumeDiscoveryQuestionResponse(rootDir, { questionId: payload.id || payload.questionId, resolution: payload.resolution, resolvedBy: payload.resolvedBy, deferredTarget: payload.deferredTarget, notes: payload.notes, expectedInteractionFingerprint: payload.expectedInteractionFingerprint }));
+      }
+      return output(resolveOpenQuestion(rootDir, payload));
+    }
     case 'idea-supersede-question': return output(supersedeOpenQuestion(rootDir, payload.oldId, payload.newQuestion));
     case 'idea-discovery-eval': return output(evaluateDiscoveryReadiness(rootDir));
     case 'idea-approve': {
+      if (payload.validateWorkflowPendingInteraction) {
+        return output(consumeBriefApproval(rootDir, {
+          approvingAuthority: payload.approvingAuthority,
+          linkedPodIds: payload.linkedPodIds || [],
+          expectedInteractionFingerprint: payload.expectedInteractionFingerprint,
+        }));
+      }
       return output(approveCurrentIdeaBrief(rootDir, {
         approvingAuthority: payload.approvingAuthority,
         linkedPodIds: payload.linkedPodIds || [],

@@ -57,6 +57,11 @@ import {
   resolveIdeaWorkflowState,
   recordDesignAuthoritySetup,
   recordIdeaChallengeResponse,
+  consumeDiscoveryQuestionResponse,
+  consumeRequirementConfirmation,
+  consumeRequirementModification,
+  consumeScopeConfirmation,
+  consumeBriefApproval,
   validatePendingInteractionForConsumption,
   loadDesignSystemState,
   persistDesignSystemState,
@@ -3839,8 +3844,8 @@ test('Candidate 18 (Exact Legacy Candidate 16 No-Workflow Regression): Fresh exe
   }
 });
 
-test('Candidate 18 (Real A–G Transition & Consumption Suite): Real consumers advance state deterministically', async () => {
-  const rootDir = createTempDir('dk-c18-real-transitions-');
+test('Candidate 19 (Guarded Typed Consumers & A–G End-to-End Suite): Public typed consumers advance state deterministically', async () => {
+  const rootDir = createTempDir('dk-c19-real-transitions-');
   try {
     await bootstrapProject(rootDir);
 
@@ -3854,17 +3859,27 @@ test('Candidate 18 (Real A–G Transition & Consumption Suite): Real consumers a
     assert.equal(state.pendingInteraction.type, 'DISCOVERY_QUESTION');
     assert.equal(state.pendingInteraction.id, 'IDEA-Q-001');
 
-    // Consume Turn A response
-    resolveOpenQuestion(rootDir, { id: 'IDEA-Q-001', resolution: 'ANSWERED', resolvedBy: 'PRODUCT_OWNER' });
+    // Consume Turn A response via guarded consumer with fingerprint binding
+    const turnAFp = state.pendingInteraction.fingerprint;
+    consumeDiscoveryQuestionResponse(rootDir, {
+      questionId: 'IDEA-Q-001',
+      resolution: 'ANSWERED',
+      resolvedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: turnAFp,
+    });
 
     // --- Turn B: Design System Setup ---
     state = resolveIdeaWorkflowState(rootDir);
     assert.equal(state.workflowPhase, 'DESIGN_SYSTEM_SETUP');
     assert.equal(state.pendingInteraction.type, 'DESIGN_SYSTEM_SETUP');
-    presentCurrentInteraction(rootDir);
+    const turnBFp = state.pendingInteraction.fingerprint;
 
     // Consume Turn B response
-    recordDesignAuthoritySetup(rootDir, { disposition: 'DEFERRED', confirmedBy: 'PRODUCT_OWNER' });
+    recordDesignAuthoritySetup(rootDir, {
+      disposition: 'DEFERRED',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: turnBFp,
+    });
     const canonicalDesign = loadDesignSystemState(rootDir);
     assert.equal(canonicalDesign.status, 'deferred');
 
@@ -3872,27 +3887,40 @@ test('Candidate 18 (Real A–G Transition & Consumption Suite): Real consumers a
     state = resolveIdeaWorkflowState(rootDir);
     assert.equal(state.workflowPhase, 'IDEA_CHALLENGE');
     assert.equal(state.pendingInteraction.type, 'IDEA_CHALLENGE');
+    const turnCFp = state.pendingInteraction.fingerprint;
 
     // Consume Turn C response
-    recordIdeaChallengeResponse(rootDir, { response: 'Proceed', confirmedBy: 'PRODUCT_OWNER' });
+    recordIdeaChallengeResponse(rootDir, {
+      response: 'Proceed',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: turnCFp,
+    });
 
     // --- Turn D: Requirement Confirmation ---
     state = resolveIdeaWorkflowState(rootDir);
     assert.equal(state.workflowPhase, 'REQUIREMENT_CONFIRMATION');
     assert.equal(state.pendingInteraction.type, 'REQUIREMENT_CONFIRMATION');
-    presentCurrentInteraction(rootDir);
+    const turnDFp = state.pendingInteraction.fingerprint;
 
-    // Consume Turn D response
-    confirmRequirementCandidate(rootDir, { id: 'IDEA-REQ-001', confirmedBy: 'PRODUCT_OWNER' });
+    // Consume Turn D response via guarded consumer
+    consumeRequirementConfirmation(rootDir, {
+      action: 'CONFIRM',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: turnDFp,
+    });
 
     // --- Turn E: Scope Confirmation ---
     state = resolveIdeaWorkflowState(rootDir);
     assert.equal(state.workflowPhase, 'SCOPE_CONFIRMATION');
     assert.equal(state.pendingInteraction.type, 'SCOPE_CONFIRMATION');
-    presentCurrentInteraction(rootDir);
+    const turnEFp = state.pendingInteraction.fingerprint;
 
-    // Consume Turn E response
-    classifyRequirementScope(rootDir, { id: 'IDEA-REQ-001', scopeDisposition: 'MUST', confirmedBy: 'PRODUCT_OWNER' });
+    // Consume Turn E response via guarded consumer
+    consumeScopeConfirmation(rootDir, {
+      scopeMapping: { 'IDEA-REQ-001': 'MUST' },
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: turnEFp,
+    });
 
     // --- Turn F: Brief Draft & Brief Approval ---
     const briefContent = `# Idea Brief: Solar App\n\n## Problem\nProblem text\n\n## Intended Users\nUser text\n\n## Success Criteria\nSuccess text\n\n## Requirements (Must)\n- [IDEA-REQ-001] Req 1\n\n## Preferences (Should)\n- None\n\n## Assumptions\n- None\n\n## Constraints\n- None\n\n## Risks\n- None\n\n## Open Questions\n- None\n\n## Future Ideas (Explicitly Deferred)\n- None\n`;
@@ -3909,8 +3937,12 @@ test('Candidate 18 (Real A–G Transition & Consumption Suite): Real consumers a
     assert.equal(state.pendingInteraction.type, 'BRIEF_APPROVAL');
     presentCurrentInteraction(rootDir);
 
-    // Consume Turn F response (Approval)
-    approveCurrentIdeaBrief(rootDir, { approvingAuthority: 'PRODUCT_OWNER' });
+    // Consume Turn F response (Approval) via guarded consumer
+    const turnFFp = state.pendingInteraction.fingerprint;
+    consumeBriefApproval(rootDir, {
+      approvingAuthority: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: turnFFp,
+    });
 
     // --- Turn G: Approved Complete ---
     state = resolveIdeaWorkflowState(rootDir);
@@ -3923,8 +3955,8 @@ test('Candidate 18 (Real A–G Transition & Consumption Suite): Real consumers a
   }
 });
 
-test('Candidate 18 (Discovery Revision & Fingerprint Binding): Stale cursor fails closed with zero side effects', async () => {
-  const rootDir = createTempDir('dk-c18-binding-');
+test('Candidate 19 (Discovery Revision & Fingerprint Binding): Stale cursor fails closed with zero side effects', async () => {
+  const rootDir = createTempDir('dk-c19-binding-');
   try {
     await bootstrapProject(rootDir);
     recordRequirementCandidate(rootDir, { id: 'IDEA-REQ-001', statement: 'Req 1', origin: 'USER_STATED' });
@@ -3969,8 +4001,8 @@ test('Candidate 18 (Discovery Revision & Fingerprint Binding): Stale cursor fail
   }
 });
 
-test('Candidate 18 (Content-Bound Interaction Fingerprint & Tamper Detection): Mismatched fingerprint fails closed', async () => {
-  const rootDir = createTempDir('dk-c18-fingerprint-');
+test('Candidate 19 (Content-Bound Interaction Fingerprint & Tamper Detection): Mismatched fingerprint fails closed', async () => {
+  const rootDir = createTempDir('dk-c19-fingerprint-');
   try {
     await bootstrapProject(rootDir);
     recordRequirementCandidate(rootDir, { id: 'IDEA-REQ-001', statement: 'Req 1', origin: 'USER_STATED' });
@@ -4002,16 +4034,16 @@ test('Candidate 18 (Content-Bound Interaction Fingerprint & Tamper Detection): M
   }
 });
 
-test('Candidate 18 (Backend-Only Exemption): Confirmed backend-only skips DESIGN_SYSTEM_SETUP and advances to IDEA_CHALLENGE', async () => {
-  const rootDir = createTempDir('dk-c18-backend-');
+test('Candidate 19 (Backend-Only Exemption): Confirmed backend-only skips DESIGN_SYSTEM_SETUP and advances to IDEA_CHALLENGE', async () => {
+  const rootDir = createTempDir('dk-c19-backend-');
   try {
     await bootstrapProject(rootDir);
     recordRequirementCandidate(rootDir, { id: 'IDEA-REQ-001', statement: 'Build a backend-only CLI daemon tool', origin: 'USER_STATED' });
     recordOpenQuestion(rootDir, { id: 'IDEA-Q-001', question: 'Database choice?', materiality: 'MATERIAL' });
     presentCurrentInteraction(rootDir);
 
-    // Answer discovery question
-    resolveOpenQuestion(rootDir, { id: 'IDEA-Q-001', resolution: 'ANSWERED', resolvedBy: 'PRODUCT_OWNER' });
+    // Answer discovery question via guarded consumer
+    consumeDiscoveryQuestionResponse(rootDir, { id: 'IDEA-Q-001', questionId: 'IDEA-Q-001', resolution: 'ANSWERED', resolvedBy: 'PRODUCT_OWNER' });
 
     // Workflow state resolution must skip DESIGN_SYSTEM_SETUP directly to IDEA_CHALLENGE
     const state = resolveIdeaWorkflowState(rootDir);
