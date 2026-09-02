@@ -34,8 +34,10 @@ import {
   classifyRequirementScope,
   loadWorkflowCheckpoint,
   persistWorkflowCheckpoint,
+  presentCurrentInteraction,
   resolveIdeaWorkflowState,
   recordDesignAuthoritySetup,
+  recordIdeaChallengeResponse,
 } from '../runtime/orchestration/index.mjs';
 import { reconcileCanonicalArtifact } from '../runtime/orchestration/reconciliation.mjs';
 import { resolveProjectRoot } from '../runtime/bootstrap/project-root.mjs';
@@ -142,8 +144,10 @@ function main() {
     }
     case 'idea-workflow-state': return output(resolveIdeaWorkflowState(rootDir));
     case 'idea-checkpoint-load': return output(loadWorkflowCheckpoint(rootDir));
-    case 'idea-checkpoint-persist': return output(persistWorkflowCheckpoint(rootDir, payload));
+    case 'idea-checkpoint-persist': return output(presentCurrentInteraction(rootDir, payload));
+    case 'idea-present-interaction': return output(presentCurrentInteraction(rootDir, payload));
     case 'idea-design-setup': return output(recordDesignAuthoritySetup(rootDir, payload));
+    case 'idea-challenge-response': return output(recordIdeaChallengeResponse(rootDir, payload));
     case 'artifact-resolve': return output(resolveCanonicalIdeaArtifact(rootDir));
     case 'artifact-reconcile': return output(reconcileCanonicalIdeaBrief({ rootDir }));
     default: throw new Error(`Unsupported orchestration operation: ${operation}`);
