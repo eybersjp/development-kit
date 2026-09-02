@@ -62,6 +62,7 @@ After discovery questions are answered:
 2. Ask ONE confirmation question: "Do you confirm these exact requirement statements as the requirements for this project?" with numbered options.
 3. **STOP and return control to the user.**
 4. Never call confirmation operations (`idea-confirm-candidate`, `idea-adopt-candidate`) in the same turn. Only execute authority mutations after the user replies with explicit confirmation in a new response.
+5. If the Product Owner modifies candidate statements or questions, execute deterministic supersession via `idea-supersede-candidate` or `idea-supersede-question`. Never attempt to overwrite statements via record operations. Replacement items are born UNRESOLVED and must be confirmed in the subsequent confirmation turn.
 
 ### 5. Define Scope
 Categorise into:

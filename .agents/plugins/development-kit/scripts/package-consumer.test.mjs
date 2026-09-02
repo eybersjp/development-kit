@@ -111,12 +111,86 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
     assert.equal(orchParsed.success, true);
     assert.equal(orchParsed.result.id, 'IDEA-REQ-001');
 
-    // 8. Prove project state persists
+    // 8. Execute supersession for candidate via installed runner
+    const execSupReq = spawnSync(process.execPath, [
+      path.join(consumerDir, scriptRelative),
+      'orchestration.mjs',
+      '--operation=idea-supersede-candidate',
+      '--input-json=' + JSON.stringify({
+        oldId: 'IDEA-REQ-001',
+        newCandidate: {
+          id: 'IDEA-REQ-002',
+          statement: 'Updated packaged distribution requirement candidate',
+          origin: 'USER_STATED',
+          confirmedBy: 'PRODUCT_OWNER',
+        },
+      }),
+    ], {
+      cwd: consumerDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(execSupReq.status, 0, execSupReq.stderr || execSupReq.stdout);
+    const supReqParsed = JSON.parse(execSupReq.stdout);
+    assert.equal(supReqParsed.success, true);
+    assert.equal(supReqParsed.result.created.id, 'IDEA-REQ-002');
+    assert.equal(supReqParsed.result.created.resolutionState, 'UNRESOLVED');
+
+    // 9. Execute record and supersede for question via installed runner
+    const execQ = spawnSync(process.execPath, [
+      path.join(consumerDir, scriptRelative),
+      'orchestration.mjs',
+      '--operation=idea-record-question',
+      '--input-json=' + JSON.stringify({
+        id: 'IDEA-Q-001',
+        question: 'Initial packaged test question?',
+        materiality: 'MATERIAL',
+      }),
+    ], {
+      cwd: consumerDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(execQ.status, 0, execQ.stderr || execQ.stdout);
+
+    const execSupQ = spawnSync(process.execPath, [
+      path.join(consumerDir, scriptRelative),
+      'orchestration.mjs',
+      '--operation=idea-supersede-question',
+      '--input-json=' + JSON.stringify({
+        oldId: 'IDEA-Q-001',
+        newQuestion: {
+          id: 'IDEA-Q-002',
+          question: 'Updated packaged test question?',
+          materiality: 'MATERIAL',
+          confirmedBy: 'PRODUCT_OWNER',
+        },
+      }),
+    ], {
+      cwd: consumerDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(execSupQ.status, 0, execSupQ.stderr || execSupQ.stdout);
+    const supQParsed = JSON.parse(execSupQ.stdout);
+    assert.equal(supQParsed.success, true);
+    assert.equal(supQParsed.result.created.id, 'IDEA-Q-002');
+    assert.equal(supQParsed.result.created.resolution, 'UNRESOLVED');
+
+    // 10. Prove project state persists with correct lineage
     const discPath = path.join(consumerDir, '.development-kit', 'idea', 'discovery.json');
     assert.ok(fs.existsSync(discPath), 'discovery.json must persist in consumer project');
     const discData = JSON.parse(fs.readFileSync(discPath, 'utf8'));
-    assert.equal(discData.requirements.length, 1);
-    assert.equal(discData.requirements[0].id, 'IDEA-REQ-001');
+    assert.equal(discData.requirements.length, 2);
+    assert.equal(discData.requirements[0].resolutionState, 'SUPERSEDED');
+    assert.equal(discData.requirements[0].supersededBy, 'IDEA-REQ-002');
+    assert.equal(discData.requirements[1].id, 'IDEA-REQ-002');
+    assert.equal(discData.requirements[1].supersedes, 'IDEA-REQ-001');
+    assert.equal(discData.openQuestions.length, 2);
+    assert.equal(discData.openQuestions[0].resolution, 'SUPERSEDED');
+    assert.equal(discData.openQuestions[0].supersededBy, 'IDEA-Q-002');
+    assert.equal(discData.openQuestions[1].id, 'IDEA-Q-002');
+    assert.equal(discData.openQuestions[1].supersedes, 'IDEA-Q-001');
   } finally {
     try { fs.rmSync(packDir, { recursive: true, force: true }); } catch (_) {}
     try { fs.rmSync(consumerDir, { recursive: true, force: true }); } catch (_) {}

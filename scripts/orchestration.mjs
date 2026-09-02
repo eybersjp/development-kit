@@ -22,8 +22,10 @@ import {
   confirmRequirementCandidate,
   adoptRequirementCandidate,
   rejectRequirementCandidate,
+  supersedeRequirementCandidate,
   recordOpenQuestion,
   resolveOpenQuestion,
+  supersedeOpenQuestion,
   evaluateDiscoveryReadiness,
   loadDiscoveryState,
   persistApprovalRecord,
@@ -71,7 +73,7 @@ function fail(error) {
 function main() {
   const options = parseArgs();
   const operation = options.operation;
-  const rootDir = process.cwd();
+  const rootDir = options['root-dir'] || options.rootDir || process.cwd();
   if (typeof operation !== 'string') throw new Error('Missing --operation');
   const payload = readPayload(options, rootDir);
 

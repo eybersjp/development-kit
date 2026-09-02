@@ -898,8 +898,8 @@ export function confirmRequirementCandidate(rootDir = process.cwd(), {
   if (existing.origin === 'RESEARCH_DERIVED') {
     throw new DiscoveryStateError(`Research-derived candidate ${id} requires explicit adoption via adoptRequirementCandidate`, 'DK_UNAUTHORIZED_CONFIRMATION');
   }
-  if (!isValidRequirementTransition(existing.resolutionState, 'CONFIRMED')) {
-    throw new DiscoveryStateError(`Candidate ${id} resolution transition from ${existing.resolutionState} to CONFIRMED is illegal`, 'DK_ILLEGAL_STATE_TRANSITION');
+  if (existing.resolutionState !== 'UNRESOLVED') {
+    throw new DiscoveryStateError(`Candidate ${id} resolution transition from ${existing.resolutionState} to CONFIRMED is illegal. Only UNRESOLVED candidates can be confirmed.`, 'DK_ILLEGAL_STATE_TRANSITION');
   }
 
   const now = new Date().toISOString();
@@ -982,8 +982,8 @@ export function adoptRequirementCandidate(rootDir = process.cwd(), {
   }
 
   const existing = state.requirements[existingIdx];
-  if (!isValidRequirementTransition(existing.resolutionState, 'ADOPTED')) {
-    throw new DiscoveryStateError(`Candidate ${id} resolution transition from ${existing.resolutionState} to ADOPTED is illegal`, 'DK_ILLEGAL_STATE_TRANSITION');
+  if (existing.resolutionState !== 'UNRESOLVED') {
+    throw new DiscoveryStateError(`Candidate ${id} resolution transition from ${existing.resolutionState} to ADOPTED is illegal. Only UNRESOLVED candidates can be adopted.`, 'DK_ILLEGAL_STATE_TRANSITION');
   }
 
   const now = new Date().toISOString();
@@ -1406,8 +1406,8 @@ export function resolveOpenQuestion(rootDir = process.cwd(), {
     throw new DiscoveryStateError(`Question ${id} transition from ${existing.resolution} to ${resolution} is illegal`, 'DK_ILLEGAL_STATE_TRANSITION');
   }
 
-  if (existing.materiality === 'MATERIAL' && resolvedBy !== 'PRODUCT_OWNER') {
-    throw new DiscoveryStateError(`Material question ${resolution} resolution requires explicit resolvedBy = 'PRODUCT_OWNER'`, 'DK_UNAUTHORIZED_RESOLUTION');
+  if (resolvedBy !== 'PRODUCT_OWNER') {
+    throw new DiscoveryStateError(`Resolving question ${id} as ${resolution} requires explicit resolvedBy = 'PRODUCT_OWNER'`, 'DK_UNAUTHORIZED_RESOLUTION');
   }
 
   const defTarget = resolution === 'DEFERRED' ? (deferredTarget || 'Future Ideas (Explicitly Deferred)') : null;
@@ -1484,8 +1484,9 @@ export function supersedeOpenQuestion(rootDir = process.cwd(), oldId, newQuestio
     throw new DiscoveryStateError(`Question ${oldId} resolution ${oldQ.resolution} cannot transition to SUPERSEDED`, 'DK_ILLEGAL_STATE_TRANSITION');
   }
 
-  // Superseding ANY material question requires explicit resolvedBy = 'PRODUCT_OWNER'
-  if (oldQ.materiality === 'MATERIAL' && newQuestionData.resolvedBy !== 'PRODUCT_OWNER') {
+  // Superseding ANY material question requires explicit resolvedBy/confirmedBy = 'PRODUCT_OWNER'
+  const authorityBy = newQuestionData.resolvedBy || newQuestionData.confirmedBy;
+  if (oldQ.materiality === 'MATERIAL' && authorityBy !== 'PRODUCT_OWNER') {
     throw new DiscoveryStateError(`Superseding material question ${oldId} requires explicit resolvedBy = 'PRODUCT_OWNER'`, 'DK_UNAUTHORIZED_SUPERSEDING');
   }
 
@@ -1530,7 +1531,7 @@ export function supersedeOpenQuestion(rootDir = process.cwd(), oldId, newQuestio
     });
     supersessionDecision = {
       supersededBy: newId,
-      resolvedBy: newQuestionData.resolvedBy,
+      resolvedBy: authorityBy,
       decisionId: podId,
       decidedAt: now,
     };

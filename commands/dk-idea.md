@@ -116,6 +116,20 @@ node scripts/orchestration.mjs --operation=idea-adopt-candidate --input-json='{"
 node scripts/orchestration.mjs --operation=idea-reject-candidate --input-json='{"id":"IDEA-REQ-004","confirmedBy":"PRODUCT_OWNER"}'
 ```
 
+#### Modifying Candidate Statements or Questions (Deterministic Path)
+If the Product Owner chooses option `2. Modify statements` (or requests alterations to existing candidate statements or question text):
+1. **Never attempt to rewrite an existing candidate or question statement using `idea-record-candidate` or `idea-record-question`** (statements are immutable).
+2. Execute explicit supersession via:
+   ```bash
+   # For requirements:
+   node scripts/orchestration.mjs --operation=idea-supersede-candidate --input-json='{"oldId":"IDEA-REQ-001","newCandidate":{"id":"IDEA-REQ-005","statement":"Modified statement","origin":"USER_STATED","confirmedBy":"PRODUCT_OWNER"}}'
+   
+   # For questions:
+   node scripts/orchestration.mjs --operation=idea-supersede-question --input-json='{"oldId":"IDEA-Q-001","newQuestion":{"id":"IDEA-Q-003","question":"Modified question text","materiality":"MATERIAL","confirmedBy":"PRODUCT_OWNER"}}'
+   ```
+3. The replacement candidate/question is created in state `UNRESOLVED` with no `confirmedBy` or confirmation POD.
+4. Return control to the user to confirm the replacement candidates under the normal candidate confirmation protocol before proceeding.
+
 > [!NOTE]
 > **Host Interaction Protocol**:
 > The DKF command contract enforces strict interaction sequencing:

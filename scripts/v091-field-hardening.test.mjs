@@ -2782,9 +2782,14 @@ test('Candidate 11 (Defect 8): Append-only POD supersession creates immutable ne
 /* CANDIDATE 12 REGRESSION TESTS (Hardening AGENT → AUTHORITY Boundary)       */
 /* ========================================================================= */
 
-test('Candidate 12 (Field Failure Regression): Real Solar prompt initial discovery turn captures UNRESOLVED candidates, 0 PODs, 0 scope decisions, and exactly 1 question', async () => {
+test('Candidate 12 (Runtime State Model): Deterministic runtime state invariant verification for initial discovery capture (REAL PACKAGED FIELD ACCEPTANCE REQUIRED for live host interaction)', async () => {
   const tempDir = createTempDir('dk-c12-field-solar-');
   try {
+    // NOTE: This test proves deterministic runtime state, zero PODs, zero scopes, 1 persisted unresolved open question,
+    // no brief, no /dk-spec recommendation, and static command/agent contracts.
+    // It does NOT execute the Antigravity LLM host turn or prove live host interaction behavior.
+    // REAL PACKAGED FIELD ACCEPTANCE REQUIRED.
+
     // 1. Initial lifecycle entry
     const entryRes = await executeLifecycleEntry({ command: 'dk-idea', rootDir: tempDir });
     assert.equal(entryRes.bootstrapped, true);
@@ -3216,3 +3221,282 @@ test('Candidate 12 (Defect 7): Public Command & Agent Contract integrity inspect
   assert.ok(agentContent.includes('Provenance Integrity Rule'), 'Agent must include provenance rule');
   assert.ok(agentContent.includes('STOP and return control to the user'), 'Agent must include STOP rule');
 });
+
+
+/* ========================================================================= */
+/* CANDIDATE 13 REGRESSION TESTS (Authority Hardening & Supersession Ops)      */
+/* ========================================================================= */
+
+test('Candidate 13 (Defect 1): Non-material question resolution requires explicit resolvedBy = PRODUCT_OWNER and produces zero side effects on unauthorized attempts', () => {
+  const tempDir = createTempDir('dk-c13-nonmat-q-');
+  try {
+    bootstrapProject(tempDir);
+    recordOpenQuestion(tempDir, {
+      id: 'IDEA-Q-001',
+      question: 'Non-material exploratory question?',
+      materiality: 'NON_MATERIAL',
+    });
+
+    const discPath = path.join(tempDir, '.development-kit', 'idea', 'discovery.json');
+    const discBefore = fs.readFileSync(discPath, 'utf8');
+    const podDir = path.join(tempDir, '.development-kit', 'decisions');
+    const podFilesBefore = fs.existsSync(podDir) ? fs.readdirSync(podDir) : [];
+
+    // 1. NON_MATERIAL + no resolvedBy -> throws DK_UNAUTHORIZED_RESOLUTION
+    assert.throws(() => {
+      resolveOpenQuestion(tempDir, {
+        id: 'IDEA-Q-001',
+        resolution: 'ANSWERED',
+        notes: 'Attempted resolution without PO',
+      });
+    }, (err) => err.code === 'DK_UNAUTHORIZED_RESOLUTION');
+
+    // Verify zero disk side effects
+    assert.equal(fs.readFileSync(discPath, 'utf8'), discBefore);
+    const podFilesAfter1 = fs.existsSync(podDir) ? fs.readdirSync(podDir) : [];
+    assert.equal(podFilesAfter1.length, podFilesBefore.length);
+
+    // 2. NON_MATERIAL + resolvedBy = 'AI_AGENT' -> throws DK_UNAUTHORIZED_RESOLUTION
+    assert.throws(() => {
+      resolveOpenQuestion(tempDir, {
+        id: 'IDEA-Q-001',
+        resolution: 'ANSWERED',
+        resolvedBy: 'AI_AGENT',
+        notes: 'Attempted resolution with AI_AGENT',
+      });
+    }, (err) => err.code === 'DK_UNAUTHORIZED_RESOLUTION');
+
+    // Verify zero disk side effects
+    assert.equal(fs.readFileSync(discPath, 'utf8'), discBefore);
+    const podFilesAfter2 = fs.existsSync(podDir) ? fs.readdirSync(podDir) : [];
+    assert.equal(podFilesAfter2.length, podFilesBefore.length);
+
+    // 3. NON_MATERIAL + resolvedBy = 'PRODUCT_OWNER' -> succeeds and creates valid immutable QUESTION_RESOLUTION POD
+    const resolved = resolveOpenQuestion(tempDir, {
+      id: 'IDEA-Q-001',
+      resolution: 'ANSWERED',
+      resolvedBy: 'PRODUCT_OWNER',
+      notes: 'Authoritatively answered by PO',
+    });
+    assert.equal(resolved.resolution, 'ANSWERED');
+    assert.equal(resolved.resolvedBy, 'PRODUCT_OWNER');
+    assert.ok(resolved.resolutionDecision.decisionId);
+
+    const podFilesAfter3 = fs.existsSync(podDir) ? fs.readdirSync(podDir) : [];
+    assert.equal(podFilesAfter3.length, podFilesBefore.length + 1);
+
+    const createdPod = loadPODecisionById(tempDir, resolved.resolutionDecision.decisionId);
+    assert.equal(createdPod.decisionType, 'QUESTION_RESOLUTION');
+    assert.equal(createdPod.provenance, 'product-owner');
+    assert.equal(createdPod.status, 'APPROVED');
+    assert.equal(createdPod.decisionData.questionId, 'IDEA-Q-001');
+    assert.equal(createdPod.decisionData.newResolution, 'ANSWERED');
+
+    // 4. MATERIAL question resolution behavior remains intact
+    recordOpenQuestion(tempDir, {
+      id: 'IDEA-Q-002',
+      question: 'Material question?',
+      materiality: 'MATERIAL',
+    });
+
+    assert.throws(() => {
+      resolveOpenQuestion(tempDir, {
+        id: 'IDEA-Q-002',
+        resolution: 'ANSWERED',
+        resolvedBy: 'AI_AGENT',
+      });
+    }, (err) => err.code === 'DK_UNAUTHORIZED_RESOLUTION');
+
+    const matResolved = resolveOpenQuestion(tempDir, {
+      id: 'IDEA-Q-002',
+      resolution: 'DEFERRED',
+      resolvedBy: 'PRODUCT_OWNER',
+      deferredTarget: 'Future Scope',
+    });
+    assert.equal(matResolved.resolution, 'DEFERRED');
+    assert.equal(matResolved.resolvedBy, 'PRODUCT_OWNER');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 13 (Defect 2): Public supersession CLI operations (idea-supersede-candidate & idea-supersede-question) execute cleanly via CLI runner', () => {
+  const tempDir = createTempDir('dk-c13-cli-supersede-');
+  try {
+    bootstrapProject(tempDir);
+    const orchScript = path.resolve('scripts/orchestration.mjs');
+
+    // 1. Record initial unresolved candidates and questions
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Initial requirement statement.',
+      origin: 'USER_STATED',
+      materiality: 'MATERIAL',
+    });
+    recordOpenQuestion(tempDir, {
+      id: 'IDEA-Q-001',
+      question: 'Initial open question?',
+      materiality: 'MATERIAL',
+    });
+
+    // 2. Call idea-supersede-candidate via CLI
+    const supCandRes = spawnSync(process.execPath, [
+      orchScript,
+      '--rootDir=' + tempDir,
+      '--operation=idea-supersede-candidate',
+      '--input-json=' + JSON.stringify({
+        oldId: 'IDEA-REQ-001',
+        newCandidate: {
+          id: 'IDEA-REQ-002',
+          statement: 'Superseding modified requirement statement.',
+          origin: 'USER_STATED',
+          confirmedBy: 'PRODUCT_OWNER',
+        },
+      }),
+    ], { encoding: 'utf8' });
+
+    assert.equal(supCandRes.status, 0, supCandRes.stderr || supCandRes.stdout);
+    const candParsed = JSON.parse(supCandRes.stdout);
+    assert.equal(candParsed.success, true);
+    assert.equal(candParsed.result.created.id, 'IDEA-REQ-002');
+    assert.equal(candParsed.result.created.resolutionState, 'UNRESOLVED');
+    assert.equal(candParsed.result.created.supersedes, 'IDEA-REQ-001');
+
+    // 3. Call idea-supersede-question via CLI
+    const supQRes = spawnSync(process.execPath, [
+      orchScript,
+      '--rootDir=' + tempDir,
+      '--operation=idea-supersede-question',
+      '--input-json=' + JSON.stringify({
+        oldId: 'IDEA-Q-001',
+        newQuestion: {
+          id: 'IDEA-Q-002',
+          question: 'Superseding modified question text?',
+          materiality: 'MATERIAL',
+          confirmedBy: 'PRODUCT_OWNER',
+        },
+      }),
+    ], { encoding: 'utf8' });
+
+    assert.equal(supQRes.status, 0, supQRes.stderr || supQRes.stdout);
+    const qParsed = JSON.parse(supQRes.stdout);
+    assert.equal(qParsed.success, true);
+    assert.equal(qParsed.result.created.id, 'IDEA-Q-002');
+    assert.equal(qParsed.result.created.resolution, 'UNRESOLVED');
+    assert.equal(qParsed.result.created.supersedes, 'IDEA-Q-001');
+
+    // 4. Verify discovery state integrity and lineage
+    const disc = loadDiscoveryState(tempDir);
+    const oldReq = disc.requirements.find(r => r.id === 'IDEA-REQ-001');
+    const newReq = disc.requirements.find(r => r.id === 'IDEA-REQ-002');
+    assert.equal(oldReq.resolutionState, 'SUPERSEDED');
+    assert.equal(oldReq.supersededBy, 'IDEA-REQ-002');
+    assert.equal(newReq.resolutionState, 'UNRESOLVED');
+    assert.equal(newReq.supersedes, 'IDEA-REQ-001');
+
+    const oldQ = disc.openQuestions.find(q => q.id === 'IDEA-Q-001');
+    const newQ = disc.openQuestions.find(q => q.id === 'IDEA-Q-002');
+    assert.equal(oldQ.resolution, 'SUPERSEDED');
+    assert.equal(oldQ.supersededBy, 'IDEA-Q-002');
+    assert.equal(newQ.resolution, 'UNRESOLVED');
+    assert.equal(newQ.supersedes, 'IDEA-Q-001');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 13 (Defect 3): Dedicated confirmation and adoption state replay prevention', () => {
+  const tempDir = createTempDir('dk-c13-replay-prevent-');
+  try {
+    bootstrapProject(tempDir);
+
+    // 1. UNRESOLVED -> CONFIRMED succeeds
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      statement: 'Initial user stated requirement.',
+      origin: 'USER_STATED',
+    });
+
+    const confirmed = confirmRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    assert.equal(confirmed.resolutionState, 'CONFIRMED');
+
+    const podDir = path.join(tempDir, '.development-kit', 'decisions');
+    const podCountAfterFirst = fs.readdirSync(podDir).length;
+
+    // CONFIRMED -> confirm again fails deterministically
+    assert.throws(() => {
+      confirmRequirementCandidate(tempDir, {
+        id: 'IDEA-REQ-001',
+        confirmedBy: 'PRODUCT_OWNER',
+      });
+    }, (err) => err.code === 'DK_ILLEGAL_STATE_TRANSITION');
+
+    // Zero new PODs created
+    assert.equal(fs.readdirSync(podDir).length, podCountAfterFirst);
+
+    // 2. UNRESOLVED research -> ADOPTED succeeds
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-002',
+      statement: 'Research derived recommendation.',
+      origin: 'RESEARCH_DERIVED',
+    });
+
+    const adopted = adoptRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-002',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    assert.equal(adopted.resolutionState, 'ADOPTED');
+
+    const podCountAfterSecond = fs.readdirSync(podDir).length;
+
+    // ADOPTED -> adopt again fails deterministically
+    assert.throws(() => {
+      adoptRequirementCandidate(tempDir, {
+        id: 'IDEA-REQ-002',
+        confirmedBy: 'PRODUCT_OWNER',
+      });
+    }, (err) => err.code === 'DK_ILLEGAL_STATE_TRANSITION');
+
+    // Zero new PODs created
+    assert.equal(fs.readdirSync(podDir).length, podCountAfterSecond);
+
+    // 3. rejectRequirementCandidate preserves legitimate rejection from active states
+    recordRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-003',
+      statement: 'Candidate to reject while unresolved.',
+      origin: 'USER_STATED',
+    });
+    const rej1 = rejectRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-003',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    assert.equal(rej1.resolutionState, 'REJECTED');
+
+    // Rejecting already confirmed requirement by PO succeeds as legitimate active-to-rejected transition
+    const rej2 = rejectRequirementCandidate(tempDir, {
+      id: 'IDEA-REQ-001',
+      confirmedBy: 'PRODUCT_OWNER',
+    });
+    assert.equal(rej2.resolutionState, 'REJECTED');
+  } finally {
+    cleanupTempDir(tempDir);
+  }
+});
+
+test('Candidate 13 (Defect 4): Public Command & Agent Contract integrity inspection for Modify Statements / Supersession path', () => {
+  const ideaCmdPath = path.resolve('commands/dk-idea.md');
+  const ideaCmdContent = fs.readFileSync(ideaCmdPath, 'utf8');
+
+  assert.ok(ideaCmdContent.includes('Modifying Candidate Statements or Questions (Deterministic Path)'), 'Must document Modify Statements path');
+  assert.ok(ideaCmdContent.includes('idea-supersede-candidate'), 'Must document idea-supersede-candidate CLI');
+  assert.ok(ideaCmdContent.includes('idea-supersede-question'), 'Must document idea-supersede-question CLI');
+
+  const agentPath = path.resolve('agents/product-discovery-agent.md');
+  const agentContent = fs.readFileSync(agentPath, 'utf8');
+  assert.ok(agentContent.includes('idea-supersede-candidate'), 'Agent must include idea-supersede-candidate');
+  assert.ok(agentContent.includes('idea-supersede-question'), 'Agent must include idea-supersede-question');
+});
+
