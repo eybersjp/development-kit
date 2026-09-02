@@ -99,9 +99,7 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
       '--input-json=' + JSON.stringify({
         id: 'IDEA-REQ-001',
         statement: 'Test packaged distribution requirement candidate',
-        origin: 'USER_CONFIRMED',
-        resolutionState: 'CONFIRMED',
-        confirmedBy: 'PRODUCT_OWNER',
+        origin: 'USER_STATED',
       }),
     ], {
       cwd: consumerDir,

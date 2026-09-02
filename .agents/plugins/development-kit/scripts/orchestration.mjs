@@ -19,7 +19,11 @@ import {
   resolveCanonicalIdeaArtifact,
   persistCanonicalIdeaBrief,
   recordRequirementCandidate,
+  confirmRequirementCandidate,
+  adoptRequirementCandidate,
+  rejectRequirementCandidate,
   recordOpenQuestion,
+  resolveOpenQuestion,
   evaluateDiscoveryReadiness,
   loadDiscoveryState,
   persistApprovalRecord,
@@ -93,9 +97,13 @@ function main() {
       }));
     }
     case 'idea-record-candidate': return output(recordRequirementCandidate(rootDir, payload));
+    case 'idea-confirm-candidate': return output(confirmRequirementCandidate(rootDir, payload));
+    case 'idea-adopt-candidate': return output(adoptRequirementCandidate(rootDir, payload));
+    case 'idea-reject-candidate': return output(rejectRequirementCandidate(rootDir, payload));
     case 'idea-supersede-candidate': return output(supersedeRequirementCandidate(rootDir, payload.oldId, payload.newCandidate));
     case 'idea-classify-scope': return output(classifyRequirementScope(rootDir, payload));
     case 'idea-record-question': return output(recordOpenQuestion(rootDir, payload));
+    case 'idea-resolve-question': return output(resolveOpenQuestion(rootDir, payload));
     case 'idea-supersede-question': return output(supersedeOpenQuestion(rootDir, payload.oldId, payload.newQuestion));
     case 'idea-discovery-eval': return output(evaluateDiscoveryReadiness(rootDir));
     case 'idea-approve': {

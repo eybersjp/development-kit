@@ -21,20 +21,53 @@ This establishes and validates project bootstrap, binds project identity, and se
 
 ## Workflow
 
-### 1. Understand
-Read the user's request. Identify what is clearly stated and what needs clarification.
+### 1. Understand & Initial Minimal Turn
+Read the user's initial request or idea carefully. For a rough or unclarified idea, the initial `/dk-idea` assistant turn must be minimal:
+1. Execute the lifecycle entry adapter.
+2. Persist faithfully extracted initial candidate requirements with `origin: "USER_STATED"` (or `"AI_PROPOSED"`) and `resolutionState: "UNRESOLVED"`.
+3. Optionally persist ONE material open question as `UNRESOLVED`.
+4. Ask **exactly ONE** focused discovery question with numbered options and a custom write-in choice.
+5. **STOP and return control to the user.**
 
-### 2. Requirements Interview & Design System Discovery
-Spawn the **product-discovery-agent** to conduct the requirements interview. Surface requirements, preferences, assumptions, and constraints.
+The initial turn must NOT produce a completed Idea Brief, scope table, Product Owner PODs, confirmed requirements, approval, or a `/dk-spec` recommendation.
 
-Record structured candidate requirements and questions deterministically using the CLI operations rather than editing discovery state directly:
+### 2. Requirements Interview & One-Question-Per-Turn Protocol
+Spawn the **product-discovery-agent** to conduct the requirements interview.
+
+> [!IMPORTANT]
+> **Canonical One-Question-Per-Turn Rule**:
+> - Ask **exactly one user-facing question per assistant response**.
+> - Provide numbered answer options (e.g. `1. Option A`, `2. Option B`, `3. Custom write-in`).
+> - After asking the single question, **STOP and return control to the user**.
+> - Never ask multiple questions in a single response. Do not combine requirements questions, idea-challenge questions, scope confirmation, design-system setup, or multi-question "Next Steps" in the same response.
+> - The user's answer to question N must be received before asking question N+1.
+> - Design System setup counts as ONE question.
+> - Idea Challenge counts as ONE question.
+
+> [!IMPORTANT]
+> **Provenance Integrity Rule**:
+> - `USER_STATED` means the substance was explicitly stated by the user. Do NOT add unstated specifics (e.g. equipment hierarchy lists, specific measurement types, digital signatures, compliance standards, OCR/SCADA integrations) under `USER_STATED`.
+> - All AI elaborations and inferred capabilities MUST be recorded as `AI_PROPOSED` with `UNRESOLVED` state until explicitly confirmed by the Product Owner.
+> - External research findings MUST be recorded as `RESEARCH_DERIVED` with `UNRESOLVED` state until explicitly adopted.
+> - Assumptions MUST be recorded as `ASSUMED` with `UNRESOLVED` state until explicitly confirmed.
+> - `USER_CONFIRMED` is not an initial capture origin; confirmation is represented through `resolutionState: "CONFIRMED"` backed by an immutable Product Owner Decision (POD).
+
+Record structured candidate requirements and questions deterministically using the capture-only CLI operations:
 ```bash
-node scripts/orchestration.mjs --operation=idea-record-candidate --input-json='{"id":"IDEA-REQ-001","statement":"...","origin":"USER_CONFIRMED","resolutionState":"CONFIRMED","confirmedBy":"PRODUCT_OWNER"}'
-node scripts/orchestration.mjs --operation=idea-record-question --input-json='{"id":"IDEA-Q-001","question":"...","materiality":"MATERIAL","resolution":"ANSWERED","resolvedBy":"PRODUCT_OWNER"}'
-```
-Preserve candidate origin (`USER_STATED`, `USER_CONFIRMED`, `AI_PROPOSED`, `RESEARCH_DERIVED`, `ASSUMED`). Note: external research is evidence only; any `RESEARCH_DERIVED` item intended for Must requires explicit Product Owner adoption before approval.
+# Capture initial requirement candidates (born UNRESOLVED, no POD created)
+node scripts/orchestration.mjs --operation=idea-record-candidate --input-json='{"id":"IDEA-REQ-001","statement":"Capture project and equipment information.","origin":"USER_STATED"}'
+node scripts/orchestration.mjs --operation=idea-record-candidate --input-json='{"id":"IDEA-REQ-002","statement":"Support CSV/Excel export of commissioning data.","origin":"AI_PROPOSED"}'
 
-If the project includes a visual user interface, prompt early for visual references:
+# Capture open questions (born UNRESOLVED, no POD created)
+node scripts/orchestration.mjs --operation=idea-record-question --input-json='{"id":"IDEA-Q-001","question":"What tablet OS platforms must be supported?","materiality":"MATERIAL"}'
+```
+
+When an open question is answered or deferred, execute the dedicated question resolution operation:
+```bash
+node scripts/orchestration.mjs --operation=idea-resolve-question --input-json='{"id":"IDEA-Q-001","resolution":"ANSWERED","resolvedBy":"PRODUCT_OWNER"}'
+```
+
+If the project includes a visual user interface, prompt early for visual references as a single dedicated turn:
 
 ```text
 Design System Setup
@@ -60,18 +93,43 @@ Options:
 ```
 
 ### 3. Idea Challenge
-Test assumptions. Is this the real problem? Does it need to exist? Is there a simpler approach? Challenge the proposed solution against the problem.
+Test assumptions in a dedicated turn. Is this the real problem? Does it need to exist? Is there a simpler approach? Challenge the proposed solution against the problem.
 
-### 4. Scope Definition
+### 4. Product Owner Requirement-Confirmation Turn
+After discovery questions are sufficiently answered:
+1. Present the exact candidate requirements table with persisted IDs, statements, and origins to the user.
+2. Ask ONE confirmation question:
+   - Example: "Do you confirm these exact requirement statements as the requirements for this project?"
+   - Options: `1. Confirm exact statements`, `2. Modify statements`, `3. Custom write-in`.
+3. **STOP and return control to the user.**
+4. Do NOT call `idea-confirm-candidate`, `idea-adopt-candidate`, or `idea-classify-scope` in the same assistant turn.
+5. ONLY after receiving a new user response explicitly confirming the candidates, execute the dedicated authority operations:
+
+```bash
+# Authoritative requirement confirmation (creates immutable REQUIREMENT_CONFIRMATION POD)
+node scripts/orchestration.mjs --operation=idea-confirm-candidate --input-json='{"id":"IDEA-REQ-001","confirmedBy":"PRODUCT_OWNER"}'
+
+# Authoritative research adoption (creates immutable REQUIREMENT_ADOPTION POD)
+node scripts/orchestration.mjs --operation=idea-adopt-candidate --input-json='{"id":"IDEA-REQ-003","confirmedBy":"PRODUCT_OWNER"}'
+
+# Authoritative candidate rejection (creates immutable REQUIREMENT_REJECTION POD)
+node scripts/orchestration.mjs --operation=idea-reject-candidate --input-json='{"id":"IDEA-REQ-004","confirmedBy":"PRODUCT_OWNER"}'
+```
+
+> [!NOTE]
+> **Host Interaction Protocol**:
+> The DKF command contract enforces strict interaction sequencing:
+> `PROPOSE` → `RETURN CONTROL TO USER` → `RECEIVE USER RESPONSE` → `AUTHORITATIVE MUTATION`.
+> Never execute self-confirmation within the same assistant turn. (Because Antigravity does not expose a synchronous host-level hook to cryptographically prove a human turn occurred, protocol discipline is mandatory).
+
+### 5. Scope Definition & Confirmation Turn
 Categorise every discovered candidate requirement into a proposed scope classification table:
 - `MUST` — Core required functionality (1-to-1 bound to active `[IDEA-REQ-xxx]` items in Requirements (Must))
 - `SHOULD` — Preferences and secondary expectations
 - `FUTURE` — Explicitly deferred capabilities
 - `EXCLUDED` — Out of scope / rejected capabilities
 
-Present this scope proposal table to the user and request explicit Product Owner confirmation:
-- Example: "Please confirm the proposed scope classification: IDEA-REQ-001 -> MUST, IDEA-REQ-002 -> MUST, IDEA-REQ-003 -> SHOULD."
-
+Present this scope proposal table to the user and ask for explicit Product Owner confirmation in a dedicated turn.
 ONLY after receiving explicit user confirmation, execute the deterministic scope classification operation for each confirmed candidate requirement:
 ```bash
 node scripts/orchestration.mjs --operation=idea-classify-scope --input-json='{"id":"IDEA-REQ-001","scopeDisposition":"MUST","confirmedBy":"PRODUCT_OWNER"}'
@@ -82,15 +140,15 @@ Evaluate discovery readiness before writing the brief:
 node scripts/orchestration.mjs --operation=idea-discovery-eval
 ```
 
-### 5. Determine Artifact Level
+### 6. Determine Artifact Level
 Spawn the **artifact-selector-agent** to determine whether a full idea brief is needed or a lighter artifact suffices (small, standard, or comprehensive).
 
-### 6. Canonical Idea Brief Persistence
+### 7. Canonical Idea Brief Persistence
 Document the output adhering to the 10 canonical sections matching `templates/idea-brief.md`:
 - Problem
 - Intended Users
 - Success Criteria
-- Requirements (Must) (e.g. `- [IDEA-REQ-001] Capture inverter DC string voltages.`)
+- Requirements (Must) (e.g. `- [IDEA-REQ-001] Capture project and equipment information.`)
 - Preferences (Should)
 - Assumptions
 - Constraints
@@ -103,7 +161,7 @@ Persist canonical `idea-brief.md` to project root and register in `.development-
 node scripts/orchestration.mjs --operation=idea-persist --input-json='{"content":"..."}'
 ```
 
-### 7. Evaluation & Explicit Approval Gate
+### 8. Evaluation & Explicit Approval Gate
 Compute the current lifecycle state:
 ```bash
 node scripts/orchestration.mjs --operation=idea-state
