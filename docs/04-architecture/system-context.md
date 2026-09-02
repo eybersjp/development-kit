@@ -9,13 +9,13 @@ graph TB
     U["User / Developer"] -->|"requests & answers"| A["AI Coding Agent"]
     A -->|"loads"| DK["Development Kit"]
     DK --> P["plugin.json manifest"]
-    DK --> SK["45 skills (SKILL.md)"]
+    DK --> SK["63 skills (SKILL.md)"]
     DK --> AG["18 agent personas"]
-    DK --> CM["14 commands"]
+    DK --> CM["16 commands"]
     DK --> HK["4 hooks"]
-    DK --> TP["6 templates"]
-    DK --> EV["11 evaluation suites"]
-    DK --> SC["12 scripts"]
+    DK --> TP["7 templates"]
+    DK --> EV["12 evaluation categories"]
+    DK --> SC["13 scripts"]
     NPM["npm registry"] -->|"publish current release"| DK
     GH["GitHub Actions CI/CD"] -->|"validate + publish"| NPM
 ```

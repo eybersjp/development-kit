@@ -28,9 +28,9 @@ flowchart TD
 | :--- | :--- | :--- | :--- |
 | global/project | skills, agents, hooks, commands → plugin dir; AGENTS.md | manifest `../../../` → `./` | AGENTS.md skipped unless `--force` |
 | all | 7 dirs + AGENTS.md + README.md + plugin.json | — (plugin.json copied unmodified) | AGENTS.md/README.md skipped unless `--force`; package.json never touched |
-| opencode | 45 skills → `.opencode/skills/`; opencode.json; AGENTS.md | — | existing items skipped unless `--force` |
+| opencode | compatible skills → `.opencode/skills/`; opencode.json; AGENTS.md | — | existing items skipped unless `--force` |
 
-Adapter mode installs packaged templates at the current project's official native paths. Claude receives `CLAUDE.md` and 14 command skills under `.claude/skills/`; Cursor receives `.cursor/rules/dkf.mdc`; VS Code with GitHub Copilot receives `.github/copilot-instructions.md`; Cline receives `.clinerules/dkf.md`; and Windsurf receives `.windsurf/rules/dkf.md`. The installer does not create `.vscode/settings.json` or legacy root rule files.
+Adapter mode installs packaged templates at the current project's official native paths. Claude receives `CLAUDE.md` and 16 command skills under `.claude/skills/`; Cursor receives `.cursor/rules/dkf.mdc`; VS Code with GitHub Copilot receives `.github/copilot-instructions.md`; Cline receives `.clinerules/dkf.md`; and Windsurf receives `.windsurf/rules/dkf.md`. The installer does not create `.vscode/settings.json` or legacy root rule files.
 
 ## Safety & Dry-Run
 

@@ -33,7 +33,7 @@ Recorded decisions derived from repository evidence (git history, source, manife
 
 ## AD-06: OpenCode compatibility via frontmatter + `.opencode/skills/`
 
-- **Decision**: All 45 skills declare `compatibility: opencode`; the `--opencode` mode installs to OpenCode's auto-discovery path with progressive loading.
+- **Decision**: All compatible skills declare `compatibility: opencode`; the `--opencode` mode installs to OpenCode's auto-discovery path with progressive loading.
 - **Evidence**: Skill frontmatter and `opencode.json`.
 
 ## AD-07: Independent validators composed into one release gate

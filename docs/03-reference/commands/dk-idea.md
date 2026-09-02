@@ -24,12 +24,14 @@ Takes a rough idea and refines it into a concrete, well-defined concept. Runs th
 
 ## Workflow
 
-1. **Understand**: Read the user's request. Identify clearly stated facts and ambiguities.
-2. **Requirements Interview**: Spawn `product-discovery-agent` to surface requirements, constraints, and assumptions via sequential numbered-option questions.
-3. **Idea Challenge**: Test whether this is the real problem. Is a simpler approach available?
-4. **Scope Definition**: Separate into must-have, should-have, could-have, and explicitly excluded.
-5. **Artifact Selection**: Spawn `artifact-selector-agent` to determine minimum required artifact level.
-6. **Idea Brief**: Document output using the `idea-brief.md` template.
+1. **Understand & Capture**: Capture initial requirements and open questions with provenance (`USER_STATED`, `AI_PROPOSED`, `ASSUMED`, `RESEARCH_DERIVED`) into `.development-kit/idea/discovery.json`.
+2. **Requirements Interview**: Present sequential one-question-per-turn interactions (`idea-present-interaction`). Resolve questions via `idea-resolve-question` bound to `expectedInteractionFingerprint`.
+3. **Design System Setup**: For UI projects, present `DESIGN_SYSTEM_SETUP` to capture visual preferences (`idea-design-setup`) into `.development-kit/design-system-state.json`.
+4. **Idea Challenge**: Run dedicated assumption-testing turn (`idea-challenge-response`).
+5. **Requirement Confirmation Turn**: Present exact candidate requirements table. Product Owner confirms via `idea-confirm-candidate` or `idea-adopt-candidate`, creating immutable PODs.
+6. **Scope Confirmation Turn**: Present complete proposed scope mapping. Product Owner confirms via `idea-classify-scope`, generating `SCOPE_CLASSIFICATION` PODs.
+7. **Canonical Idea Brief**: Document output adhering strictly to the 10 canonical sections matching `templates/idea-brief.md`, persisted via `idea-persist`.
+8. **Explicit Approval Gate**: Request Product Owner approval (`idea-approve`), binding the 4-tuple approval to artifact revision, fingerprint, and discovery state.
 
 ## Skills Invoked
 
@@ -48,13 +50,14 @@ Takes a rough idea and refines it into a concrete, well-defined concept. Runs th
 
 ## Outputs
 
-An idea brief document containing: problem statement, intended users, success criteria, requirements, assumptions, constraints, risks, and open questions.
+A canonical project-local `idea-brief.md` document registered in `.development-kit/artifacts.json` with computed lifecycle state (`APPROVED`).
 
 ## Completion Criteria
 
-- Requirements have been surfaced and documented.
-- Scope is explicitly defined with exclusions.
-- An idea brief or lightweight equivalent is produced.
+- Requirements have been surfaced, confirmed by Product Owner, and persisted with immutable POD evidence.
+- Scope is explicitly defined and confirmed by Product Owner.
+- Canonical `idea-brief.md` is registered and approved by Product Owner (`APPROVED` state).
+- `/dk-spec` gate unlocks only after `APPROVED` state is reached.
 
 ## Example
 

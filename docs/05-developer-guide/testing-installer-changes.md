@@ -36,7 +36,7 @@ cat AGENTS.md    # overwritten (force worked)
 
 | Behavior | How |
 | :--- | :--- |
-| Copy completeness | `ls -R` the target; compare counts with `scripts/` expectations (45 skills, 18 agents, 4 hooks, 14 commands) |
+| Copy completeness | `ls -R` the target; compare counts with `scripts/` expectations (63 skills, 18 agents, 4 hooks, 16 commands) |
 | Manifest path rewrite | `cat` the installed `plugin.json` — `../../../` must be `./` |
 | AGENTS.md/README.md guard | Pre-create the file; confirm skip without `--force`, overwrite with `--force` |
 | `--dry-run` writes nothing | `git status`/`find` before & after in the scratch dir — no new files |

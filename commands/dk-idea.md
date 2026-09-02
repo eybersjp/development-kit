@@ -77,13 +77,13 @@ node scripts/orchestration.mjs --operation=idea-record-question --input-json='{"
 
 When an open question is answered or deferred, execute the dedicated question resolution operation:
 ```bash
-node scripts/orchestration.mjs --operation=idea-resolve-question --input-json='{"id":"IDEA-Q-001","resolution":"ANSWERED","resolvedBy":"PRODUCT_OWNER"}'
+node scripts/orchestration.mjs --operation=idea-resolve-question --input-json='{"questionId":"IDEA-Q-001","resolution":"ANSWERED","resolvedBy":"PRODUCT_OWNER","expectedInteractionFingerprint":"<PENDING_FINGERPRINT>"}'
 ```
 
 If the project includes a visual user interface, prompt early for visual references as a single dedicated turn.
-Before asking, persist the interaction checkpoint:
+Before asking, present the interaction:
 ```bash
-node scripts/orchestration.mjs --operation=idea-checkpoint-persist --input-json='{"currentPhase":"DESIGN_SYSTEM_SETUP","pendingInteraction":{"type":"DESIGN_SYSTEM_SETUP","id":"INTERACTION-DESIGN-SETUP","prompt":"Design System Setup"}}'
+node scripts/orchestration.mjs --operation=idea-present-interaction
 ```
 
 ```text
@@ -111,7 +111,7 @@ Options:
 
 When the user selects an option, record the setup decision:
 ```bash
-node scripts/orchestration.mjs --operation=idea-design-setup --input-json='{"disposition":"DEFERRED","confirmedBy":"PRODUCT_OWNER"}'
+node scripts/orchestration.mjs --operation=idea-design-setup --input-json='{"disposition":"DEFERRED","confirmedBy":"PRODUCT_OWNER","expectedInteractionFingerprint":"<PENDING_FINGERPRINT>"}'
 ```
 
 ### 3. Idea Challenge

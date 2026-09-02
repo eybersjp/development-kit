@@ -7,15 +7,17 @@ development-kit/
 ├── .agents/plugins/development-kit/   # Plugin mirror + manifest (generated/synced)
 ├── .github/workflows/                 # CI + publish workflows
 ├── agents/                            # 18 agent personas (canonical)
-├── commands/                          # 14 slash commands (canonical)
-├── skills/                            # 45 skills, each a dir with SKILL.md (canonical)
+├── commands/                          # 16 slash commands (canonical)
+├── skills/                            # 63 skills, each a dir with SKILL.md (canonical)
 ├── hooks/                             # 4 lifecycle hooks (canonical)
-├── templates/                         # 6 artifact templates (canonical)
-├── evals/                             # 11 evaluation suites (canonical)
-├── scripts/                           # 4 tooling scripts (canonical)
+├── templates/                         # 7 artifact templates (canonical)
+├── evals/                             # 12 evaluation categories (canonical)
+├── runtime/                           # Reliability and orchestration runtime
+├── schemas/                           # JSON schemas for contracts and artifacts
+├── scripts/                           # Tooling and validation scripts
 ├── docs/                              # This documentation system
 ├── AGENTS.md                          # Always-on rules
-├── opencode.json                      # OpenCode rule configuration
+├── opencode.json                      # OpenCode configuration
 └── package.json                       # Package metadata + scripts
 ```
 
