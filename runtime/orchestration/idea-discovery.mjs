@@ -656,7 +656,26 @@ export function validateDiscoveryAuthority(rootDir, state, inMemoryPods = []) {
   return true;
 }
 
+export function getDiscoveryJournalPath(rootDir = process.cwd()) {
+  return path.join(rootDir, '.development-kit', 'idea', 'discovery-journal.json');
+}
+
 export function loadDiscoveryState(rootDir = process.cwd()) {
+  const journalPath = getDiscoveryJournalPath(rootDir);
+  if (fs.existsSync(journalPath)) {
+    try {
+      const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
+      if (journal && journal.status === 'RECOVERY_REQUIRED') {
+        throw new DiscoveryStateError(
+          `Discovery transaction incomplete: ${journal.error || 'partial batch write detected'}`,
+          'DK_DISCOVERY_TRANSACTION_INCOMPLETE'
+        );
+      }
+    } catch (err) {
+      if (err instanceof DiscoveryStateError) throw err;
+    }
+  }
+
   const filePath = getDiscoveryFilePath(rootDir);
   if (!fs.existsSync(filePath)) {
     return {
@@ -1800,3 +1819,279 @@ export function classifyRequirementScope(rootDir = process.cwd(), {
     timestamp: now,
   };
 }
+
+/**
+ * Candidate 20: Staged Commit Batch Primitives
+ * Provides PREPARED, COMMITTED, ABORTED, and RECOVERY_REQUIRED states for atomic group operations.
+ */
+
+export function batchPrepareRequirementConfirmation(state, confirmedBy, { allowAdoption = false } = {}) {
+  if (confirmedBy !== 'PRODUCT_OWNER') {
+    return {
+      status: 'ABORTED',
+      errors: ['Explicit confirmation by PRODUCT_OWNER required'],
+      proposedDisc: null,
+      pods: [],
+    };
+  }
+
+  const activeUnresolved = state.requirements.filter((r) => r.resolutionState === 'UNRESOLVED');
+  if (activeUnresolved.length === 0) {
+    return {
+      status: 'ABORTED',
+      errors: ['No UNRESOLVED requirements exist to confirm'],
+      proposedDisc: null,
+      pods: [],
+    };
+  }
+
+  const errors = [];
+  const pods = [];
+  const now = new Date().toISOString();
+  const nextRequirements = [...state.requirements];
+  let currentRev = (state.revision || 0) + 1;
+
+  for (const req of activeUnresolved) {
+    if (req.origin === 'RESEARCH_DERIVED') {
+      if (!allowAdoption) {
+        errors.push(`Research-derived candidate ${req.id} requires explicit adoption semantics`);
+        continue;
+      }
+    }
+
+    if (!isValidRequirementTransition(req.resolutionState, req.origin === 'RESEARCH_DERIVED' ? 'ADOPTED' : 'CONFIRMED')) {
+      errors.push(`Requirement ${req.id} cannot transition from ${req.resolutionState}`);
+      continue;
+    }
+
+    const isAdopt = req.origin === 'RESEARCH_DERIVED';
+    const newResolution = isAdopt ? 'ADOPTED' : 'CONFIRMED';
+    const decisionType = isAdopt ? 'REQUIREMENT_ADOPTION' : 'REQUIREMENT_CONFIRMATION';
+    const statementHash = `sha256:${crypto.createHash('sha256').update(req.statement.trim(), 'utf8').digest('hex')}`;
+    const podId = `POD-${req.id}-${newResolution}-${String(currentRev).padStart(3, '0')}`;
+
+    const pod = createPODecision({
+      id: podId,
+      statement: `${newResolution} requirement ${req.id}`,
+      status: 'APPROVED',
+      provenance: 'product-owner',
+      decisionType,
+      decisionData: {
+        requirementId: req.id,
+        requirementFingerprint: statementHash,
+        statement: req.statement.trim(),
+        origin: req.origin,
+        previousResolution: req.resolutionState,
+        newResolution,
+      },
+      affectedRequirements: [req.id],
+    });
+    pods.push(pod);
+
+    const idx = nextRequirements.findIndex((r) => r.id === req.id);
+    nextRequirements[idx] = {
+      ...req,
+      resolutionState: newResolution,
+      confirmedBy: 'PRODUCT_OWNER',
+      linkedPodId: podId,
+      confirmationDecision: {
+        previousResolution: req.resolutionState,
+        resolutionState: newResolution,
+        origin: req.origin,
+        confirmedBy: 'PRODUCT_OWNER',
+        decisionId: podId,
+        decidedAt: now,
+      },
+      updatedAt: now,
+    };
+  }
+
+  if (errors.length > 0) {
+    return {
+      status: 'ABORTED',
+      errors,
+      proposedDisc: null,
+      pods: [],
+    };
+  }
+
+  const proposedDisc = {
+    ...state,
+    requirements: nextRequirements,
+    revision: currentRev,
+  };
+
+  try {
+    validateDiscoveryStateStructure(proposedDisc);
+  } catch (err) {
+    return {
+      status: 'ABORTED',
+      errors: [err.message],
+      proposedDisc: null,
+      pods: [],
+    };
+  }
+
+  return {
+    status: 'PREPARED',
+    errors: [],
+    proposedDisc,
+    pods,
+  };
+}
+
+export function batchCommitRequirementConfirmation(rootDir = process.cwd(), { proposedDisc, pods }) {
+  const journalPath = getDiscoveryJournalPath(rootDir);
+  const dir = getDiscoveryDir(rootDir);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  // Prevalidate authority graph in memory before writing anything
+  validateDiscoveryAuthority(rootDir, proposedDisc, pods);
+
+  // Write journal as PREPARED
+  const journalData = {
+    status: 'PREPARED',
+    podIds: pods.map((p) => p.id),
+    targetRevision: proposedDisc.revision,
+    timestamp: new Date().toISOString(),
+  };
+  fs.writeFileSync(journalPath, JSON.stringify(journalData, null, 2), 'utf8');
+
+  try {
+    // Write all PODs
+    for (const pod of pods) {
+      persistPODecision(pod, rootDir);
+    }
+  } catch (podErr) {
+    // Write journal as RECOVERY_REQUIRED
+    journalData.status = 'RECOVERY_REQUIRED';
+    journalData.error = `Failed writing PODs: ${podErr.message}`;
+    fs.writeFileSync(journalPath, JSON.stringify(journalData, null, 2), 'utf8');
+    throw podErr;
+  }
+
+  try {
+    // Write discovery state
+    persistDiscoveryState(proposedDisc, rootDir);
+  } catch (discErr) {
+    journalData.status = 'RECOVERY_REQUIRED';
+    journalData.error = `Failed writing discovery state after PODs persisted: ${discErr.message}`;
+    fs.writeFileSync(journalPath, JSON.stringify(journalData, null, 2), 'utf8');
+    throw discErr;
+  }
+
+  // Success: remove or mark COMMITTED
+  if (fs.existsSync(journalPath)) {
+    try {
+      fs.unlinkSync(journalPath);
+    } catch (_) {}
+  }
+
+  return { status: 'COMMITTED', revision: proposedDisc.revision };
+}
+
+export function batchPrepareScopeClassification(state, scopeProposal, confirmedBy) {
+  if (confirmedBy !== 'PRODUCT_OWNER') {
+    return {
+      status: 'ABORTED',
+      errors: ['Explicit confirmation by PRODUCT_OWNER required for scope classification'],
+      proposedDisc: null,
+      pods: [],
+    };
+  }
+
+  const activeReqs = state.requirements.filter((r) => r.resolutionState !== 'SUPERSEDED' && r.resolutionState !== 'REJECTED');
+  const errors = [];
+  const pods = [];
+  const now = new Date().toISOString();
+  const nextRequirements = [...state.requirements];
+  let currentRev = (state.revision || 0) + 1;
+
+  for (const req of activeReqs) {
+    const desiredScope = scopeProposal[req.id] || scopeProposal[req.id.toUpperCase()];
+    if (!desiredScope) {
+      errors.push(`Missing scope disposition in proposal for requirement ${req.id}`);
+      continue;
+    }
+    if (!SCOPE_DISPOSITIONS.includes(desiredScope)) {
+      errors.push(`Invalid scope disposition ${desiredScope} for requirement ${req.id}`);
+      continue;
+    }
+
+    const oldScope = req.scopeDisposition || 'UNCLASSIFIED';
+    const statementHash = `sha256:${crypto.createHash('sha256').update(req.statement.trim(), 'utf8').digest('hex')}`;
+    const podId = `POD-${req.id}-SCOPE-${String(currentRev).padStart(3, '0')}`;
+
+    const pod = createPODecision({
+      id: podId,
+      statement: `Scope classified as ${desiredScope} for ${req.id}`,
+      status: 'APPROVED',
+      provenance: 'product-owner',
+      decisionType: 'REQUIREMENT_SCOPE',
+      decisionData: {
+        requirementId: req.id,
+        requirementFingerprint: statementHash,
+        statement: req.statement.trim(),
+        previousScope: oldScope,
+        newScope: desiredScope,
+      },
+      affectedRequirements: [req.id],
+    });
+    pods.push(pod);
+
+    const idx = nextRequirements.findIndex((r) => r.id === req.id);
+    nextRequirements[idx] = {
+      ...req,
+      scopeDisposition: desiredScope,
+      scopeDecision: {
+        previousDisposition: oldScope,
+        disposition: desiredScope,
+        confirmedBy: 'PRODUCT_OWNER',
+        decisionId: podId,
+        decidedAt: now,
+      },
+      linkedPodId: podId,
+      updatedAt: now,
+    };
+  }
+
+  if (errors.length > 0) {
+    return {
+      status: 'ABORTED',
+      errors,
+      proposedDisc: null,
+      pods: [],
+    };
+  }
+
+  const proposedDisc = {
+    ...state,
+    requirements: nextRequirements,
+    revision: currentRev,
+  };
+
+  try {
+    validateDiscoveryStateStructure(proposedDisc);
+  } catch (err) {
+    return {
+      status: 'ABORTED',
+      errors: [err.message],
+      proposedDisc: null,
+      pods: [],
+    };
+  }
+
+  return {
+    status: 'PREPARED',
+    errors: [],
+    proposedDisc,
+    pods,
+  };
+}
+
+export function batchCommitScopeClassification(rootDir = process.cwd(), { proposedDisc, pods }) {
+  return batchCommitRequirementConfirmation(rootDir, { proposedDisc, pods });
+}
+

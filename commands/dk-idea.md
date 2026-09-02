@@ -129,13 +129,13 @@ After discovery questions are sufficiently answered:
 
 ```bash
 # Authoritative requirement confirmation (creates immutable REQUIREMENT_CONFIRMATION POD)
-node scripts/orchestration.mjs --operation=idea-confirm-candidate --input-json='{"id":"IDEA-REQ-001","confirmedBy":"PRODUCT_OWNER"}'
+node scripts/orchestration.mjs --operation=idea-confirm-candidate --input-json='{"id":"IDEA-REQ-001","confirmedBy":"PRODUCT_OWNER","expectedInteractionFingerprint":"<PENDING_FINGERPRINT>"}'
 
 # Authoritative research adoption (creates immutable REQUIREMENT_ADOPTION POD)
-node scripts/orchestration.mjs --operation=idea-adopt-candidate --input-json='{"id":"IDEA-REQ-003","confirmedBy":"PRODUCT_OWNER"}'
+node scripts/orchestration.mjs --operation=idea-adopt-candidate --input-json='{"id":"IDEA-REQ-003","confirmedBy":"PRODUCT_OWNER","expectedInteractionFingerprint":"<PENDING_FINGERPRINT>"}'
 
 # Authoritative candidate rejection (creates immutable REQUIREMENT_REJECTION POD)
-node scripts/orchestration.mjs --operation=idea-reject-candidate --input-json='{"id":"IDEA-REQ-004","confirmedBy":"PRODUCT_OWNER"}'
+node scripts/orchestration.mjs --operation=idea-reject-candidate --input-json='{"id":"IDEA-REQ-004","confirmedBy":"PRODUCT_OWNER","expectedInteractionFingerprint":"<PENDING_FINGERPRINT>"}'
 ```
 
 #### Modifying Candidate Statements or Questions (Deterministic Path)
@@ -144,10 +144,10 @@ If the Product Owner chooses option `2. Modify statements` (or requests alterati
 2. Execute explicit supersession via:
    ```bash
    # For requirements:
-   node scripts/orchestration.mjs --operation=idea-supersede-candidate --input-json='{"oldId":"IDEA-REQ-001","newCandidate":{"id":"IDEA-REQ-005","statement":"Modified statement","origin":"USER_STATED","confirmedBy":"PRODUCT_OWNER"}}'
+   node scripts/orchestration.mjs --operation=idea-supersede-candidate --input-json='{"oldId":"IDEA-REQ-001","newCandidate":{"id":"IDEA-REQ-005","statement":"Modified statement","origin":"USER_STATED","confirmedBy":"PRODUCT_OWNER"},"expectedInteractionFingerprint":"<PENDING_FINGERPRINT>"}'
    
    # For questions:
-   node scripts/orchestration.mjs --operation=idea-supersede-question --input-json='{"oldId":"IDEA-Q-001","newQuestion":{"id":"IDEA-Q-003","question":"Modified question text","materiality":"MATERIAL","confirmedBy":"PRODUCT_OWNER"}}'
+   node scripts/orchestration.mjs --operation=idea-supersede-question --input-json='{"oldId":"IDEA-Q-001","newQuestion":{"id":"IDEA-Q-003","question":"Modified question text","materiality":"MATERIAL","confirmedBy":"PRODUCT_OWNER"},"expectedInteractionFingerprint":"<PENDING_FINGERPRINT>"}'
    ```
 3. The replacement candidate/question is created in state `UNRESOLVED` with no `confirmedBy` or confirmation POD.
 4. Return control to the user to confirm the replacement candidates under the normal candidate confirmation protocol before proceeding.
@@ -168,7 +168,7 @@ Categorise every discovered candidate requirement into a proposed scope classifi
 Present this scope proposal table to the user and ask for explicit Product Owner confirmation in a dedicated turn.
 ONLY after receiving explicit user confirmation, execute the deterministic scope classification operation for each confirmed candidate requirement:
 ```bash
-node scripts/orchestration.mjs --operation=idea-classify-scope --input-json='{"id":"IDEA-REQ-001","scopeDisposition":"MUST","confirmedBy":"PRODUCT_OWNER"}'
+node scripts/orchestration.mjs --operation=idea-classify-scope --input-json='{"scopeMapping":{"IDEA-REQ-001":"MUST"},"confirmedBy":"PRODUCT_OWNER","expectedInteractionFingerprint":"<PENDING_FINGERPRINT>"}'
 ```
 
 Evaluate discovery readiness before writing the brief:
@@ -205,7 +205,7 @@ node scripts/orchestration.mjs --operation=idea-state
 When `READY_FOR_APPROVAL`, present the canonical Idea Brief to the user and request explicit Product Owner approval.
 Only after the user explicitly approves, record the approval:
 ```bash
-node scripts/orchestration.mjs --operation=idea-approve --input-json='{"approvingAuthority":"PRODUCT_OWNER"}'
+node scripts/orchestration.mjs --operation=idea-approve --input-json='{"approvingAuthority":"PRODUCT_OWNER","expectedInteractionFingerprint":"<PENDING_FINGERPRINT>"}'
 ```
 Re-run `node scripts/orchestration.mjs --operation=idea-state` to verify transition to `APPROVED`. Only an `APPROVED` Idea Brief allows progressing to `/dk-spec`.
 

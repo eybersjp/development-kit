@@ -135,7 +135,34 @@ export * from './plan-validator.mjs';
 export * from './authority-graph.mjs';
 export * from './po-decisions.mjs';
 export * from './idea-schema.mjs';
-export * from './idea-discovery.mjs';
-export * from './idea-state.mjs';
+export {
+  DISCOVERY_SCHEMA_VERSION,
+  REQUIREMENT_ORIGINS,
+  RESOLUTION_STATES,
+  LEGAL_REQUIREMENT_TRANSITIONS,
+  isValidRequirementTransition,
+  QUESTION_RESOLUTIONS,
+  LEGAL_QUESTION_TRANSITIONS,
+  isValidQuestionTransition,
+  MATERIALITY_LEVELS,
+  SCOPE_DISPOSITIONS,
+  DiscoveryStateError,
+  computeDiscoveryFingerprint,
+  validateDiscoveryStateStructure,
+  validateDiscoveryAuthority,
+  loadDiscoveryState,
+  recordRequirementCandidate,
+  recordOpenQuestion,
+  evaluateDiscoveryReadiness,
+} from './idea-discovery.mjs';
+export {
+  IDEA_STAGE_STATES,
+  IdeaStateError,
+  computeIdeaStageState,
+  computeEffectiveApprovalStatus,
+  loadApprovalsHistory,
+  persistApprovalRecord,
+} from './idea-state.mjs';
 export * from './idea-workflow.mjs';
+export * from './idea-consumptions.mjs';
 export * from '../artifacts/artifact-registry.mjs';

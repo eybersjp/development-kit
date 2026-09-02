@@ -14,17 +14,29 @@ import {
   computeDiscoveryFingerprint,
   confirmRequirementCandidate,
   adoptRequirementCandidate,
+  rejectRequirementCandidate,
   supersedeRequirementCandidate,
   resolveOpenQuestion,
+  supersedeOpenQuestion,
   classifyRequirementScope,
+  batchPrepareRequirementConfirmation,
+  batchCommitRequirementConfirmation,
+  batchPrepareScopeClassification,
+  batchCommitScopeClassification,
 } from './idea-discovery.mjs';
 import { computeIdeaStageState, approveCurrentIdeaBrief } from './idea-state.mjs';
+import {
+  appendConsumptionReceipt,
+  findMatchingReceipt,
+  loadConsumptions,
+} from './idea-consumptions.mjs';
 
 export const IDEA_WORKFLOW_SCHEMA_VERSION = '1.0.0';
 
 export const IDEA_WORKFLOW_PHASES = Object.freeze([
   'INITIAL_DISCOVERY',
   'REQUIREMENTS_INTERVIEW',
+  'DESIGN_APPLICABILITY_CHECK',
   'DESIGN_SYSTEM_SETUP',
   'IDEA_CHALLENGE',
   'REQUIREMENT_CONFIRMATION',
@@ -36,6 +48,7 @@ export const IDEA_WORKFLOW_PHASES = Object.freeze([
 
 export const PENDING_INTERACTION_TYPES = Object.freeze([
   'DISCOVERY_QUESTION',
+  'DESIGN_APPLICABILITY',
   'DESIGN_SYSTEM_SETUP',
   'IDEA_CHALLENGE',
   'REQUIREMENT_CONFIRMATION',
@@ -53,8 +66,9 @@ export const INTERACTION_STATUSES = Object.freeze([
 ]);
 
 export const LEGAL_WORKFLOW_TRANSITIONS = Object.freeze({
-  INITIAL_DISCOVERY: Object.freeze(['REQUIREMENTS_INTERVIEW', 'DESIGN_SYSTEM_SETUP', 'IDEA_CHALLENGE']),
-  REQUIREMENTS_INTERVIEW: Object.freeze(['REQUIREMENTS_INTERVIEW', 'DESIGN_SYSTEM_SETUP', 'IDEA_CHALLENGE']),
+  INITIAL_DISCOVERY: Object.freeze(['REQUIREMENTS_INTERVIEW', 'DESIGN_APPLICABILITY_CHECK', 'DESIGN_SYSTEM_SETUP', 'IDEA_CHALLENGE']),
+  REQUIREMENTS_INTERVIEW: Object.freeze(['REQUIREMENTS_INTERVIEW', 'DESIGN_APPLICABILITY_CHECK', 'DESIGN_SYSTEM_SETUP', 'IDEA_CHALLENGE']),
+  DESIGN_APPLICABILITY_CHECK: Object.freeze(['DESIGN_SYSTEM_SETUP', 'IDEA_CHALLENGE']),
   DESIGN_SYSTEM_SETUP: Object.freeze(['IDEA_CHALLENGE']),
   IDEA_CHALLENGE: Object.freeze(['REQUIREMENT_CONFIRMATION']),
   REQUIREMENT_CONFIRMATION: Object.freeze(['REQUIREMENT_CONFIRMATION', 'SCOPE_CONFIRMATION']),
@@ -194,7 +208,6 @@ export const VALID_DESIGN_SYSTEM_DISPOSITIONS = Object.freeze([
   'DERIVE_EXISTING_APP',
   'NEW_DIRECTION',
   'DEFERRED',
-  'NOT_REQUIRED',
 ]);
 
 export function validateDesignSystemStateStructure(data) {
@@ -210,6 +223,31 @@ export function validateDesignSystemStateStructure(data) {
   if (data.disposition !== null && data.disposition !== undefined && !VALID_DESIGN_SYSTEM_DISPOSITIONS.includes(data.disposition)) {
     throw new IdeaWorkflowError(`Invalid design-system-state disposition: ${data.disposition}`, 'DK_DESIGN_STATE_CORRUPT');
   }
+  if (data.setupDisposition !== null && data.setupDisposition !== undefined && !VALID_DESIGN_SYSTEM_DISPOSITIONS.includes(data.setupDisposition)) {
+    throw new IdeaWorkflowError(`Invalid design-system-state setupDisposition: ${data.setupDisposition}`, 'DK_DESIGN_STATE_CORRUPT');
+  }
+
+  // Candidate 20: Consistency checks
+  if (data.confirmedBy === 'AI' || data.applicabilityConfirmedBy === 'AI' || data.setupDecisionAuthority === 'AI') {
+    throw new IdeaWorkflowError('Design authority cannot be confirmed by AI', 'DK_DESIGN_STATE_CORRUPT');
+  }
+
+  if (data.applicable === false) {
+    if (data.applicabilityConfirmedBy !== 'PRODUCT_OWNER') {
+      throw new IdeaWorkflowError("applicable=false requires applicabilityConfirmedBy = 'PRODUCT_OWNER'", 'DK_DESIGN_STATE_CORRUPT');
+    }
+  }
+
+  if (data.status === 'not_required') {
+    if (data.applicable !== false) {
+      throw new IdeaWorkflowError("status='not_required' requires applicable=false", 'DK_DESIGN_STATE_CORRUPT');
+    }
+  }
+
+  if (data.applicable === true && data.status === 'not_required') {
+    throw new IdeaWorkflowError("Contradictory state: applicable=true but status='not_required'", 'DK_DESIGN_STATE_CORRUPT');
+  }
+
   if (data.updatedAt && isNaN(Date.parse(data.updatedAt))) {
     throw new IdeaWorkflowError(`Invalid updatedAt in design-system-state.json: ${data.updatedAt}`, 'DK_DESIGN_STATE_CORRUPT');
   }
@@ -238,14 +276,23 @@ export function persistDesignSystemState(rootDir = process.cwd(), stateData = {}
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
+
   const payload = {
     schemaVersion: 1,
     status: stateData.status || 'unconfigured',
     disposition: stateData.disposition || null,
     confirmedBy: stateData.confirmedBy || null,
+    applicable: stateData.applicable !== undefined ? stateData.applicable : null,
+    applicabilityConfirmedBy: stateData.applicabilityConfirmedBy || null,
+    applicabilityDecisionId: stateData.applicabilityDecisionId || null,
+    applicabilityFingerprint: stateData.applicabilityFingerprint || null,
+    setupDisposition: stateData.setupDisposition || null,
+    setupDecisionAuthority: stateData.setupDecisionAuthority || null,
+    setupAnsweredAt: stateData.setupAnsweredAt || null,
     details: stateData.details || null,
     updatedAt: new Date().toISOString(),
   };
+
   validateDesignSystemStateStructure(payload);
   const tempPath = `${filePath}.tmp.${Date.now()}.${process.pid}`;
   fs.writeFileSync(tempPath, JSON.stringify(payload, null, 2) + '\n', 'utf8');
@@ -343,17 +390,36 @@ export function validateWorkflowConsistency(rootDir = process.cwd(), { ideaStage
   }
 
   if (cp) {
-    if (cp.discoveryRevision !== disc.revision) {
-      throw new IdeaWorkflowError(
-        `Workflow discoveryRevision (${cp.discoveryRevision}) does not match discovery.json revision (${disc.revision})`,
-        'DK_WORKFLOW_DISCOVERY_BINDING_MISMATCH'
-      );
-    }
-    if (cp.discoveryFingerprint !== disc.fingerprint) {
-      throw new IdeaWorkflowError(
-        `Workflow discoveryFingerprint (${cp.discoveryFingerprint}) does not match discovery.json fingerprint (${disc.fingerprint})`,
-        'DK_WORKFLOW_DISCOVERY_BINDING_MISMATCH'
-      );
+    if (cp.discoveryRevision !== disc.revision || cp.discoveryFingerprint !== disc.fingerprint) {
+      // Candidate 20: Crash recovery reconciliation using durable consumption receipts
+      let crashReconciled = false;
+      try {
+        const matchingReceipt = findMatchingReceipt(rootDir, {
+          interactionFingerprint: cp.pendingInteraction?.fingerprint,
+          workflowRevisionBefore: cp.workflowRevision,
+          preDiscoveryRevision: cp.discoveryRevision,
+          preDiscoveryFingerprint: cp.discoveryFingerprint,
+        });
+
+        if (matchingReceipt) {
+          if (
+            matchingReceipt.postDiscoveryRevision === disc.revision &&
+            matchingReceipt.postDiscoveryFingerprint === disc.fingerprint &&
+            matchingReceipt.authority === 'PRODUCT_OWNER'
+          ) {
+            crashReconciled = true;
+          }
+        }
+      } catch (_) {
+        // Any ambiguous or corrupted receipt fails closed below
+      }
+
+      if (!crashReconciled) {
+        throw new IdeaWorkflowError(
+          `Workflow discovery binding (${cp.discoveryRevision}:${cp.discoveryFingerprint}) does not match discovery.json (${disc.revision}:${disc.fingerprint})`,
+          'DK_WORKFLOW_DISCOVERY_BINDING_MISMATCH'
+        );
+      }
     }
 
     if (stage.state === 'NOT_STARTED') {
@@ -379,7 +445,7 @@ export function validateWorkflowConsistency(rootDir = process.cwd(), { ideaStage
     }
 
     if (stage.state === 'READY_FOR_APPROVAL') {
-      if (['INITIAL_DISCOVERY', 'REQUIREMENTS_INTERVIEW', 'DESIGN_SYSTEM_SETUP', 'IDEA_CHALLENGE'].includes(cp.currentPhase)) {
+      if (['INITIAL_DISCOVERY', 'REQUIREMENTS_INTERVIEW', 'DESIGN_APPLICABILITY_CHECK', 'DESIGN_SYSTEM_SETUP', 'IDEA_CHALLENGE'].includes(cp.currentPhase)) {
         throw new IdeaWorkflowError(
           `Idea stage is READY_FOR_APPROVAL but workflow cursor is in early phase ${cp.currentPhase}`,
           'DK_WORKFLOW_CONSISTENCY_ERROR'
@@ -420,7 +486,7 @@ export function validateWorkflowConsistency(rootDir = process.cwd(), { ideaStage
 
     if (cp.currentPhase === 'DESIGN_SYSTEM_SETUP' && cp.status === 'PENDING') {
       const designState = loadDesignSystemState(rootDir);
-      if (designState && designState.status && designState.status !== 'unconfigured') {
+      if (designState && (designState.setupDisposition != null || (designState.status && designState.status !== 'unconfigured'))) {
         throw new IdeaWorkflowError(
           `Workflow cursor is DESIGN_SYSTEM_SETUP but canonical Design Authority is already resolved (${designState.status})`,
           'DK_WORKFLOW_CONSISTENCY_ERROR'
@@ -444,7 +510,13 @@ export function validateWorkflowConsistency(rootDir = process.cwd(), { ideaStage
 
 export function isDesignAuthorityApplicable(rootDir = process.cwd(), disc = null) {
   const canonical = loadDesignSystemState(rootDir);
-  if (canonical && canonical.status === 'not_required') {
+  if (canonical && canonical.applicable === false && canonical.applicabilityConfirmedBy === 'PRODUCT_OWNER') {
+    return false;
+  }
+  if (canonical && canonical.applicable === true) {
+    return true;
+  }
+  if (canonical && canonical.status === 'not_required' && canonical.applicable === false) {
     return false;
   }
   if (canonical && (canonical.status === 'deferred' || canonical.status === 'approved' || canonical.status === 'references_requested')) {
@@ -494,7 +566,7 @@ export function resolveIdeaWorkflowState(rootDir = process.cwd(), { bypassCheckp
       let checkpointIsStale = false;
       if (cp.currentPhase === 'DESIGN_SYSTEM_SETUP') {
         const designState = loadDesignSystemState(rootDir);
-        if (designState && designState.status !== 'unconfigured') {
+        if (designState && (designState.setupDisposition != null || designState.status !== 'unconfigured')) {
           checkpointIsStale = true;
         }
       }
@@ -551,7 +623,7 @@ function determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp) {
 
   const isApplicable = isDesignAuthorityApplicable(rootDir, disc);
   const canonicalDesign = loadDesignSystemState(rootDir);
-  const designSetupDone = canonicalDesign && canonicalDesign.status && canonicalDesign.status !== 'unconfigured';
+  const designSetupDone = canonicalDesign && (canonicalDesign.setupDisposition != null || (canonicalDesign.status && canonicalDesign.status !== 'unconfigured'));
 
   if (isApplicable && !designSetupDone && (!cp || cp.currentPhase === 'INITIAL_DISCOVERY' || cp.currentPhase === 'REQUIREMENTS_INTERVIEW')) {
     const pi = {
@@ -639,6 +711,14 @@ function determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp) {
     (r) => r.resolutionState !== 'SUPERSEDED' && r.resolutionState !== 'REJECTED' && (!r.scopeDisposition || r.scopeDisposition === 'UNCLASSIFIED')
   );
   if (unclassifiedRequirements.length > 0) {
+    const activeCandidates = disc.requirements.filter((r) => r.resolutionState !== 'SUPERSEDED' && r.resolutionState !== 'REJECTED');
+    const scopeProposal = {};
+    for (const req of activeCandidates) {
+      scopeProposal[req.id] = (req.scopeDisposition && req.scopeDisposition !== 'UNCLASSIFIED')
+        ? req.scopeDisposition
+        : (req.origin === 'RESEARCH_DERIVED' ? 'SHOULD' : 'MUST');
+    }
+
     const pi = {
       type: 'SCOPE_CONFIRMATION',
       id: 'INTERACTION-SCOPE-CONFIRMATION',
@@ -649,7 +729,8 @@ function determineNextInteractionFromDiscovery(rootDir, ideaStage, disc, cp) {
         '3. Custom write-in',
       ],
       metadata: {
-        candidates: disc.requirements.filter((r) => r.resolutionState !== 'SUPERSEDED' && r.resolutionState !== 'REJECTED'),
+        candidates: activeCandidates,
+        scopeProposal,
       },
     };
     pi.fingerprint = computeInteractionFingerprint(pi);
@@ -784,10 +865,17 @@ export function validatePendingInteractionForConsumption(rootDir = process.cwd()
     );
   }
 
-  if (expectedFingerprint && expectedFingerprint !== cp.pendingInteraction.fingerprint) {
+  if (!expectedFingerprint) {
+    throw new IdeaWorkflowError(
+      'Missing expectedInteractionFingerprint: Product Owner responses must bind exact presented interaction',
+      'DK_MISSING_INTERACTION_FINGERPRINT'
+    );
+  }
+
+  if (expectedFingerprint !== cp.pendingInteraction.fingerprint) {
     throw new IdeaWorkflowError(
       `Caller expected interaction fingerprint mismatch (${expectedFingerprint} !== ${cp.pendingInteraction.fingerprint})`,
-      'DK_INTERACTION_FINGERPRINT_MISMATCH'
+      'DK_STALE_INTERACTION_RESPONSE'
     );
   }
 
@@ -815,7 +903,8 @@ export function recordDesignAuthoritySetup(rootDir = process.cwd(), {
     throw new IdeaWorkflowError("Explicit confirmedBy = 'PRODUCT_OWNER' required for design setup", 'DK_UNAUTHORIZED_DESIGN_SETUP');
   }
 
-  validatePendingInteractionForConsumption(rootDir, 'DESIGN_SYSTEM_SETUP', 'INTERACTION-DESIGN-SETUP', expectedInteractionFingerprint);
+  const cp = validatePendingInteractionForConsumption(rootDir, 'DESIGN_SYSTEM_SETUP', 'INTERACTION-DESIGN-SETUP', expectedInteractionFingerprint);
+  const preDisc = loadDiscoveryState(rootDir);
 
   let canonicalStatus = 'unconfigured';
   if (disposition === 'DEFERRED') {
@@ -823,20 +912,38 @@ export function recordDesignAuthoritySetup(rootDir = process.cwd(), {
   } else if (disposition === 'ATTACH_REFERENCES') {
     canonicalStatus = 'references_requested';
   } else if (disposition === 'EXISTING_DESIGN_MD') {
-    canonicalStatus = 'draft';
+    // Truthful semantics: do not claim draft unless design.md actually exists
+    canonicalStatus = 'unconfigured';
   } else if (disposition === 'DERIVE_EXISTING_APP') {
-    canonicalStatus = 'references_received';
+    // Truthful semantics: do not claim references_received unless evidence ingested
+    canonicalStatus = 'unconfigured';
   } else if (disposition === 'NEW_DIRECTION') {
     canonicalStatus = 'unconfigured';
-  } else if (disposition === 'NOT_REQUIRED') {
-    canonicalStatus = 'not_required';
   }
 
   persistDesignSystemState(rootDir, {
     status: canonicalStatus,
     disposition,
     confirmedBy,
+    setupDisposition: disposition,
+    setupDecisionAuthority: 'PRODUCT_OWNER',
+    setupAnsweredAt: new Date().toISOString(),
     details: details || null,
+  });
+
+  const postDisc = loadDiscoveryState(rootDir);
+  appendConsumptionReceipt(rootDir, {
+    interactionType: 'DESIGN_SYSTEM_SETUP',
+    interactionId: 'INTERACTION-DESIGN-SETUP',
+    interactionFingerprint: cp.pendingInteraction.fingerprint,
+    workflowRevisionBefore: cp.workflowRevision,
+    preDiscoveryRevision: preDisc.revision,
+    preDiscoveryFingerprint: preDisc.fingerprint,
+    postDiscoveryRevision: postDisc.revision,
+    postDiscoveryFingerprint: postDisc.fingerprint,
+    authority: 'PRODUCT_OWNER',
+    resultingPodIds: [],
+    resultingArtifactApprovalId: null,
   });
 
   return presentCurrentInteraction(rootDir);
@@ -851,9 +958,24 @@ export function recordIdeaChallengeResponse(rootDir = process.cwd(), {
     throw new IdeaWorkflowError("Explicit confirmedBy = 'PRODUCT_OWNER' required for idea challenge", 'DK_UNAUTHORIZED_IDEA_CHALLENGE');
   }
 
-  validatePendingInteractionForConsumption(rootDir, 'IDEA_CHALLENGE', 'INTERACTION-IDEA-CHALLENGE', expectedInteractionFingerprint);
+  const cp = validatePendingInteractionForConsumption(rootDir, 'IDEA_CHALLENGE', 'INTERACTION-IDEA-CHALLENGE', expectedInteractionFingerprint);
+  const preDisc = loadDiscoveryState(rootDir);
+  const postDisc = preDisc;
 
-  const disc = loadDiscoveryState(rootDir);
+  appendConsumptionReceipt(rootDir, {
+    interactionType: 'IDEA_CHALLENGE',
+    interactionId: 'INTERACTION-IDEA-CHALLENGE',
+    interactionFingerprint: cp.pendingInteraction.fingerprint,
+    workflowRevisionBefore: cp.workflowRevision,
+    preDiscoveryRevision: preDisc.revision,
+    preDiscoveryFingerprint: preDisc.fingerprint,
+    postDiscoveryRevision: postDisc.revision,
+    postDiscoveryFingerprint: postDisc.fingerprint,
+    authority: 'PRODUCT_OWNER',
+    resultingPodIds: [],
+    resultingArtifactApprovalId: null,
+  });
+
   const pi = {
     type: 'REQUIREMENT_CONFIRMATION',
     id: 'INTERACTION-REQ-CONFIRMATION',
@@ -864,7 +986,7 @@ export function recordIdeaChallengeResponse(rootDir = process.cwd(), {
       '3. Custom write-in',
     ],
     metadata: {
-      candidates: disc.requirements.filter((r) => r.resolutionState !== 'SUPERSEDED' && r.resolutionState !== 'REJECTED'),
+      candidates: postDisc.requirements.filter((r) => r.resolutionState !== 'SUPERSEDED' && r.resolutionState !== 'REJECTED'),
     },
   };
   pi.fingerprint = computeInteractionFingerprint(pi);
@@ -891,14 +1013,32 @@ export function consumeDiscoveryQuestionResponse(rootDir = process.cwd(), {
     throw new IdeaWorkflowError("Explicit resolvedBy = 'PRODUCT_OWNER' required to resolve discovery question", 'DK_UNAUTHORIZED_RESOLUTION');
   }
 
-  validatePendingInteractionForConsumption(rootDir, 'DISCOVERY_QUESTION', questionId, expectedInteractionFingerprint);
+  const cp = validatePendingInteractionForConsumption(rootDir, 'DISCOVERY_QUESTION', questionId, expectedInteractionFingerprint);
+  const preDisc = loadDiscoveryState(rootDir);
 
-  resolveOpenQuestion(rootDir, {
+  const updatedQ = resolveOpenQuestion(rootDir, {
     id: questionId,
     resolution,
     resolvedBy,
     deferredTarget,
     notes,
+  });
+
+  const postDisc = loadDiscoveryState(rootDir);
+  const podId = updatedQ?.resolutionDecision?.decisionId;
+
+  appendConsumptionReceipt(rootDir, {
+    interactionType: 'DISCOVERY_QUESTION',
+    interactionId: questionId,
+    interactionFingerprint: cp.pendingInteraction.fingerprint,
+    workflowRevisionBefore: cp.workflowRevision,
+    preDiscoveryRevision: preDisc.revision,
+    preDiscoveryFingerprint: preDisc.fingerprint,
+    postDiscoveryRevision: postDisc.revision,
+    postDiscoveryFingerprint: postDisc.fingerprint,
+    authority: 'PRODUCT_OWNER',
+    resultingPodIds: podId ? [podId] : [],
+    resultingArtifactApprovalId: null,
   });
 
   return presentCurrentInteraction(rootDir);
@@ -909,37 +1049,106 @@ export function consumeRequirementConfirmation(rootDir = process.cwd(), {
   confirmedBy,
   candidateIds = null,
   modifications = [],
+  allowAdoption = false,
   expectedInteractionFingerprint = null,
 } = {}) {
   if (!confirmedBy || confirmedBy !== 'PRODUCT_OWNER') {
     throw new IdeaWorkflowError("Explicit confirmedBy = 'PRODUCT_OWNER' required for requirement confirmation", 'DK_UNAUTHORIZED_CONFIRMATION');
   }
 
-  validatePendingInteractionForConsumption(rootDir, 'REQUIREMENT_CONFIRMATION', 'INTERACTION-REQ-CONFIRMATION', expectedInteractionFingerprint);
+  const cp = validatePendingInteractionForConsumption(rootDir, 'REQUIREMENT_CONFIRMATION', 'INTERACTION-REQ-CONFIRMATION', expectedInteractionFingerprint);
+  const preDisc = loadDiscoveryState(rootDir);
 
   if (action === 'MODIFY') {
     if (!Array.isArray(modifications) || modifications.length === 0) {
       throw new IdeaWorkflowError('action=MODIFY requires modifications array', 'DK_INVALID_MODIFICATION');
     }
+    const resultingPodIds = [];
     for (const mod of modifications) {
-      supersedeRequirementCandidate(rootDir, mod.oldId, mod.newCandidate);
+      const res = supersedeRequirementCandidate(rootDir, mod.oldId, mod.newCandidate);
+      if (res?.superseded?.supersessionDecision?.decisionId) {
+        resultingPodIds.push(res.superseded.supersessionDecision.decisionId);
+      }
     }
+    const postDisc = loadDiscoveryState(rootDir);
+    appendConsumptionReceipt(rootDir, {
+      interactionType: 'REQUIREMENT_CONFIRMATION',
+      interactionId: 'INTERACTION-REQ-CONFIRMATION',
+      interactionFingerprint: cp.pendingInteraction.fingerprint,
+      workflowRevisionBefore: cp.workflowRevision,
+      preDiscoveryRevision: preDisc.revision,
+      preDiscoveryFingerprint: preDisc.fingerprint,
+      postDiscoveryRevision: postDisc.revision,
+      postDiscoveryFingerprint: postDisc.fingerprint,
+      authority: 'PRODUCT_OWNER',
+      resultingPodIds,
+      resultingArtifactApprovalId: null,
+    });
     return presentCurrentInteraction(rootDir);
   }
 
-  const disc = loadDiscoveryState(rootDir);
-  const activeUnresolved = disc.requirements.filter((r) => r.resolutionState === 'UNRESOLVED');
-  const targetIds = candidateIds ? candidateIds.map(id => id.toUpperCase()) : activeUnresolved.map(r => r.id.toUpperCase());
-
-  for (const req of activeUnresolved) {
-    if (targetIds.includes(req.id.toUpperCase())) {
-      if (req.origin === 'RESEARCH_DERIVED') {
-        adoptRequirementCandidate(rootDir, { id: req.id, confirmedBy });
-      } else {
-        confirmRequirementCandidate(rootDir, { id: req.id, confirmedBy });
-      }
-    }
+  // Candidate 20: Staged Commit Atomic Group Confirmation
+  const prep = batchPrepareRequirementConfirmation(preDisc, confirmedBy, { allowAdoption });
+  if (prep.status !== 'PREPARED') {
+    throw new IdeaWorkflowError(
+      `Requirement confirmation aborted: ${prep.errors.join('; ')}`,
+      'DK_REQUIREMENT_CONFIRMATION_FAILED'
+    );
   }
+
+  batchCommitRequirementConfirmation(rootDir, prep);
+  const postDisc = loadDiscoveryState(rootDir);
+
+  appendConsumptionReceipt(rootDir, {
+    interactionType: 'REQUIREMENT_CONFIRMATION',
+    interactionId: 'INTERACTION-REQ-CONFIRMATION',
+    interactionFingerprint: cp.pendingInteraction.fingerprint,
+    workflowRevisionBefore: cp.workflowRevision,
+    preDiscoveryRevision: preDisc.revision,
+    preDiscoveryFingerprint: preDisc.fingerprint,
+    postDiscoveryRevision: postDisc.revision,
+    postDiscoveryFingerprint: postDisc.fingerprint,
+    authority: 'PRODUCT_OWNER',
+    resultingPodIds: prep.pods.map((p) => p.id),
+    resultingArtifactApprovalId: null,
+  });
+
+  return presentCurrentInteraction(rootDir);
+}
+
+export function consumeRequirementRejection(rootDir = process.cwd(), {
+  id,
+  confirmedBy,
+  reason = null,
+  expectedInteractionFingerprint = null,
+} = {}) {
+  if (!id) {
+    throw new IdeaWorkflowError('Requirement ID required for rejection', 'DK_INVALID_REQ_ID');
+  }
+  if (!confirmedBy || confirmedBy !== 'PRODUCT_OWNER') {
+    throw new IdeaWorkflowError("Explicit confirmedBy = 'PRODUCT_OWNER' required for requirement rejection", 'DK_UNAUTHORIZED_DEACTIVATION');
+  }
+
+  const cp = validatePendingInteractionForConsumption(rootDir, 'REQUIREMENT_CONFIRMATION', 'INTERACTION-REQ-CONFIRMATION', expectedInteractionFingerprint);
+  const preDisc = loadDiscoveryState(rootDir);
+
+  const updatedReq = rejectRequirementCandidate(rootDir, { id, confirmedBy, reason });
+  const postDisc = loadDiscoveryState(rootDir);
+  const podId = updatedReq?.deactivationDecision?.decisionId;
+
+  appendConsumptionReceipt(rootDir, {
+    interactionType: 'REQUIREMENT_CONFIRMATION',
+    interactionId: 'INTERACTION-REQ-CONFIRMATION',
+    interactionFingerprint: cp.pendingInteraction.fingerprint,
+    workflowRevisionBefore: cp.workflowRevision,
+    preDiscoveryRevision: preDisc.revision,
+    preDiscoveryFingerprint: preDisc.fingerprint,
+    postDiscoveryRevision: postDisc.revision,
+    postDiscoveryFingerprint: postDisc.fingerprint,
+    authority: 'PRODUCT_OWNER',
+    resultingPodIds: podId ? [podId] : [],
+    resultingArtifactApprovalId: null,
+  });
 
   return presentCurrentInteraction(rootDir);
 }
@@ -949,11 +1158,59 @@ export function consumeRequirementModification(rootDir = process.cwd(), {
   newCandidate,
   expectedInteractionFingerprint = null,
 } = {}) {
-  validatePendingInteractionForConsumption(rootDir, 'REQUIREMENT_CONFIRMATION', 'INTERACTION-REQ-CONFIRMATION', expectedInteractionFingerprint);
+  const cp = validatePendingInteractionForConsumption(rootDir, 'REQUIREMENT_CONFIRMATION', 'INTERACTION-REQ-CONFIRMATION', expectedInteractionFingerprint);
+  const preDisc = loadDiscoveryState(rootDir);
 
-  supersedeRequirementCandidate(rootDir, oldId, newCandidate);
+  const res = supersedeRequirementCandidate(rootDir, oldId, newCandidate);
+  const postDisc = loadDiscoveryState(rootDir);
+  const podId = res?.superseded?.supersessionDecision?.decisionId;
 
-  return presentCurrentInteraction(rootDir);
+  appendConsumptionReceipt(rootDir, {
+    interactionType: 'REQUIREMENT_CONFIRMATION',
+    interactionId: 'INTERACTION-REQ-CONFIRMATION',
+    interactionFingerprint: cp.pendingInteraction.fingerprint,
+    workflowRevisionBefore: cp.workflowRevision,
+    preDiscoveryRevision: preDisc.revision,
+    preDiscoveryFingerprint: preDisc.fingerprint,
+    postDiscoveryRevision: postDisc.revision,
+    postDiscoveryFingerprint: postDisc.fingerprint,
+    authority: 'PRODUCT_OWNER',
+    resultingPodIds: podId ? [podId] : [],
+    resultingArtifactApprovalId: null,
+  });
+
+  presentCurrentInteraction(rootDir);
+  return res;
+}
+
+export function consumeQuestionSupersession(rootDir = process.cwd(), {
+  oldId,
+  newQuestion,
+  expectedInteractionFingerprint = null,
+} = {}) {
+  const cp = validatePendingInteractionForConsumption(rootDir, 'DISCOVERY_QUESTION', oldId, expectedInteractionFingerprint);
+  const preDisc = loadDiscoveryState(rootDir);
+
+  const res = supersedeOpenQuestion(rootDir, oldId, newQuestion);
+  const postDisc = loadDiscoveryState(rootDir);
+  const podId = res?.superseded?.supersessionDecision?.decisionId;
+
+  appendConsumptionReceipt(rootDir, {
+    interactionType: 'DISCOVERY_QUESTION',
+    interactionId: oldId,
+    interactionFingerprint: cp.pendingInteraction.fingerprint,
+    workflowRevisionBefore: cp.workflowRevision,
+    preDiscoveryRevision: preDisc.revision,
+    preDiscoveryFingerprint: preDisc.fingerprint,
+    postDiscoveryRevision: postDisc.revision,
+    postDiscoveryFingerprint: postDisc.fingerprint,
+    authority: 'PRODUCT_OWNER',
+    resultingPodIds: podId ? [podId] : [],
+    resultingArtifactApprovalId: null,
+  });
+
+  presentCurrentInteraction(rootDir);
+  return res;
 }
 
 export function consumeScopeConfirmation(rootDir = process.cwd(), {
@@ -965,19 +1222,47 @@ export function consumeScopeConfirmation(rootDir = process.cwd(), {
     throw new IdeaWorkflowError("Explicit confirmedBy = 'PRODUCT_OWNER' required for scope confirmation", 'DK_UNAUTHORIZED_SCOPE_CLASSIFICATION');
   }
 
-  validatePendingInteractionForConsumption(rootDir, 'SCOPE_CONFIRMATION', 'INTERACTION-SCOPE-CONFIRMATION', expectedInteractionFingerprint);
+  const cp = validatePendingInteractionForConsumption(rootDir, 'SCOPE_CONFIRMATION', 'INTERACTION-SCOPE-CONFIRMATION', expectedInteractionFingerprint);
+  const preDisc = loadDiscoveryState(rootDir);
 
-  const disc = loadDiscoveryState(rootDir);
-  const activeReqs = disc.requirements.filter((r) => r.resolutionState !== 'SUPERSEDED' && r.resolutionState !== 'REJECTED');
-
-  for (const req of activeReqs) {
-    const desiredScope = scopeMapping[req.id] || scopeMapping[req.id.toUpperCase()] || req.scopeDisposition || 'MUST';
-    classifyRequirementScope(rootDir, {
-      id: req.id,
-      scopeDisposition: desiredScope,
-      confirmedBy,
-    });
+  // Candidate 20: Bind to exact persisted scopeProposal metadata
+  const expectedProposal = cp.pendingInteraction.metadata?.scopeProposal;
+  if (expectedProposal) {
+    for (const [reqId, expectedScope] of Object.entries(expectedProposal)) {
+      const providedScope = scopeMapping[reqId] || scopeMapping[reqId.toUpperCase()];
+      if (!providedScope || providedScope !== expectedScope) {
+        throw new IdeaWorkflowError(
+          `Scope proposal mismatch for ${reqId}: expected ${expectedScope}, provided ${providedScope || 'none'}`,
+          'DK_SCOPE_PROPOSAL_MISMATCH'
+        );
+      }
+    }
   }
+
+  const prep = batchPrepareScopeClassification(preDisc, scopeMapping, confirmedBy);
+  if (prep.status !== 'PREPARED') {
+    throw new IdeaWorkflowError(
+      `Scope classification aborted: ${prep.errors.join('; ')}`,
+      'DK_SCOPE_CLASSIFICATION_FAILED'
+    );
+  }
+
+  batchCommitScopeClassification(rootDir, prep);
+  const postDisc = loadDiscoveryState(rootDir);
+
+  appendConsumptionReceipt(rootDir, {
+    interactionType: 'SCOPE_CONFIRMATION',
+    interactionId: 'INTERACTION-SCOPE-CONFIRMATION',
+    interactionFingerprint: cp.pendingInteraction.fingerprint,
+    workflowRevisionBefore: cp.workflowRevision,
+    preDiscoveryRevision: preDisc.revision,
+    preDiscoveryFingerprint: preDisc.fingerprint,
+    postDiscoveryRevision: postDisc.revision,
+    postDiscoveryFingerprint: postDisc.fingerprint,
+    authority: 'PRODUCT_OWNER',
+    resultingPodIds: prep.pods.map((p) => p.id),
+    resultingArtifactApprovalId: null,
+  });
 
   return presentCurrentInteraction(rootDir);
 }
@@ -991,9 +1276,25 @@ export function consumeBriefApproval(rootDir = process.cwd(), {
     throw new IdeaWorkflowError("Explicit approvingAuthority = 'PRODUCT_OWNER' required for brief approval", 'DK_UNAUTHORIZED_APPROVAL');
   }
 
-  validatePendingInteractionForConsumption(rootDir, 'BRIEF_APPROVAL', 'INTERACTION-BRIEF-APPROVAL', expectedInteractionFingerprint);
+  const cp = validatePendingInteractionForConsumption(rootDir, 'BRIEF_APPROVAL', 'INTERACTION-BRIEF-APPROVAL', expectedInteractionFingerprint);
+  const preDisc = loadDiscoveryState(rootDir);
 
-  approveCurrentIdeaBrief(rootDir, { approvingAuthority, linkedPodIds });
+  const approval = approveCurrentIdeaBrief(rootDir, { approvingAuthority, linkedPodIds });
+  const postDisc = loadDiscoveryState(rootDir);
+
+  appendConsumptionReceipt(rootDir, {
+    interactionType: 'BRIEF_APPROVAL',
+    interactionId: 'INTERACTION-BRIEF-APPROVAL',
+    interactionFingerprint: cp.pendingInteraction.fingerprint,
+    workflowRevisionBefore: cp.workflowRevision,
+    preDiscoveryRevision: preDisc.revision,
+    preDiscoveryFingerprint: preDisc.fingerprint,
+    postDiscoveryRevision: postDisc.revision,
+    postDiscoveryFingerprint: postDisc.fingerprint,
+    authority: 'PRODUCT_OWNER',
+    resultingPodIds: Array.isArray(linkedPodIds) ? linkedPodIds : [],
+    resultingArtifactApprovalId: approval?.approvalId || null,
+  });
 
   return presentCurrentInteraction(rootDir);
 }

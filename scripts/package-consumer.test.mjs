@@ -143,32 +143,7 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
     assert.equal(orchParsed.success, true);
     assert.equal(orchParsed.result.id, 'IDEA-REQ-001');
 
-    // 8. Execute supersession for candidate via installed runner
-    const execSupReq = spawnSync(process.execPath, [
-      scriptPath,
-      'orchestration.mjs',
-      '--operation=idea-supersede-candidate',
-      '--input-json=' + JSON.stringify({
-        oldId: 'IDEA-REQ-001',
-        newCandidate: {
-          id: 'IDEA-REQ-002',
-          statement: 'Updated packaged distribution requirement candidate',
-          origin: 'USER_STATED',
-          confirmedBy: 'PRODUCT_OWNER',
-        },
-      }),
-    ], {
-      cwd: consumerDir,
-      encoding: 'utf8',
-      env: { ...process.env, NODE_PATH: '' },
-    });
-    assert.equal(execSupReq.status, 0, execSupReq.stderr || execSupReq.stdout);
-    const supReqParsed = JSON.parse(execSupReq.stdout);
-    assert.equal(supReqParsed.success, true);
-    assert.equal(supReqParsed.result.created.id, 'IDEA-REQ-002');
-    assert.equal(supReqParsed.result.created.resolutionState, 'UNRESOLVED');
-
-    // 9. Execute record and supersede for question via installed runner
+    // 8. Execute record and supersede for question initially during REQUIREMENTS_INTERVIEW
     const execQ = spawnSync(process.execPath, [
       scriptPath,
       'orchestration.mjs',
@@ -185,6 +160,22 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
     });
     assert.equal(execQ.status, 0, execQ.stderr || execQ.stdout);
 
+    // Present question interaction
+    spawnSync(process.execPath, [
+      scriptPath,
+      'orchestration.mjs',
+      '--operation=idea-present-interaction',
+    ], { cwd: consumerDir, encoding: 'utf8' });
+
+    let stateRes = spawnSync(process.execPath, [
+      scriptPath,
+      'orchestration.mjs',
+      '--operation=idea-workflow-state',
+    ], { cwd: consumerDir, encoding: 'utf8' });
+    let state = JSON.parse(stateRes.stdout).result;
+    assert.equal(state.pendingInteraction.type, 'DISCOVERY_QUESTION');
+    const qFp = state.pendingInteraction.fingerprint;
+
     const execSupQ = spawnSync(process.execPath, [
       scriptPath,
       'orchestration.mjs',
@@ -197,6 +188,7 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
           materiality: 'MATERIAL',
           confirmedBy: 'PRODUCT_OWNER',
         },
+        expectedInteractionFingerprint: qFp,
       }),
     ], {
       cwd: consumerDir,
@@ -208,6 +200,98 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
     assert.equal(supQParsed.success, true);
     assert.equal(supQParsed.result.created.id, 'IDEA-Q-002');
     assert.equal(supQParsed.result.created.resolution, 'UNRESOLVED');
+
+    // Resolve the question to proceed through workflow
+    stateRes = spawnSync(process.execPath, [
+      scriptPath,
+      'orchestration.mjs',
+      '--operation=idea-workflow-state',
+    ], { cwd: consumerDir, encoding: 'utf8' });
+    state = JSON.parse(stateRes.stdout).result;
+
+    spawnSync(process.execPath, [
+      scriptPath,
+      'orchestration.mjs',
+      '--operation=idea-resolve-question',
+      '--input-json=' + JSON.stringify({
+        questionId: 'IDEA-Q-002',
+        resolution: 'ANSWERED',
+        resolvedBy: 'PRODUCT_OWNER',
+        expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+      }),
+    ], { cwd: consumerDir, encoding: 'utf8' });
+
+    // 9. Setup Design Authority and Idea Challenge so workflow enters REQUIREMENT_CONFIRMATION
+    stateRes = spawnSync(process.execPath, [
+      scriptPath,
+      'orchestration.mjs',
+      '--operation=idea-workflow-state',
+    ], { cwd: consumerDir, encoding: 'utf8' });
+    state = JSON.parse(stateRes.stdout).result;
+
+    spawnSync(process.execPath, [
+      scriptPath,
+      'orchestration.mjs',
+      '--operation=idea-design-setup',
+      '--input-json=' + JSON.stringify({
+        disposition: 'DEFERRED',
+        confirmedBy: 'PRODUCT_OWNER',
+        expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+      }),
+    ], { cwd: consumerDir, encoding: 'utf8' });
+
+    stateRes = spawnSync(process.execPath, [
+      scriptPath,
+      'orchestration.mjs',
+      '--operation=idea-workflow-state',
+    ], { cwd: consumerDir, encoding: 'utf8' });
+    state = JSON.parse(stateRes.stdout).result;
+
+    spawnSync(process.execPath, [
+      scriptPath,
+      'orchestration.mjs',
+      '--operation=idea-challenge-response',
+      '--input-json=' + JSON.stringify({
+        response: 'Proceed',
+        confirmedBy: 'PRODUCT_OWNER',
+        expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+      }),
+    ], { cwd: consumerDir, encoding: 'utf8' });
+
+    stateRes = spawnSync(process.execPath, [
+      scriptPath,
+      'orchestration.mjs',
+      '--operation=idea-workflow-state',
+    ], { cwd: consumerDir, encoding: 'utf8' });
+    state = JSON.parse(stateRes.stdout).result;
+    assert.equal(state.workflowPhase, 'REQUIREMENT_CONFIRMATION');
+    const reqFp = state.pendingInteraction.fingerprint;
+
+    // Execute supersession for candidate via installed runner with fingerprint
+    const execSupReq = spawnSync(process.execPath, [
+      scriptPath,
+      'orchestration.mjs',
+      '--operation=idea-supersede-candidate',
+      '--input-json=' + JSON.stringify({
+        oldId: 'IDEA-REQ-001',
+        newCandidate: {
+          id: 'IDEA-REQ-002',
+          statement: 'Updated packaged distribution requirement candidate',
+          origin: 'USER_STATED',
+          confirmedBy: 'PRODUCT_OWNER',
+        },
+        expectedInteractionFingerprint: reqFp,
+      }),
+    ], {
+      cwd: consumerDir,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_PATH: '' },
+    });
+    assert.equal(execSupReq.status, 0, execSupReq.stderr || execSupReq.stdout);
+    const supReqParsed = JSON.parse(execSupReq.stdout);
+    assert.equal(supReqParsed.success, true);
+    assert.equal(supReqParsed.result.created.id, 'IDEA-REQ-002');
+    assert.equal(supReqParsed.result.created.resolutionState, 'UNRESOLVED');
 
     // 10. Prove project state persists with correct lineage
     const discPath = path.join(consumerDir, '.development-kit', 'idea', 'discovery.json');

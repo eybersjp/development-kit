@@ -71,6 +71,11 @@ import {
   computeInteractionFingerprint,
   IdeaWorkflowError,
 } from '../runtime/orchestration/idea-workflow.mjs';
+import {
+  loadConsumptionReceipts,
+  appendConsumptionReceipt,
+  findMatchingReceipt,
+} from '../runtime/orchestration/idea-consumptions.mjs';
 import { NextStepResolver } from '../runtime/next-step/resolver.mjs';
 import { validateIdeaBriefStructure } from '../runtime/orchestration/idea-schema.mjs';
 
@@ -460,7 +465,7 @@ test('Blocker 6: Public CLI orchestration operations for IDEA workflow execute c
     bootstrapProject(tempDir);
     const scriptPath = path.resolve('scripts/orchestration.mjs');
 
-    // Record candidate 1 via CLI
+    // 1. Record candidates via CLI
     const candExec1 = spawnSync(process.execPath, [
       scriptPath,
       '--operation=idea-record-candidate',
@@ -472,30 +477,6 @@ test('Blocker 6: Public CLI orchestration operations for IDEA workflow execute c
     ], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(candExec1.status, 0);
 
-    // Confirm candidate 1 via CLI
-    const confExec1 = spawnSync(process.execPath, [
-      scriptPath,
-      '--operation=idea-confirm-candidate',
-      '--input-json=' + JSON.stringify({
-        id: 'IDEA-REQ-001',
-        confirmedBy: 'PRODUCT_OWNER',
-      })
-    ], { cwd: tempDir, encoding: 'utf8' });
-    assert.equal(confExec1.status, 0);
-
-    // Classify candidate 1 scope
-    const scopeExec1 = spawnSync(process.execPath, [
-      scriptPath,
-      '--operation=idea-classify-scope',
-      '--input-json=' + JSON.stringify({
-        id: 'IDEA-REQ-001',
-        scopeDisposition: 'MUST',
-        confirmedBy: 'PRODUCT_OWNER',
-      })
-    ], { cwd: tempDir, encoding: 'utf8' });
-    assert.equal(scopeExec1.status, 0);
-
-    // Record candidate 2 via CLI
     const candExec2 = spawnSync(process.execPath, [
       scriptPath,
       '--operation=idea-record-candidate',
@@ -507,30 +488,62 @@ test('Blocker 6: Public CLI orchestration operations for IDEA workflow execute c
     ], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(candExec2.status, 0);
 
-    // Confirm candidate 2 via CLI
-    const confExec2 = spawnSync(process.execPath, [
+    // 2. Setup Design Authority and Idea Challenge
+    presentCurrentInteraction(tempDir);
+    let state = resolveIdeaWorkflowState(tempDir);
+    assert.equal(state.workflowPhase, 'DESIGN_SYSTEM_SETUP');
+
+    recordDesignAuthoritySetup(tempDir, {
+      disposition: 'DEFERRED',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+
+    state = resolveIdeaWorkflowState(tempDir);
+    assert.equal(state.workflowPhase, 'IDEA_CHALLENGE');
+
+    recordIdeaChallengeResponse(tempDir, {
+      response: 'Confirmed proceed',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+
+    // 3. Workflow now presents REQUIREMENT_CONFIRMATION
+    state = resolveIdeaWorkflowState(tempDir);
+    assert.equal(state.workflowPhase, 'REQUIREMENT_CONFIRMATION');
+
+    // Confirm candidate 1 via CLI with interaction fingerprint
+    const confExec1 = spawnSync(process.execPath, [
       scriptPath,
       '--operation=idea-confirm-candidate',
       '--input-json=' + JSON.stringify({
-        id: 'IDEA-REQ-002',
+        id: 'IDEA-REQ-001',
         confirmedBy: 'PRODUCT_OWNER',
+        expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
       })
     ], { cwd: tempDir, encoding: 'utf8' });
-    assert.equal(confExec2.status, 0);
+    assert.equal(confExec1.status, 0);
 
-    // Classify candidate 2 scope
-    const scopeExec2 = spawnSync(process.execPath, [
+    // 4. Scope Confirmation turn
+    state = resolveIdeaWorkflowState(tempDir);
+    assert.equal(state.workflowPhase, 'SCOPE_CONFIRMATION');
+
+    // Classify candidate scope via CLI
+    const scopeExec1 = spawnSync(process.execPath, [
       scriptPath,
       '--operation=idea-classify-scope',
       '--input-json=' + JSON.stringify({
-        id: 'IDEA-REQ-002',
-        scopeDisposition: 'MUST',
+        scopeMapping: {
+          'IDEA-REQ-001': 'MUST',
+          'IDEA-REQ-002': 'MUST',
+        },
         confirmedBy: 'PRODUCT_OWNER',
+        expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
       })
     ], { cwd: tempDir, encoding: 'utf8' });
-    assert.equal(scopeExec2.status, 0);
+    assert.equal(scopeExec1.status, 0);
 
-    // Persist Idea Brief via CLI
+    // 5. Persist Idea Brief via CLI
     const persistExec = spawnSync(process.execPath, [
       scriptPath,
       '--operation=idea-persist',
@@ -538,11 +551,19 @@ test('Blocker 6: Public CLI orchestration operations for IDEA workflow execute c
     ], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(persistExec.status, 0);
 
+    // 6. Brief Approval turn
+    state = resolveIdeaWorkflowState(tempDir);
+    assert.equal(state.workflowPhase, 'BRIEF_APPROVAL');
+    presentCurrentInteraction(tempDir);
+
     // Approve Idea Brief via CLI
     const approveExec = spawnSync(process.execPath, [
       scriptPath,
       '--operation=idea-approve',
-      '--input-json=' + JSON.stringify({ approvingAuthority: 'PRODUCT_OWNER' })
+      '--input-json=' + JSON.stringify({
+        approvingAuthority: 'PRODUCT_OWNER',
+        expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+      })
     ], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(approveExec.status, 0);
 
@@ -1711,7 +1732,7 @@ test('Candidate 9 (Defect 1): Documented /dk-idea public workflow sequence execu
     ], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(lifecycleRes.status, 0);
 
-    // 2. Record material candidate using documented command example (born UNCLASSIFIED & UNRESOLVED)
+    // 2. Record material candidates (born UNCLASSIFIED & UNRESOLVED)
     const candRes = spawnSync(process.execPath, [
       scriptPath,
       '--operation=idea-record-candidate',
@@ -1723,17 +1744,6 @@ test('Candidate 9 (Defect 1): Documented /dk-idea public workflow sequence execu
     ], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(candRes.status, 0);
 
-    const confRes1 = spawnSync(process.execPath, [
-      scriptPath,
-      '--operation=idea-confirm-candidate',
-      '--input-json=' + JSON.stringify({
-        id: 'IDEA-REQ-001',
-        confirmedBy: 'PRODUCT_OWNER',
-      })
-    ], { cwd: tempDir, encoding: 'utf8' });
-    assert.equal(confRes1.status, 0);
-
-    // Record and confirm candidate 2
     const candRes2 = spawnSync(process.execPath, [
       scriptPath,
       '--operation=idea-record-candidate',
@@ -1745,15 +1755,41 @@ test('Candidate 9 (Defect 1): Documented /dk-idea public workflow sequence execu
     ], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(candRes2.status, 0);
 
-    const confRes2 = spawnSync(process.execPath, [
+    // Advance through Design Setup and Idea Challenge turns
+    presentCurrentInteraction(tempDir);
+    let state = resolveIdeaWorkflowState(tempDir);
+    assert.equal(state.workflowPhase, 'DESIGN_SYSTEM_SETUP');
+
+    recordDesignAuthoritySetup(tempDir, {
+      disposition: 'DEFERRED',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+
+    state = resolveIdeaWorkflowState(tempDir);
+    assert.equal(state.workflowPhase, 'IDEA_CHALLENGE');
+
+    recordIdeaChallengeResponse(tempDir, {
+      response: 'Confirmed proceed',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+
+    // Workflow now presents REQUIREMENT_CONFIRMATION
+    state = resolveIdeaWorkflowState(tempDir);
+    assert.equal(state.workflowPhase, 'REQUIREMENT_CONFIRMATION');
+
+    // Confirm candidates via CLI with interaction fingerprint
+    const confRes1 = spawnSync(process.execPath, [
       scriptPath,
       '--operation=idea-confirm-candidate',
       '--input-json=' + JSON.stringify({
-        id: 'IDEA-REQ-002',
+        id: 'IDEA-REQ-001',
         confirmedBy: 'PRODUCT_OWNER',
+        expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
       })
     ], { cwd: tempDir, encoding: 'utf8' });
-    assert.equal(confRes2.status, 0);
+    assert.equal(confRes1.status, 0);
 
     // 3. Discovery eval is blocked while UNCLASSIFIED
     const evalRes1 = spawnSync(process.execPath, [
@@ -1766,27 +1802,22 @@ test('Candidate 9 (Defect 1): Documented /dk-idea public workflow sequence execu
     assert.ok(eval1Parsed.result.blockers.some(b => b.code === 'UNCLASSIFIED_MATERIAL_REQUIREMENT'));
 
     // 4. Explicit Product Owner scope classification
+    state = resolveIdeaWorkflowState(tempDir);
+    assert.equal(state.workflowPhase, 'SCOPE_CONFIRMATION');
+
     const scopeRes1 = spawnSync(process.execPath, [
       scriptPath,
       '--operation=idea-classify-scope',
       '--input-json=' + JSON.stringify({
-        id: 'IDEA-REQ-001',
-        scopeDisposition: 'MUST',
+        scopeMapping: {
+          'IDEA-REQ-001': 'MUST',
+          'IDEA-REQ-002': 'MUST',
+        },
         confirmedBy: 'PRODUCT_OWNER',
+        expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
       })
     ], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(scopeRes1.status, 0);
-
-    const scopeRes2 = spawnSync(process.execPath, [
-      scriptPath,
-      '--operation=idea-classify-scope',
-      '--input-json=' + JSON.stringify({
-        id: 'IDEA-REQ-002',
-        scopeDisposition: 'MUST',
-        confirmedBy: 'PRODUCT_OWNER',
-      })
-    ], { cwd: tempDir, encoding: 'utf8' });
-    assert.equal(scopeRes2.status, 0);
 
     // 5. Discovery eval now progresses to ready
     const evalRes2 = spawnSync(process.execPath, [
@@ -1813,11 +1844,18 @@ test('Candidate 9 (Defect 1): Documented /dk-idea public workflow sequence execu
     assert.equal(stateRes1.status, 0);
     assert.equal(JSON.parse(stateRes1.stdout).result.state, 'READY_FOR_APPROVAL');
 
-    // 8. Explicit Product Owner approval
+    // 8. Explicit Product Owner approval with pending interaction fingerprint
+    state = resolveIdeaWorkflowState(tempDir);
+    assert.equal(state.workflowPhase, 'BRIEF_APPROVAL');
+    presentCurrentInteraction(tempDir);
+
     const approveRes = spawnSync(process.execPath, [
       scriptPath,
       '--operation=idea-approve',
-      '--input-json=' + JSON.stringify({ approvingAuthority: 'PRODUCT_OWNER' })
+      '--input-json=' + JSON.stringify({
+        approvingAuthority: 'PRODUCT_OWNER',
+        expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+      })
     ], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(approveRes.status, 0);
 
@@ -3391,30 +3429,12 @@ test('Candidate 13 (Defect 2): Public supersession CLI operations (idea-supersed
       materiality: 'MATERIAL',
     });
 
-    // 2. Call idea-supersede-candidate via CLI
-    const supCandRes = spawnSync(process.execPath, [
-      orchScript,
-      '--rootDir=' + tempDir,
-      '--operation=idea-supersede-candidate',
-      '--input-json=' + JSON.stringify({
-        oldId: 'IDEA-REQ-001',
-        newCandidate: {
-          id: 'IDEA-REQ-002',
-          statement: 'Superseding modified requirement statement.',
-          origin: 'USER_STATED',
-          confirmedBy: 'PRODUCT_OWNER',
-        },
-      }),
-    ], { encoding: 'utf8' });
+    // 2. Present interaction before superseding question (DISCOVERY_QUESTION is prioritized over REQ_CONFIRMATION)
+    let state = presentCurrentInteraction(tempDir);
+    assert.equal(state.pendingInteraction.type, 'DISCOVERY_QUESTION');
+    const qFp = state.pendingInteraction.fingerprint;
 
-    assert.equal(supCandRes.status, 0, supCandRes.stderr || supCandRes.stdout);
-    const candParsed = JSON.parse(supCandRes.stdout);
-    assert.equal(candParsed.success, true);
-    assert.equal(candParsed.result.created.id, 'IDEA-REQ-002');
-    assert.equal(candParsed.result.created.resolutionState, 'UNRESOLVED');
-    assert.equal(candParsed.result.created.supersedes, 'IDEA-REQ-001');
-
-    // 3. Call idea-supersede-question via CLI
+    // Call idea-supersede-question via CLI
     const supQRes = spawnSync(process.execPath, [
       orchScript,
       '--rootDir=' + tempDir,
@@ -3427,6 +3447,7 @@ test('Candidate 13 (Defect 2): Public supersession CLI operations (idea-supersed
           materiality: 'MATERIAL',
           confirmedBy: 'PRODUCT_OWNER',
         },
+        expectedInteractionFingerprint: qFp,
       }),
     ], { encoding: 'utf8' });
 
@@ -3436,6 +3457,59 @@ test('Candidate 13 (Defect 2): Public supersession CLI operations (idea-supersed
     assert.equal(qParsed.result.created.id, 'IDEA-Q-002');
     assert.equal(qParsed.result.created.resolution, 'UNRESOLVED');
     assert.equal(qParsed.result.created.supersedes, 'IDEA-Q-001');
+
+    // 3. Resolve the question so workflow advances
+    state = resolveIdeaWorkflowState(tempDir);
+    consumeDiscoveryQuestionResponse(tempDir, {
+      questionId: 'IDEA-Q-002',
+      resolution: 'ANSWERED',
+      resolvedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+
+    state = resolveIdeaWorkflowState(tempDir);
+    assert.equal(state.pendingInteraction.type, 'DESIGN_SYSTEM_SETUP');
+    recordDesignAuthoritySetup(tempDir, {
+      disposition: 'DEFERRED',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+
+    state = resolveIdeaWorkflowState(tempDir);
+    assert.equal(state.pendingInteraction.type, 'IDEA_CHALLENGE');
+    recordIdeaChallengeResponse(tempDir, {
+      response: 'Proceed',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+
+    state = resolveIdeaWorkflowState(tempDir);
+    assert.equal(state.pendingInteraction.type, 'REQUIREMENT_CONFIRMATION');
+    const reqFp = state.pendingInteraction.fingerprint;
+
+    // Call idea-supersede-candidate via CLI
+    const supCandRes = spawnSync(process.execPath, [
+      orchScript,
+      '--rootDir=' + tempDir,
+      '--operation=idea-supersede-candidate',
+      '--input-json=' + JSON.stringify({
+        oldId: 'IDEA-REQ-001',
+        newCandidate: {
+          id: 'IDEA-REQ-002',
+          statement: 'Superseding modified requirement statement.',
+          origin: 'USER_STATED',
+          confirmedBy: 'PRODUCT_OWNER',
+        },
+        expectedInteractionFingerprint: reqFp,
+      }),
+    ], { encoding: 'utf8' });
+
+    assert.equal(supCandRes.status, 0, supCandRes.stderr || supCandRes.stdout);
+    const candParsed = JSON.parse(supCandRes.stdout);
+    assert.equal(candParsed.success, true);
+    assert.equal(candParsed.result.created.id, 'IDEA-REQ-002');
+    assert.equal(candParsed.result.created.resolutionState, 'UNRESOLVED');
+    assert.equal(candParsed.result.created.supersedes, 'IDEA-REQ-001');
 
     // 4. Verify discovery state integrity and lineage
     const disc = loadDiscoveryState(tempDir);
@@ -3450,7 +3524,7 @@ test('Candidate 13 (Defect 2): Public supersession CLI operations (idea-supersed
     const newQ = disc.openQuestions.find(q => q.id === 'IDEA-Q-002');
     assert.equal(oldQ.resolution, 'SUPERSEDED');
     assert.equal(oldQ.supersededBy, 'IDEA-Q-002');
-    assert.equal(newQ.resolution, 'UNRESOLVED');
+    assert.equal(newQ.resolution, 'ANSWERED');
     assert.equal(newQ.supersedes, 'IDEA-Q-001');
   } finally {
     cleanupTempDir(tempDir);
@@ -4042,8 +4116,15 @@ test('Candidate 19 (Backend-Only Exemption): Confirmed backend-only skips DESIGN
     recordOpenQuestion(rootDir, { id: 'IDEA-Q-001', question: 'Database choice?', materiality: 'MATERIAL' });
     presentCurrentInteraction(rootDir);
 
+    const pendingState = resolveIdeaWorkflowState(rootDir);
     // Answer discovery question via guarded consumer
-    consumeDiscoveryQuestionResponse(rootDir, { id: 'IDEA-Q-001', questionId: 'IDEA-Q-001', resolution: 'ANSWERED', resolvedBy: 'PRODUCT_OWNER' });
+    consumeDiscoveryQuestionResponse(rootDir, {
+      id: 'IDEA-Q-001',
+      questionId: 'IDEA-Q-001',
+      resolution: 'ANSWERED',
+      resolvedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: pendingState.pendingInteraction.fingerprint,
+    });
 
     // Workflow state resolution must skip DESIGN_SYSTEM_SETUP directly to IDEA_CHALLENGE
     const state = resolveIdeaWorkflowState(rootDir);
@@ -4155,6 +4236,347 @@ test('Candidate 18 (Full Stage & Cursor Consistency Matrix): Inconsistent state 
         return true;
       }
     );
+  } finally {
+    cleanupTempDir(rootDir);
+  }
+});
+
+// ============================================================================
+// CANDIDATE 20 TEST SUITES (§14 - §18)
+// ============================================================================
+
+test('Candidate 20 (§14: CLI Negative Tests): Direct calls without active interaction or with mismatched fingerprint fail closed', async () => {
+  const rootDir = createTempDir('dk-c20-negative-');
+  try {
+    await bootstrapProject(rootDir);
+    const scriptPath = path.resolve('scripts/orchestration.mjs');
+
+    // 1. Direct call to idea-confirm-candidate with no workflow checkpoint fails closed
+    const resNoCp = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-confirm-candidate',
+      '--input-json=' + JSON.stringify({
+        id: 'IDEA-REQ-001',
+        confirmedBy: 'PRODUCT_OWNER',
+        expectedInteractionFingerprint: 'sha256:fake000000000000000000000000000000000000000000000000000000000000',
+      })
+    ], { cwd: rootDir, encoding: 'utf8' });
+    assert.equal(resNoCp.status, 1);
+    const parsedNoCp = JSON.parse(resNoCp.stderr || resNoCp.stdout);
+    assert.equal(parsedNoCp.name, 'IdeaWorkflowError');
+    assert.ok(parsedNoCp.error.includes('no workflow checkpoint exists'));
+
+    // Record a candidate and setup initial workflow
+    recordRequirementCandidate(rootDir, { id: 'IDEA-REQ-001', statement: 'Req 1', origin: 'USER_STATED' });
+    presentCurrentInteraction(rootDir);
+
+    // 2. Direct call to idea-classify-scope while in DESIGN_SYSTEM_SETUP fails closed
+    let state = resolveIdeaWorkflowState(rootDir);
+    assert.equal(state.workflowPhase, 'DESIGN_SYSTEM_SETUP');
+
+    const resWrongPhase = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-classify-scope',
+      '--input-json=' + JSON.stringify({
+        scopeMapping: { 'IDEA-REQ-001': 'MUST' },
+        confirmedBy: 'PRODUCT_OWNER',
+        expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+      })
+    ], { cwd: rootDir, encoding: 'utf8' });
+    assert.equal(resWrongPhase.status, 1);
+    const parsedWrongPhase = JSON.parse(resWrongPhase.stderr || resWrongPhase.stdout);
+    assert.ok(parsedWrongPhase.error.includes('pending interaction type is DESIGN_SYSTEM_SETUP, expected SCOPE_CONFIRMATION'));
+
+    // 3. Call with mismatched interaction fingerprint fails closed
+    const resMismatchedFp = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-design-setup',
+      '--input-json=' + JSON.stringify({
+        disposition: 'DEFERRED',
+        confirmedBy: 'PRODUCT_OWNER',
+        expectedInteractionFingerprint: 'sha256:tampered000000000000000000000000000000000000000000000000000000',
+      })
+    ], { cwd: rootDir, encoding: 'utf8' });
+    assert.equal(resMismatchedFp.status, 1);
+    const parsedMismatched = JSON.parse(resMismatchedFp.stderr || resMismatchedFp.stdout);
+    assert.ok(parsedMismatched.error.includes('fingerprint mismatch'));
+  } finally {
+    cleanupTempDir(rootDir);
+  }
+});
+
+test('Candidate 20 (§15: Group Atomicity Tests): Multi-requirement batch fails completely on single validation error with zero side effects', async () => {
+  const rootDir = createTempDir('dk-c20-atomicity-');
+  try {
+    await bootstrapProject(rootDir);
+
+    // Record candidate 1 (USER_STATED) and candidate 2 (RESEARCH_DERIVED)
+    recordRequirementCandidate(rootDir, { id: 'IDEA-REQ-001', statement: 'Req 1', origin: 'USER_STATED' });
+    recordRequirementCandidate(rootDir, { id: 'IDEA-REQ-002', statement: 'Req 2', origin: 'RESEARCH_DERIVED' });
+
+    presentCurrentInteraction(rootDir);
+    let state = resolveIdeaWorkflowState(rootDir);
+
+    // Bypass to REQUIREMENT_CONFIRMATION
+    recordDesignAuthoritySetup(rootDir, {
+      disposition: 'DEFERRED',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+    state = resolveIdeaWorkflowState(rootDir);
+    recordIdeaChallengeResponse(rootDir, {
+      response: 'Proceed',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+
+    state = resolveIdeaWorkflowState(rootDir);
+    assert.equal(state.workflowPhase, 'REQUIREMENT_CONFIRMATION');
+    const discBefore = loadDiscoveryState(rootDir);
+
+    // Attempt to confirm both without allowAdoption for the research-derived one
+    // Candidate 2 (RESEARCH_DERIVED) cannot be confirmed without allowAdoption
+    assert.throws(
+      () => consumeRequirementConfirmation(rootDir, {
+        action: 'CONFIRM',
+        confirmedBy: 'PRODUCT_OWNER',
+        allowAdoption: false,
+        expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+      }),
+      (err) => {
+        assert.ok(err.message.includes('requires explicit adoption semantics'));
+        return true;
+      }
+    );
+
+    // Verify zero side effects: no PODs created, discovery revision unchanged, journal cleaned up
+    const discAfter = loadDiscoveryState(rootDir);
+    assert.equal(discAfter.revision, discBefore.revision);
+    assert.equal(discAfter.fingerprint, discBefore.fingerprint);
+    assert.equal(discAfter.requirements[0].resolutionState, 'UNRESOLVED');
+    assert.equal(discAfter.requirements[1].resolutionState, 'UNRESOLVED');
+
+    const journalPath = path.join(rootDir, '.development-kit', 'idea', 'discovery-journal.json');
+    assert.equal(fs.existsSync(journalPath), false);
+  } finally {
+    cleanupTempDir(rootDir);
+  }
+});
+
+test('Candidate 20 (§16: Crash Recovery Tests): Reconciles via receipt when crash occurs between persistence and cursor advance', async () => {
+  const rootDir = createTempDir('dk-c20-crash-recovery-');
+  try {
+    await bootstrapProject(rootDir);
+
+    recordRequirementCandidate(rootDir, { id: 'IDEA-REQ-001', statement: 'Req 1', origin: 'USER_STATED' });
+    presentCurrentInteraction(rootDir);
+    let state = resolveIdeaWorkflowState(rootDir);
+
+    recordDesignAuthoritySetup(rootDir, {
+      disposition: 'DEFERRED',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+    state = resolveIdeaWorkflowState(rootDir);
+    recordIdeaChallengeResponse(rootDir, {
+      response: 'Proceed',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+
+    state = resolveIdeaWorkflowState(rootDir);
+    assert.equal(state.workflowPhase, 'REQUIREMENT_CONFIRMATION');
+    const cpBefore = loadWorkflowCheckpoint(rootDir);
+    const discBefore = loadDiscoveryState(rootDir);
+
+    // Simulate Step B, C, D completed, but Step E crashed:
+    // 1. Discovery confirmed
+    confirmRequirementCandidate(rootDir, { id: 'IDEA-REQ-001', confirmedBy: 'PRODUCT_OWNER' });
+    const discAfter = loadDiscoveryState(rootDir);
+
+    // 2. Receipt appended
+    appendConsumptionReceipt(rootDir, {
+      interactionType: 'REQUIREMENT_CONFIRMATION',
+      interactionId: 'INTERACTION-REQ-CONFIRMATION',
+      interactionFingerprint: cpBefore.pendingInteraction.fingerprint,
+      workflowRevisionBefore: cpBefore.workflowRevision,
+      preDiscoveryRevision: discBefore.revision,
+      preDiscoveryFingerprint: discBefore.fingerprint,
+      postDiscoveryRevision: discAfter.revision,
+      postDiscoveryFingerprint: discAfter.fingerprint,
+      authority: 'PRODUCT_OWNER',
+      resultingPodIds: [discAfter.requirements[0].confirmationDecision.decisionId],
+      resultingArtifactApprovalId: null,
+    });
+
+    // Note: workflow.json was NOT updated (still points to pre-confirmation state and revision)
+    // Now call validateWorkflowConsistency / resolveIdeaWorkflowState
+    // Crash recovery should detect the matching receipt and reconcile without throwing DK_WORKFLOW_DISCOVERY_BINDING_MISMATCH!
+    const reconciledState = resolveIdeaWorkflowState(rootDir);
+    assert.ok(reconciledState);
+    assert.equal(reconciledState.workflowPhase, 'SCOPE_CONFIRMATION');
+
+    // Negative case: If discovery has unlogged revisions without receipt, recovery fails closed
+    recordRequirementCandidate(rootDir, { id: 'IDEA-REQ-002', statement: 'Req 2', origin: 'USER_STATED' });
+    // Directly write corrupted checkpoint to simulate unreceipted mutation without invoking persistWorkflowCheckpoint revision check
+    const workflowPath = path.join(rootDir, '.development-kit', 'idea', 'workflow.json');
+    const staleCp = JSON.parse(fs.readFileSync(workflowPath, 'utf8'));
+    staleCp.discoveryRevision = 999;
+    staleCp.discoveryFingerprint = 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    fs.writeFileSync(workflowPath, JSON.stringify(staleCp));
+
+    assert.throws(
+      () => resolveIdeaWorkflowState(rootDir),
+      (err) => {
+        assert.ok(err instanceof IdeaWorkflowError);
+        assert.equal(err.code, 'DK_WORKFLOW_DISCOVERY_BINDING_MISMATCH');
+        return true;
+      }
+    );
+  } finally {
+    cleanupTempDir(rootDir);
+  }
+});
+
+test('Candidate 20 (§17: Design Setup Truthfulness Tests): NEW_DIRECTION leaves execution status unconfigured while advancing workflow', async () => {
+  const rootDir = createTempDir('dk-c20-design-truth-');
+  try {
+    await bootstrapProject(rootDir);
+
+    recordRequirementCandidate(rootDir, { id: 'IDEA-REQ-001', statement: 'Req 1', origin: 'USER_STATED' });
+    presentCurrentInteraction(rootDir);
+    let state = resolveIdeaWorkflowState(rootDir);
+    assert.equal(state.workflowPhase, 'DESIGN_SYSTEM_SETUP');
+
+    // Execute NEW_DIRECTION disposition
+    recordDesignAuthoritySetup(rootDir, {
+      disposition: 'NEW_DIRECTION',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+
+    // Verify Design Authority state truthfulness:
+    // status must remain unconfigured because no design.md exists yet!
+    const designState = loadDesignSystemState(rootDir);
+    assert.equal(designState.status, 'unconfigured');
+    assert.equal(designState.setupDisposition, 'NEW_DIRECTION');
+    assert.equal(designState.setupDecisionAuthority, 'PRODUCT_OWNER');
+    assert.ok(designState.setupAnsweredAt);
+
+    // Verify workflow advances to IDEA_CHALLENGE
+    state = resolveIdeaWorkflowState(rootDir);
+    assert.equal(state.workflowPhase, 'IDEA_CHALLENGE');
+  } finally {
+    cleanupTempDir(rootDir);
+  }
+});
+
+test('Candidate 20 (§18: Public A-G End-to-End Suite via CLI spawnSync): Full sequence runs exclusively through orchestration CLI', async () => {
+  const rootDir = createTempDir('dk-c20-a-g-cli-');
+  try {
+    await bootstrapProject(rootDir);
+    const scriptPath = path.resolve('scripts/orchestration.mjs');
+
+    // Helper to run CLI command and parse JSON output
+    const runCli = (operation, payload = null) => {
+      const args = [scriptPath, `--operation=${operation}`];
+      if (payload) {
+        args.push(`--input-json=${JSON.stringify(payload)}`);
+      }
+      const res = spawnSync(process.execPath, args, { cwd: rootDir, encoding: 'utf8' });
+      assert.equal(res.status, 0, `CLI operation ${operation} failed: ${res.stderr || res.stdout}`);
+      const parsed = JSON.parse(res.stdout);
+      return parsed.result !== undefined ? parsed.result : parsed;
+    };
+
+    // 1. Initial capture
+    runCli('idea-record-candidate', {
+      id: 'IDEA-REQ-001',
+      statement: 'Capture inverter DC string voltages and insulation resistance measurements.',
+      origin: 'USER_STATED',
+    });
+    runCli('idea-record-question', {
+      id: 'IDEA-Q-001',
+      question: 'What mobile OS is targeted?',
+      materiality: 'MATERIAL',
+    });
+
+    // --- Turn A: Discovery Question ---
+    runCli('idea-present-interaction');
+    let wf = runCli('idea-workflow-state');
+    assert.equal(wf.workflowPhase, 'REQUIREMENTS_INTERVIEW');
+    assert.equal(wf.pendingInteraction.type, 'DISCOVERY_QUESTION');
+
+    runCli('idea-resolve-question', {
+      questionId: 'IDEA-Q-001',
+      resolution: 'ANSWERED',
+      resolvedBy: 'PRODUCT_OWNER',
+      notes: 'iOS and Android tablets.',
+      expectedInteractionFingerprint: wf.pendingInteraction.fingerprint,
+    });
+
+    // --- Turn B: Design System Setup ---
+    wf = runCli('idea-workflow-state');
+    assert.equal(wf.workflowPhase, 'DESIGN_SYSTEM_SETUP');
+
+    runCli('idea-design-setup', {
+      disposition: 'DEFERRED',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: wf.pendingInteraction.fingerprint,
+    });
+
+    // --- Turn C: Idea Challenge ---
+    wf = runCli('idea-workflow-state');
+    assert.equal(wf.workflowPhase, 'IDEA_CHALLENGE');
+
+    runCli('idea-challenge-response', {
+      response: 'Confirmed approach is sound.',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: wf.pendingInteraction.fingerprint,
+    });
+
+    // --- Turn D: Requirement Confirmation ---
+    wf = runCli('idea-workflow-state');
+    assert.equal(wf.workflowPhase, 'REQUIREMENT_CONFIRMATION');
+
+    runCli('idea-confirm-candidate', {
+      id: 'IDEA-REQ-001',
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: wf.pendingInteraction.fingerprint,
+    });
+
+    // --- Turn E: Scope Confirmation ---
+    wf = runCli('idea-workflow-state');
+    assert.equal(wf.workflowPhase, 'SCOPE_CONFIRMATION');
+
+    runCli('idea-classify-scope', {
+      scopeMapping: { 'IDEA-REQ-001': 'MUST' },
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: wf.pendingInteraction.fingerprint,
+    });
+
+    // --- Turn F: Canonical Brief Persistence & Approval ---
+    const briefContent = `# Idea Brief: Solar App\n\n## Problem\nField inspection.\n\n## Intended Users\nInspectors.\n\n## Success Criteria\nAccurate data.\n\n## Requirements (Must)\n- [IDEA-REQ-001] Capture inverter DC string voltages and insulation resistance measurements.\n\n## Preferences (Should)\n- None\n\n## Assumptions\n- None\n\n## Constraints\n- None\n\n## Risks\n- None\n\n## Open Questions\n- None\n\n## Future Ideas (Explicitly Deferred)\n- None\n`;
+
+    runCli('idea-persist', { content: briefContent });
+    runCli('idea-present-interaction');
+
+    wf = runCli('idea-workflow-state');
+    assert.equal(wf.workflowPhase, 'BRIEF_APPROVAL');
+
+    runCli('idea-approve', {
+      approvingAuthority: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: wf.pendingInteraction.fingerprint,
+    });
+
+    // --- Turn G: Approved Complete ---
+    wf = runCli('idea-workflow-state');
+    assert.equal(wf.workflowPhase, 'COMPLETE');
+    assert.equal(wf.status, 'COMPLETED');
+
+    const stateRes = runCli('idea-state');
+    const computedState = stateRes.state || stateRes.result?.state;
+    assert.equal(computedState, 'APPROVED');
   } finally {
     cleanupTempDir(rootDir);
   }
