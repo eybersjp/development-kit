@@ -184,8 +184,10 @@
 * [control-center](03-reference/scripts/control-center.md)
 * [install-antigravity](03-reference/scripts/install-antigravity.md)
 * [install-platform-adapters](03-reference/scripts/install-platform-adapters.md)
+* [lifecycle](03-reference/scripts/lifecycle.md)
 * [next-step](03-reference/scripts/next-step.md)
 * [orchestration](03-reference/scripts/orchestration.md)
+* [run](03-reference/scripts/run.md)
 * [sync-plugin](03-reference/scripts/sync-plugin.md)
 * [validate-skills](03-reference/scripts/validate-skills.md)
 * [validate-docs](03-reference/scripts/validate-docs.md)
@@ -297,6 +299,9 @@
 * [Release Notes (v0.7.1)](08-maintenance-release/release-notes-v0.7.1.md)
 * [Release Notes (v0.8.0)](08-maintenance-release/release-notes-v0.8.0.md)
 * [Release Notes (v0.9.0)](08-maintenance-release/release-notes-v0.9.0.md)
+* [Release Notes (v0.9.1 Draft)](08-maintenance-release/release-notes-v0.9.1.md)
+* [Marketing Copy (v0.9.1 Draft)](08-maintenance-release/marketing-copy-v0.9.1.md)
+* [v0.9.1 Release Acceptance Checklist](08-maintenance-release/v091-release-checklist.md)
 
 ## 09. Contributing
 * [Contribution Overview](09-contributing/contribution-overview.md)

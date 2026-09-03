@@ -7,6 +7,14 @@ description: >-
 
 # /dk-control
 
+## Lifecycle Entry Gate
+
+At session start or command invocation, execute the centralized lifecycle entry adapter:
+```bash
+node scripts/lifecycle.mjs --command=dk-control --phase=entry
+```
+This establishes and validates project bootstrap, binds project identity, and verifies execution context.
+
 ## Purpose
 
 Launches the project-scoped Development Kit Control Center web interface. Provides a local, offline visual interface to inspect active lifecycle state, review memory records and architectural decisions, verify runtime health, and manage settings.

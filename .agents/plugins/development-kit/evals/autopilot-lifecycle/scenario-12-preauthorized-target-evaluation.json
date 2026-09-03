@@ -1,0 +1,12 @@
+{
+  "skill": "autopilot-lifecycle",
+  "scenario": "Evaluate pre-authorized staging targets and enforce production exclusion rules",
+  "input": {
+    "targetId": "staging_dev_cluster",
+    "operation": "deploy_production"
+  },
+  "expected": {
+    "isPreAuthorized": false,
+    "prohibitedReason": "Production deployment cannot be pre-authorized"
+  }
+}

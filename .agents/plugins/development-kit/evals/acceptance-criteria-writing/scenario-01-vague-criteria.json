@@ -1,0 +1,31 @@
+{
+  "skill": "acceptance-criteria-writing",
+  "scenario": "Convert vague product requirements into testable acceptance criteria",
+  "input": {
+    "requirements": [
+      "The search should be fast",
+      "Users should be able to find things easily",
+      "The page should load quickly",
+      "Errors should be handled gracefully"
+    ]
+  },
+  "expected": {
+    "must_be_testable": true,
+    "each_criterion_has": [
+      "measurable condition",
+      "observable outcome"
+    ],
+    "sample_criteria_should_include": [
+      "search returns results within 2 seconds",
+      "autocomplete shows suggestions after 3 characters",
+      "page loads under 1 second (LCP < 1s)",
+      "error state shows user-friendly message with retry option"
+    ],
+    "must_not_accept": [
+      "vague terms like 'fast', 'quick', 'easy', 'graceful'",
+      "non-verifiable conditions",
+      "implementation details instead of behaviour"
+    ],
+    "min_criteria_count": 4
+  }
+}

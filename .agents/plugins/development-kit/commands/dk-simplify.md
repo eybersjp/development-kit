@@ -11,6 +11,14 @@ description: >-
 
 Runs the Ponytail simplicity ladder over the current diff. Checks whether any code, abstraction, dependency, or file can be removed. Ensures the implementation is as simple as possible while maintaining correctness, security, and accessibility.
 
+## Lifecycle Entry Gate
+
+At session start or command invocation, execute the centralized lifecycle entry adapter:
+```bash
+node scripts/lifecycle.mjs --command=dk-simplify --phase=entry
+```
+This establishes and validates project bootstrap, binds project identity, and verifies execution context.
+
 ## Workflow
 
 ### 1. Read the Diff

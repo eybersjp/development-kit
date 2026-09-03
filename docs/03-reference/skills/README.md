@@ -1,12 +1,12 @@
 # Skills Index
 
-Development Kit ships **45 skills** covering the full lifecycle from idea discovery through release readiness, including provider-neutral external research. Every skill has a `SKILL.md` with YAML frontmatter (`name`, `description`, `compatibility: opencode`) and a standard structure centered on purpose, process, constraints, and verification.
+Development Kit ships **47 engineering skills** (plus **16 workflow-entry skills**) covering the full lifecycle from idea discovery through release readiness, including provider-neutral external research and DKF Design Authority. Every skill has a `SKILL.md` with YAML frontmatter (`name`, `description`, `compatibility: opencode`) and a standard structure centered on purpose, process, constraints, and verification.
 
 ## Skill Categories
 
 | Category | Skills | Lifecycle Stage |
 | :--- | :--- | :--- |
-| **Meta** (4) | using-development-kit, skill-routing, repository-orientation, context-packing | Always / session start |
+| **Meta** (5) | using-development-kit, skill-routing, next-step-guidance, repository-orientation, context-packing | Always / session start |
 | **Research & External Capability** (2) | external-research, agent-reach-integration | Conditional, primarily UNDERSTAND / DEFINE |
 | **Idea & Definition** (5) | idea-discovery, requirements-interview, idea-challenge, scope-definition, acceptance-criteria-writing | UNDERSTAND -> DEFINE |
 | **Artifact & Governance** (9) | adaptive-artifact-planning, feature-specification, technical-design, data-model-design, api-contract-design, user-flow-design, design-direction, design-authority, test-strategy | DEFINE -> DESIGN |

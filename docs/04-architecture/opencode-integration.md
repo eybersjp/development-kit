@@ -57,7 +57,7 @@ sequenceDiagram
 
 ## Compatibility metadata
 
-All 45 skills declare OpenCode compatibility in frontmatter. `npm run validate` verifies framework structure and compatibility metadata.
+All compatible skills declare OpenCode compatibility in frontmatter. `npm run validate` verifies framework structure and compatibility metadata.
 
 ## Configuration validation
 

@@ -1,0 +1,32 @@
+{
+  "skill": "task-decomposition",
+  "scenario": "Break an API endpoint implementation into tasks",
+  "specification": {
+    "feature": "User registration API endpoint",
+    "requirements": [
+      "Accept email, password, name fields",
+      "Validate input format",
+      "Check for duplicate email",
+      "Hash password before storage",
+      "Return JWT token on success",
+      "Return appropriate error responses"
+    ]
+  },
+  "expected": {
+    "task_count_min": 3,
+    "task_count_max": 7,
+    "each_task_has": [
+      "objective",
+      "requirements",
+      "acceptance_criteria",
+      "verification"
+    ],
+    "ordering": "dependencies_first",
+    "must_include": [
+      "validation",
+      "duplicate_check",
+      "password_hashing",
+      "token_generation"
+    ]
+  }
+}

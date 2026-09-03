@@ -1,0 +1,12 @@
+{
+  "skill": "autopilot-lifecycle",
+  "scenario": "Execute Stage 7 REVIEW with two-stage specification & code review",
+  "input": {
+    "currentStage": "REVIEW"
+  },
+  "expected": {
+    "nextActionType": "RUN_TWO_STAGE_REVIEW",
+    "stage1SpecFirst": true,
+    "stage2QualitySecond": true
+  }
+}

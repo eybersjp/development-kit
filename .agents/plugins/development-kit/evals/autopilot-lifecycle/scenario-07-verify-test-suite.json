@@ -1,0 +1,11 @@
+{
+  "skill": "autopilot-lifecycle",
+  "scenario": "Execute Stage 6 VERIFY running automated unit and browser tests",
+  "input": {
+    "currentStage": "VERIFY"
+  },
+  "expected": {
+    "nextActionType": "RUN_VERIFICATION_SUITE",
+    "mustPassAllGates": true
+  }
+}

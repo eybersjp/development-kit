@@ -6,6 +6,14 @@ description: >-
 
 # /dk-status
 
+## Lifecycle Entry Gate
+
+At session start or command invocation, execute the centralized lifecycle entry adapter:
+```bash
+node scripts/lifecycle.mjs --command=dk-status --phase=entry
+```
+This establishes and validates project bootstrap, binds project identity, and verifies execution context.
+
 ## Purpose
 
 Shows concise Development Kit progress without hiding unresolved control-plane state.

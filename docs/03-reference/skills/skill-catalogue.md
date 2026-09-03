@@ -1,6 +1,6 @@
 # Skill Catalogue
 
-Complete catalogue of all 46 skills with purpose and lifecycle stage.
+Complete catalogue of all 47 engineering skills with purpose and lifecycle stage.
 
 ## A. Meta Skills
 

@@ -1,0 +1,18 @@
+{
+  "skill": "design-authority",
+  "scenario": "Enforce structured mobile transformations rather than simple desktop scaling",
+  "input": {
+    "command": "/dk-build",
+    "task": "Responsive navigation and data table implementation",
+    "design_authority_state": "approved"
+  },
+  "expected": {
+    "implements_mobile_drawer_or_bottom_nav": true,
+    "transforms_table_to_stacked_cards_or_scroll": true,
+    "maintains_touch_targets": ">= 44px",
+    "must_not_do": [
+      "Shrink fonts below minimum readable scale",
+      "Cut off content horizontally without scrolling pattern"
+    ]
+  }
+}

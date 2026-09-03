@@ -50,13 +50,13 @@
 
   <g transform="translate(94 445)">
     <rect x="0" y="0" width="150" height="45" rx="22.5" fill="#13233D" stroke="#2A4161"/>
-    <text x="75" y="29" text-anchor="middle" fill="#D7E7FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" font-weight="650">14 commands</text>
+    <text x="75" y="29" text-anchor="middle" fill="#D7E7FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" font-weight="650">16 commands</text>
 
     <rect x="165" y="0" width="150" height="45" rx="22.5" fill="#13233D" stroke="#2A4161"/>
     <text x="240" y="29" text-anchor="middle" fill="#D7E7FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" font-weight="650">18 agents</text>
 
     <rect x="330" y="0" width="150" height="45" rx="22.5" fill="#13233D" stroke="#2A4161"/>
-    <text x="405" y="29" text-anchor="middle" fill="#D7E7FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" font-weight="650">46 skills</text>
+    <text x="405" y="29" text-anchor="middle" fill="#D7E7FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" font-weight="650">63 skills</text>
 
     <rect x="0" y="62" width="480" height="45" rx="22.5" fill="#0C182B" stroke="#223B59"/>
     <circle cx="26" cy="22.5" r="6" fill="#52E5FF"/>

@@ -1,0 +1,15 @@
+{
+  "skill": "design-authority",
+  "scenario": "Reconcile later-provided reference with existing approved design system",
+  "input": {
+    "command": "/dk-design-system reference",
+    "design_authority_state": "approved",
+    "new_reference": "Billing screen screenshot with different modal styling"
+  },
+  "expected": {
+    "analyzes_new_reference": true,
+    "detects_differences": true,
+    "proposes_amendments_for_conflicts": true,
+    "avoids_silent_overwrites": true
+  }
+}

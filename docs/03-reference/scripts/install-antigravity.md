@@ -21,7 +21,7 @@ npx development-kit init [options]
 | `--global` | Install plugin to `~/.gemini/config/plugins/development-kit/` (creates the dir if missing) |
 | `--project` | Install plugin to `./.agents/plugins/development-kit/` (creates `./.agents/` if missing) |
 | `--all` | Standalone: copy `agents, skills, commands, hooks, templates, evals, scripts` dirs + `AGENTS.md` + `README.md` + plugin manifest to the project root |
-| `--opencode` | Install 45 skills to `.opencode/skills/`, plus `opencode.json` and `AGENTS.md` at the project root |
+| `--opencode` | Install compatible skills to `.opencode/skills/`, plus `opencode.json` and `AGENTS.md` at the project root |
 | `--claude`, `--cursor`, `--vscode`, `--cline`, `--windsurf` | Install the selected platform adapter(s) at their native project paths |
 | `--all-platforms` | Install all five platform adapters only; Antigravity and OpenCode remain explicit modes |
 | `--force` | Override existsSync guards — overwrite existing `AGENTS.md` / `README.md` |

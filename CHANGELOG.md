@@ -6,6 +6,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.9.1] - Unreleased
+
+### Fixed
+- **Strict Interaction & Fingerprint Binding**: Bound all Product Owner discovery interactions (`REQUIREMENTS_INTERVIEW`, `DESIGN_SYSTEM_SETUP`, `IDEA_CHALLENGE`, `REQUIREMENT_CONFIRMATION`, `SCOPE_CONFIRMATION`, `BRIEF_APPROVAL`) to deterministic SHA-256 fingerprints. Authority operations strictly reject calls lacking matching `expectedInteractionFingerprint`.
+- **Atomic Two-Phase Journaling (2PC)**: Added an append-only transaction journal (`discovery-journal.json`) to prevent partial state corruption or incomplete writes during abrupt host interrupts.
+- **Append-Only Hash-Chained Consumption Receipts**: Workflow interaction consumptions are permanently recorded in `.development-kit/idea/consumptions.json` with cryptographic previous-hash linking (`hashChain`), preventing receipt tampering and replay attacks.
+- **Design Authority State Truthfulness**: Prevented callers from fabricating or bypassing Design Authority setup state via caller-provided mock parameters. Enforced live state inspection against `.development-kit/design-system-state.json`.
+- **Exact Scope Proposal Binding**: Enforced that scope classification before Product Owner confirmation is treated strictly as an AI proposal. Complete mappings covering all active requirements must be persisted and confirmed; eliminated unclassified fallback and implicit MUST assignment.
+- **Project-Root Affinity**: Hardened root-resolution logic across all CLI scripts to accurately resolve project boundaries in the presence of spaces, symlinks, or nested `.agents/` invocations across Windows, macOS, and Linux.
+
+### Security / Reliability
+- **Host Interaction Integrity**: Enforced strict turn sequencing (`PROPOSE` -> `RETURN CONTROL TO USER` -> `RECEIVE USER RESPONSE` -> `AUTHORITATIVE MUTATION`) to eliminate single-turn self-confirmation vulnerabilities.
+- **Fail-Closed Discovery Rehydration**: Discovery state loader detects and rejects corrupted, tampered, or mismatched journal/consumption records with explicit error codes (`DK_DISCOVERY_CORRUPT`, `DK_INTERACTION_FINGERPRINT_MISMATCH`).
+- **Immutable Proof-of-Decision (POD) Evidence**: Every authoritative requirement confirmation, adoption, and rejection generates an immutable POD decision record in `.development-kit/decisions/`.
+
+### Changed
+- Refactored IDEA workflow state machine to operate with explicit phase-guarded transitions and typed transition receipts.
+- Updated public command contracts (`commands/dk-idea.md`) and agent guidelines (`agents/product-discovery-agent.md`) to reflect the hardened interaction and fingerprinting protocols.
+
+### Documentation
+- Completed comprehensive repository documentation audit aligning all command examples, counts, and architectural references with the v0.9.1 reliability model.
+- Added draft release notes, marketing copy, and release acceptance checklist under `docs/08-maintenance-release/`.
+
 ## [0.9.0] - 2026-08-24
 
 ### Added

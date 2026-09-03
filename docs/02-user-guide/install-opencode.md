@@ -83,7 +83,7 @@ Then restart or reload OpenCode.
 
 ## Skill compatibility metadata
 
-All 45 skills contain OpenCode compatibility metadata in their `SKILL.md` frontmatter:
+All compatible skills contain OpenCode compatibility metadata in their `SKILL.md` frontmatter:
 
 ```yaml
 compatibility:

@@ -1,0 +1,18 @@
+{
+  "skill": "design-authority",
+  "scenario": "Fail Same Design Team Test when unapproved styling and visual drift occur",
+  "input": {
+    "command": "/dk-review",
+    "implementation": "UI introduced novel gradient cards, rounded-3xl buttons, and neon shadows not in design.md",
+    "design_authority_state": "approved"
+  },
+  "expected": {
+    "same_design_team_verdict": "FAIL",
+    "issues_reported": [
+      "DS-001: Unapproved border radius",
+      "DS-002: Unauthorized gradient surface",
+      "DS-003: Non-standard shadow elevation"
+    ],
+    "blocks_task_completion": true
+  }
+}

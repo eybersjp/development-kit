@@ -1,0 +1,27 @@
+{
+  "skill": "test-driven-development",
+  "scenario": "Implement a function using TDD",
+  "task": {
+    "objective": "Implement an email validation function",
+    "requirements": [
+      "Return true for valid email formats",
+      "Return false for invalid email formats",
+      "Handle edge cases (empty string, null, very long input)"
+    ],
+    "acceptance_criteria": [
+      "Valid emails: user@example.com, a.b@c.co",
+      "Invalid: @example.com, user@, user@.com, empty string"
+    ]
+  },
+  "expected": {
+    "red_phase": true,
+    "green_phase": true,
+    "refactor_phase": true,
+    "tests_written_first": true,
+    "minimum_implementation": true,
+    "must_not": [
+      "implement_before_test",
+      "over_engineer"
+    ]
+  }
+}

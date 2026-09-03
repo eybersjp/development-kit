@@ -1,0 +1,16 @@
+{
+  "skill": "design-authority",
+  "scenario": "Allow reference deferral during idea stage, but halt at preflight before frontend implementation",
+  "input": {
+    "workflow_stage": "IMPLEMENT",
+    "command": "/dk-build",
+    "design_authority_state": "deferred",
+    "task_scope": "Implement settings page UI component"
+  },
+  "expected": {
+    "preflight_fails": true,
+    "halts_implementation": true,
+    "routes_to": "/dk-design-system",
+    "blocks_unauthorized_styling": true
+  }
+}

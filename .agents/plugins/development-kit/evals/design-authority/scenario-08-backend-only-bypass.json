@@ -1,0 +1,15 @@
+{
+  "skill": "design-authority",
+  "scenario": "Exempt non-visual and backend-only projects from design authority gates",
+  "input": {
+    "command": "/dk-build",
+    "project_type": "CLI data ingestion tool without UI",
+    "design_authority_state": "not_required"
+  },
+  "expected": {
+    "design_authority_applicable": false,
+    "preflight_bypassed": true,
+    "design_review_skipped": true,
+    "build_proceeds_normally": true
+  }
+}

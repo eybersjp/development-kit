@@ -1,0 +1,28 @@
+{
+  "skill": "scope-definition",
+  "scenario": "Define scope for a feature request with potential feature creep",
+  "input": {
+    "request": "I want a dashboard that shows sales data, with charts and tables, and maybe some AI predictions, and also email reports, and a dark mode toggle",
+    "context": "MVP with 2-week deadline, single developer"
+  },
+  "expected": {
+    "must_have": [
+      "sales data display",
+      "charts",
+      "tables"
+    ],
+    "should_have": [
+      "email reports",
+      "dark mode toggle"
+    ],
+    "could_have": [],
+    "explicitly_excluded": [
+      "AI predictions"
+    ],
+    "rationale": "AI predictions exceed MVP scope given 2-week timeline and single developer",
+    "must_not": [
+      "include AI predictions in scope",
+      "accept all requests as must-have"
+    ]
+  }
+}

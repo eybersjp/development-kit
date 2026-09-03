@@ -30,13 +30,24 @@ It is **not** a project-management dashboard and it does not replace engineering
 
 ## Current release
 
-The current release line is **v0.9.0**.
+The current published release line is **v0.9.0**.
 
 v0.9 introduces the **Reliability Control Plane**. Approved tasks become fingerprinted Development Contracts before execution. Verification and review operate from fresh or independently rehydrated authoritative context. Final acceptance is computed from evidence, required controls, risk-derived reviews, architecture/design constraints, source freshness, and approvals instead of being asserted by the implementation agent.
 
 The release also adds bounded correction, destructive-command blast-radius controls, deterministic PLAN validation, canonical artifact reconciliation with mandatory source fingerprints, structured review findings, architecture-drift detection, host-capability fallback, and Proposal Builder adversarial regression fixtures based on real development failures.
 
 v0.8 remains the foundation for **DKF Design Authority**, including `design.md` as the authoritative visual source, `/dk-design-system`, visual-reference analysis, and controlled design amendments. v0.8.1 restored native Antigravity discovery for all 16 `/dk-*` workflows and strengthened installer/plugin synchronization.
+
+### v0.9.1 Field Hardening (In Progress)
+
+The upcoming **v0.9.1** patch is currently undergoing rigorous field hardening on `fix/v0.9.1-field-hardening`. It addresses subtle authority bypasses and state-persistence integrity challenges identified across multiple independent review cycles:
+
+- **Strict Interaction & Fingerprint Binding**: All Product Owner discovery interactions (`REQUIREMENTS_INTERVIEW`, `DESIGN_SYSTEM_SETUP`, `IDEA_CHALLENGE`, `REQUIREMENT_CONFIRMATION`, `SCOPE_CONFIRMATION`, `BRIEF_APPROVAL`) compute deterministic SHA-256 fingerprints. Authority operations strictly require and verify the active `expectedInteractionFingerprint`.
+- **Atomic Two-Phase Journaling (2PC)**: Discovery candidate mutations use an append-only journal (`discovery-journal.json`) to prevent partial state corruption across abrupt host interruptions.
+- **Append-Only Hash-Chained Consumption Receipts**: Workflow interaction consumptions are permanently recorded in `.development-kit/idea/consumptions.json` with cryptographic previous-hash linking (`hashChain`). Replay or re-consumption of stale interaction receipts is impossible.
+- **Design Authority State Truthfulness**: Design system disposition (`ATTACH_REFERENCES`, `EXISTING_DESIGN_MD`, `DERIVE_EXISTING_APP`, `NEW_DIRECTION`, `DEFERRED`) is immutably persisted into `.development-kit/design-system-state.json`. Live state inspections reject caller-provided unconfirmed mock state.
+- **Exact Scope Proposal Binding**: Scope classification before Product Owner confirmation is treated strictly as an AI proposal. Complete mappings must be persisted and confirmed by the Product Owner; no unclassified fallback or implicit MUST assignment is permitted.
+- **Project-Root Affinity & Robust Path Handling**: All CLI operations resolve project root robustly, safely handling nested `.agents/` invocations, symlinks, and paths with spaces across Windows, macOS, and Linux.
 
 ## What you get
 

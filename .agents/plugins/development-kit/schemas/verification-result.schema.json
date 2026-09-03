@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://development-kit.dev/schemas/verification-result.schema.json",
+  "title": "Development Kit Verification Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "contractId", "runId", "role", "contextIsolation", "sourceFingerprint", "createdAt", "criteria", "verdict"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "contractId": { "type": "string", "minLength": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "role": { "enum": ["spec-verifier", "spec-reviewer", "test-engineer", "code-reviewer", "security-reviewer", "accessibility-reviewer", "design-reviewer", "simplicity-reviewer", "architecture-reviewer"] },
+    "contextIsolation": { "enum": ["fresh", "rehydrated"] },
+    "sourceFingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "statement", "requiredEvidence", "status", "evidence", "reason"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "statement": { "type": "string", "minLength": 1 },
+          "requiredEvidence": { "type": "boolean" },
+          "verificationType": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+          "status": { "enum": ["PASS", "FAIL", "PARTIAL", "UNVERIFIED", "NOT_APPLICABLE"] },
+          "evidence": { "type": "array", "items": { "$ref": "evidence-record.schema.json" } },
+          "reason": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "verdict": { "enum": ["PASS", "FAIL", "INCOMPLETE"] }
+  }
+}
