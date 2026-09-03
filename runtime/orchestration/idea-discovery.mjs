@@ -9,7 +9,10 @@ import {
   persistPODecision,
   loadPODecisionById,
   validatePODecision,
+  computePODecisionFingerprint,
 } from './po-decisions.mjs';
+
+const computePODigest = computePODecisionFingerprint;
 
 export const DISCOVERY_SCHEMA_VERSION = '1.0.0';
 
@@ -662,21 +665,140 @@ export function getDiscoveryJournalPath(rootDir = process.cwd()) {
 
 export function loadDiscoveryState(rootDir = process.cwd()) {
   const journalPath = getDiscoveryJournalPath(rootDir);
+  const filePath = getDiscoveryFilePath(rootDir);
+
   if (fs.existsSync(journalPath)) {
+    let journal = null;
     try {
-      const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
-      if (journal && journal.status === 'RECOVERY_REQUIRED') {
+      journal = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
+    } catch (err) {
+      throw new DiscoveryStateError(
+        `Corrupt discovery journal: ${err.message}`,
+        'DK_DISCOVERY_TRANSACTION_INCOMPLETE'
+      );
+    }
+
+    if (!journal || typeof journal !== 'object') {
+      throw new DiscoveryStateError('Invalid discovery journal format', 'DK_DISCOVERY_TRANSACTION_INCOMPLETE');
+    }
+
+    if (journal.status === 'RECOVERY_REQUIRED') {
+      throw new DiscoveryStateError(
+        `Discovery transaction incomplete: ${journal.error || 'recovery required'}`,
+        'DK_DISCOVERY_TRANSACTION_INCOMPLETE'
+      );
+    }
+
+    if (journal.status === 'PREPARED') {
+      // Recovery classification using exact transaction binding:
+      // journal: transactionId, operationType, preDiscoveryRevision, preDiscoveryFingerprint,
+      //          postDiscoveryRevision, postDiscoveryFingerprint, expectedPodIds, expectedPodFingerprints, stagedPostState
+      // Read current discovery file on disk without triggering recovery loop
+      let diskDisc = null;
+      if (fs.existsSync(filePath)) {
+        try {
+          diskDisc = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+          diskDisc.fingerprint = computeDiscoveryFingerprint(diskDisc);
+        } catch (_) {
+          diskDisc = null;
+        }
+      } else {
+        diskDisc = {
+          schemaVersion: DISCOVERY_SCHEMA_VERSION,
+          revision: 0,
+          fingerprint: computeDiscoveryFingerprint({ requirements: [], openQuestions: [] }),
+          updatedAt: new Date().toISOString(),
+          requirements: [],
+          openQuestions: [],
+        };
+      }
+
+      const expectedPodIds = Array.isArray(journal.expectedPodIds)
+        ? journal.expectedPodIds
+        : (Array.isArray(journal.podIds) ? journal.podIds : []);
+
+      const expectedPodFingerprints = journal.expectedPodFingerprints || {};
+
+      let writtenExpectedPodsCount = 0;
+      let podIntegrityValid = true;
+      for (const pid of expectedPodIds) {
+        let pod = null;
+        try {
+          pod = loadPODecisionById(rootDir, pid);
+        } catch (_) {}
+        if (pod) {
+          writtenExpectedPodsCount++;
+          if (expectedPodFingerprints[pid]) {
+            const actualFp = computePODigest(pod);
+            if (actualFp !== expectedPodFingerprints[pid]) {
+              podIntegrityValid = false;
+            }
+          }
+        }
+      }
+
+      const allExpectedPodsWritten = expectedPodIds.length > 0 && writtenExpectedPodsCount === expectedPodIds.length && podIntegrityValid;
+      const noExpectedPodsWritten = writtenExpectedPodsCount === 0;
+
+      const isExactPreState = diskDisc &&
+        diskDisc.revision === journal.preDiscoveryRevision &&
+        diskDisc.fingerprint === journal.preDiscoveryFingerprint;
+
+      const isExactPostState = diskDisc &&
+        diskDisc.revision === journal.postDiscoveryRevision &&
+        diskDisc.fingerprint === journal.postDiscoveryFingerprint;
+
+      // Outcome A: PREPARED + no effective POD writes + discovery still exact pre-state
+      // Safely ABORT transaction and remove/close journal
+      if (noExpectedPodsWritten && isExactPreState) {
+        try {
+          fs.unlinkSync(journalPath);
+        } catch (_) {}
+      }
+      // Outcome B: PREPARED + all expected PODs valid + discovery equals exact intended post-state
+      // Finalize COMMITTED and clean journal
+      else if (allExpectedPodsWritten && isExactPostState) {
+        try {
+          fs.unlinkSync(journalPath);
+        } catch (_) {}
+      }
+      // Outcome C: PREPARED + all expected PODs valid + discovery still exact pre-state
+      // Only complete discovery commit if journal contains exact staged post-state
+      else if (allExpectedPodsWritten && isExactPreState) {
+        if (
+          journal.stagedPostState &&
+          journal.stagedPostState.revision === journal.postDiscoveryRevision &&
+          computeDiscoveryFingerprint(journal.stagedPostState) === journal.postDiscoveryFingerprint
+        ) {
+          // Re-commit exact staged post state
+          persistDiscoveryState(journal.stagedPostState, rootDir);
+          try {
+            fs.unlinkSync(journalPath);
+          } catch (_) {}
+        } else {
+          journal.status = 'RECOVERY_REQUIRED';
+          journal.error = 'All PODs persisted but exact staged post-state missing or fingerprint mismatch';
+          fs.writeFileSync(journalPath, JSON.stringify(journal, null, 2), 'utf8');
+          throw new DiscoveryStateError(
+            `Discovery transaction incomplete: ${journal.error}`,
+            'DK_DISCOVERY_TRANSACTION_INCOMPLETE'
+          );
+        }
+      }
+      // Outcome D: partial POD set, mismatched POD, unexpected discovery state, or ambiguity
+      // Mark RECOVERY_REQUIRED / fail closed
+      else {
+        journal.status = 'RECOVERY_REQUIRED';
+        journal.error = `Ambiguous transaction state: writtenPods=${writtenExpectedPodsCount}/${expectedPodIds.length}, isPreState=${isExactPreState}, isPostState=${isExactPostState}`;
+        fs.writeFileSync(journalPath, JSON.stringify(journal, null, 2), 'utf8');
         throw new DiscoveryStateError(
-          `Discovery transaction incomplete: ${journal.error || 'partial batch write detected'}`,
+          `Discovery transaction incomplete: ${journal.error}`,
           'DK_DISCOVERY_TRANSACTION_INCOMPLETE'
         );
       }
-    } catch (err) {
-      if (err instanceof DiscoveryStateError) throw err;
     }
   }
 
-  const filePath = getDiscoveryFilePath(rootDir);
   if (!fs.existsSync(filePath)) {
     return {
       schemaVersion: DISCOVERY_SCHEMA_VERSION,
@@ -1950,19 +2072,44 @@ export function batchCommitRequirementConfirmation(rootDir = process.cwd(), { pr
   // Prevalidate authority graph in memory before writing anything
   validateDiscoveryAuthority(rootDir, proposedDisc, pods);
 
-  // Write journal as PREPARED
+  const preDisc = loadDiscoveryState(rootDir);
+
+  const expectedPodFingerprints = {};
+  for (const pod of pods) {
+    expectedPodFingerprints[pod.id] = computePODigest(pod);
+  }
+
+  // Write journal as PREPARED with exact transaction binding
   const journalData = {
+    transactionId: `TX-DISCOVERY-${Date.now()}-${process.pid}`,
+    operationType: 'REQUIREMENT_CONFIRMATION_BATCH',
     status: 'PREPARED',
-    podIds: pods.map((p) => p.id),
-    targetRevision: proposedDisc.revision,
+    preDiscoveryRevision: preDisc.revision,
+    preDiscoveryFingerprint: preDisc.fingerprint,
+    postDiscoveryRevision: proposedDisc.revision,
+    postDiscoveryFingerprint: computeDiscoveryFingerprint(proposedDisc),
+    expectedPodIds: pods.map((p) => p.id),
+    expectedPodFingerprints,
+    stagedPostState: proposedDisc,
     timestamp: new Date().toISOString(),
   };
   fs.writeFileSync(journalPath, JSON.stringify(journalData, null, 2), 'utf8');
 
+  // Test Failpoint 1: AFTER_PREPARED_JOURNAL
+  if (process.env.DK_TEST_FAILPOINT === 'AFTER_PREPARED_JOURNAL') {
+    throw new Error('SIMULATED_FAILPOINT: AFTER_PREPARED_JOURNAL');
+  }
+
   try {
     // Write all PODs
+    let written = 0;
     for (const pod of pods) {
       persistPODecision(pod, rootDir);
+      written++;
+      // Test Failpoint 2: AFTER_FIRST_POD
+      if (written === 1 && process.env.DK_TEST_FAILPOINT === 'AFTER_FIRST_POD') {
+        throw new Error('SIMULATED_FAILPOINT: AFTER_FIRST_POD');
+      }
     }
   } catch (podErr) {
     // Write journal as RECOVERY_REQUIRED
@@ -1970,6 +2117,11 @@ export function batchCommitRequirementConfirmation(rootDir = process.cwd(), { pr
     journalData.error = `Failed writing PODs: ${podErr.message}`;
     fs.writeFileSync(journalPath, JSON.stringify(journalData, null, 2), 'utf8');
     throw podErr;
+  }
+
+  // Test Failpoint 3: AFTER_ALL_PODS
+  if (process.env.DK_TEST_FAILPOINT === 'AFTER_ALL_PODS') {
+    throw new Error('SIMULATED_FAILPOINT: AFTER_ALL_PODS');
   }
 
   try {
@@ -1980,6 +2132,11 @@ export function batchCommitRequirementConfirmation(rootDir = process.cwd(), { pr
     journalData.error = `Failed writing discovery state after PODs persisted: ${discErr.message}`;
     fs.writeFileSync(journalPath, JSON.stringify(journalData, null, 2), 'utf8');
     throw discErr;
+  }
+
+  // Test Failpoint 4: AFTER_DISCOVERY_PERSISTED
+  if (process.env.DK_TEST_FAILPOINT === 'AFTER_DISCOVERY_PERSISTED') {
+    throw new Error('SIMULATED_FAILPOINT: AFTER_DISCOVERY_PERSISTED');
   }
 
   // Success: remove or mark COMMITTED

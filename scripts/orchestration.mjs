@@ -23,9 +23,7 @@ import {
   recordOpenQuestion,
   evaluateDiscoveryReadiness,
   loadDiscoveryState,
-  persistApprovalRecord,
   loadWorkflowCheckpoint,
-  persistWorkflowCheckpoint,
   presentCurrentInteraction,
   resolveIdeaWorkflowState,
   recordDesignAuthoritySetup,
@@ -37,6 +35,10 @@ import {
   consumeQuestionSupersession,
   consumeScopeConfirmation,
   consumeBriefApproval,
+  consumeDesignApplicabilityResponse,
+  recordScopeProposal,
+  consumeScopeAdjustment,
+  IdeaWorkflowError,
 } from '../runtime/orchestration/index.mjs';
 import { reconcileCanonicalArtifact } from '../runtime/orchestration/reconciliation.mjs';
 import { resolveProjectRoot } from '../runtime/bootstrap/project-root.mjs';
@@ -126,20 +128,12 @@ function main() {
       }));
     }
     case 'idea-record-candidate': return output(recordRequirementCandidate(rootDir, payload));
-    case 'idea-confirm-candidate': {
-      return output(consumeRequirementConfirmation(rootDir, {
-        action: 'CONFIRM',
-        confirmedBy: payload.confirmedBy,
-        expectedInteractionFingerprint: payload.expectedInteractionFingerprint,
-      }));
-    }
+    case 'idea-confirm-candidate':
     case 'idea-adopt-candidate': {
-      return output(consumeRequirementConfirmation(rootDir, {
-        action: 'CONFIRM',
-        confirmedBy: payload.confirmedBy,
-        allowAdoption: true,
-        expectedInteractionFingerprint: payload.expectedInteractionFingerprint,
-      }));
+      throw new IdeaWorkflowError(
+        `Operation '${operation}' is deprecated. Atomic requirement confirmation requires confirmation across all candidates using 'idea-confirm-requirements'.`,
+        'DK_OPERATION_DEPRECATED'
+      );
     }
     case 'idea-reject-candidate': {
       return output(consumeRequirementRejection(rootDir, {
@@ -197,6 +191,9 @@ function main() {
     case 'idea-present-interaction': return output(presentCurrentInteraction(rootDir, payload));
     case 'idea-design-setup': return output(recordDesignAuthoritySetup(rootDir, payload));
     case 'idea-challenge-response': return output(recordIdeaChallengeResponse(rootDir, payload));
+    case 'idea-design-applicability': return output(consumeDesignApplicabilityResponse(rootDir, payload));
+    case 'idea-propose-scope': return output(recordScopeProposal(rootDir, payload));
+    case 'idea-adjust-scope': return output(consumeScopeAdjustment(rootDir, payload));
     case 'artifact-resolve': return output(resolveCanonicalIdeaArtifact(rootDir));
     case 'artifact-reconcile': return output(reconcileCanonicalIdeaBrief({ rootDir }));
     default: throw new Error(`Unsupported orchestration operation: ${operation}`);

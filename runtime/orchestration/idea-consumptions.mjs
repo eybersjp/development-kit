@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { loadPODecisionById } from './po-decisions.mjs';
 
 export const CONSUMPTIONS_SCHEMA_VERSION = '1.0.0';
 
@@ -96,6 +97,68 @@ export function validateConsumptionReceipt(receipt) {
   return true;
 }
 
+export function validateConsumptionEvidence(receipt, rootDir = process.cwd()) {
+  validateConsumptionReceipt(receipt);
+
+  // Validate resulting PODs exist on disk, are valid, and bound to PRODUCT_OWNER authority
+  if (Array.isArray(receipt.resultingPodIds) && receipt.resultingPodIds.length > 0) {
+    for (const podId of receipt.resultingPodIds) {
+      let pod = null;
+      try {
+        pod = loadPODecisionById(rootDir, podId);
+      } catch (err) {
+        throw new ConsumptionReceiptError(
+          `Consumption receipt ${receipt.consumptionId} references missing or invalid POD ${podId}: ${err.message}`,
+          'DK_RECEIPT_EVIDENCE_MISMATCH'
+        );
+      }
+      if (!pod) {
+        throw new ConsumptionReceiptError(
+          `Consumption receipt ${receipt.consumptionId} references missing POD: ${podId}`,
+          'DK_RECEIPT_EVIDENCE_MISMATCH'
+        );
+      }
+      if (pod.provenance !== 'product-owner' || pod.status !== 'APPROVED') {
+        throw new ConsumptionReceiptError(
+          `Consumption receipt ${receipt.consumptionId} references invalid POD ${podId}: status=${pod.status}, provenance=${pod.provenance}`,
+          'DK_RECEIPT_EVIDENCE_MISMATCH'
+        );
+      }
+    }
+  }
+
+  // Validate resulting artifact approval exists in approvals history
+  if (receipt.resultingArtifactApprovalId) {
+    const approvalsPath = path.join(rootDir, '.development-kit', 'idea', 'approvals.json');
+    if (!fs.existsSync(approvalsPath)) {
+      throw new ConsumptionReceiptError(
+        `Consumption receipt ${receipt.consumptionId} references approval ${receipt.resultingArtifactApprovalId} but approvals.json does not exist`,
+        'DK_RECEIPT_EVIDENCE_MISMATCH'
+      );
+    }
+    let approvalsList = [];
+    try {
+      approvalsList = JSON.parse(fs.readFileSync(approvalsPath, 'utf8'));
+    } catch (err) {
+      throw new ConsumptionReceiptError(
+        `Failed to parse approvals.json while validating receipt ${receipt.consumptionId}: ${err.message}`,
+        'DK_RECEIPT_EVIDENCE_MISMATCH'
+      );
+    }
+    const matchingApproval = (Array.isArray(approvalsList) ? approvalsList : []).find(
+      (a) => a.approvalId === receipt.resultingArtifactApprovalId || a.id === receipt.resultingArtifactApprovalId
+    );
+    if (!matchingApproval) {
+      throw new ConsumptionReceiptError(
+        `Consumption receipt ${receipt.consumptionId} references missing approval: ${receipt.resultingArtifactApprovalId}`,
+        'DK_RECEIPT_EVIDENCE_MISMATCH'
+      );
+    }
+  }
+
+  return true;
+}
+
 export function loadConsumptions(rootDir = process.cwd()) {
   const filePath = getConsumptionsFilePath(rootDir);
   if (!fs.existsSync(filePath)) {
@@ -143,6 +206,22 @@ export function appendConsumptionReceipt(rootDir = process.cwd(), receiptData = 
   }
 
   const existing = loadConsumptions(rootDir);
+
+  // Duplicate receipt detection using full 4-tuple interaction identity:
+  // interactionFingerprint, workflowRevisionBefore, preDiscoveryRevision, preDiscoveryFingerprint
+  const isDuplicate = existing.some((r) =>
+    r.interactionFingerprint === receiptData.interactionFingerprint &&
+    r.workflowRevisionBefore === receiptData.workflowRevisionBefore &&
+    r.preDiscoveryRevision === receiptData.preDiscoveryRevision &&
+    r.preDiscoveryFingerprint === receiptData.preDiscoveryFingerprint
+  );
+  if (isDuplicate) {
+    throw new ConsumptionReceiptError(
+      `Interaction already consumed: receipt exists for fingerprint ${receiptData.interactionFingerprint} at workflow revision ${receiptData.workflowRevisionBefore}`,
+      'DK_INTERACTION_ALREADY_CONSUMED'
+    );
+  }
+
   const sequenceNumber = existing.length + 1;
   const previousReceiptFingerprint = existing.length > 0 ? existing[existing.length - 1].consumptionId : null;
 

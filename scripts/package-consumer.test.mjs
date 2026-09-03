@@ -221,7 +221,13 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
       }),
     ], { cwd: consumerDir, encoding: 'utf8' });
 
-    // 9. Setup Design Authority and Idea Challenge so workflow enters REQUIREMENT_CONFIRMATION
+    // 9. Setup Design Applicability, Authority and Idea Challenge so workflow enters REQUIREMENT_CONFIRMATION
+    spawnSync(process.execPath, [
+      scriptPath,
+      'orchestration.mjs',
+      '--operation=idea-present-interaction',
+    ], { cwd: consumerDir, encoding: 'utf8' });
+
     stateRes = spawnSync(process.execPath, [
       scriptPath,
       'orchestration.mjs',
@@ -229,7 +235,26 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
     ], { cwd: consumerDir, encoding: 'utf8' });
     state = JSON.parse(stateRes.stdout).result;
 
-    spawnSync(process.execPath, [
+    const appRes = spawnSync(process.execPath, [
+      scriptPath,
+      'orchestration.mjs',
+      '--operation=idea-design-applicability',
+      '--input-json=' + JSON.stringify({
+        choice: '1. Visual user interface',
+        confirmedBy: 'PRODUCT_OWNER',
+        expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+      }),
+    ], { cwd: consumerDir, encoding: 'utf8' });
+    assert.equal(appRes.status, 0, appRes.stderr || appRes.stdout);
+
+    stateRes = spawnSync(process.execPath, [
+      scriptPath,
+      'orchestration.mjs',
+      '--operation=idea-workflow-state',
+    ], { cwd: consumerDir, encoding: 'utf8' });
+    state = JSON.parse(stateRes.stdout).result;
+
+    const setupRes = spawnSync(process.execPath, [
       scriptPath,
       'orchestration.mjs',
       '--operation=idea-design-setup',
@@ -239,6 +264,7 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
         expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
       }),
     ], { cwd: consumerDir, encoding: 'utf8' });
+    assert.equal(setupRes.status, 0, setupRes.stderr || setupRes.stdout);
 
     stateRes = spawnSync(process.execPath, [
       scriptPath,
@@ -247,7 +273,7 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
     ], { cwd: consumerDir, encoding: 'utf8' });
     state = JSON.parse(stateRes.stdout).result;
 
-    spawnSync(process.execPath, [
+    const chalRes = spawnSync(process.execPath, [
       scriptPath,
       'orchestration.mjs',
       '--operation=idea-challenge-response',
@@ -257,6 +283,7 @@ test('Package Consumer: Real distribution npm pack tarball extracts, installs --
         expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
       }),
     ], { cwd: consumerDir, encoding: 'utf8' });
+    assert.equal(chalRes.status, 0, chalRes.stderr || chalRes.stdout);
 
     stateRes = spawnSync(process.execPath, [
       scriptPath,

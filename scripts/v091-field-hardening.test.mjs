@@ -58,6 +58,8 @@ import {
   recordDesignAuthoritySetup,
   recordIdeaChallengeResponse,
   consumeDiscoveryQuestionResponse,
+  consumeDesignApplicabilityResponse,
+  recordScopeProposal,
   consumeRequirementConfirmation,
   consumeRequirementModification,
   consumeScopeConfirmation,
@@ -491,6 +493,16 @@ test('Blocker 6: Public CLI orchestration operations for IDEA workflow execute c
     // 2. Setup Design Authority and Idea Challenge
     presentCurrentInteraction(tempDir);
     let state = resolveIdeaWorkflowState(tempDir);
+    assert.equal(state.workflowPhase, 'DESIGN_APPLICABILITY_CHECK');
+
+    consumeDesignApplicabilityResponse(tempDir, {
+      choice: '1. Visual user interface (web, mobile, desktop)',
+      applicable: true,
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+
+    state = resolveIdeaWorkflowState(tempDir);
     assert.equal(state.workflowPhase, 'DESIGN_SYSTEM_SETUP');
 
     recordDesignAuthoritySetup(tempDir, {
@@ -512,19 +524,31 @@ test('Blocker 6: Public CLI orchestration operations for IDEA workflow execute c
     state = resolveIdeaWorkflowState(tempDir);
     assert.equal(state.workflowPhase, 'REQUIREMENT_CONFIRMATION');
 
-    // Confirm candidate 1 via CLI with interaction fingerprint
+    // Confirm candidates via CLI with interaction fingerprint
     const confExec1 = spawnSync(process.execPath, [
       scriptPath,
-      '--operation=idea-confirm-candidate',
+      '--operation=idea-confirm-requirements',
       '--input-json=' + JSON.stringify({
-        id: 'IDEA-REQ-001',
+        candidateIds: ['IDEA-REQ-001', 'IDEA-REQ-002'],
         confirmedBy: 'PRODUCT_OWNER',
         expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
       })
     ], { cwd: tempDir, encoding: 'utf8' });
     assert.equal(confExec1.status, 0);
 
-    // 4. Scope Confirmation turn
+    // 4. Scope Proposal & Confirmation turn
+    const propExec1 = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-propose-scope',
+      '--input-json=' + JSON.stringify({
+        scopeProposal: {
+          'IDEA-REQ-001': 'MUST',
+          'IDEA-REQ-002': 'MUST',
+        },
+      })
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(propExec1.status, 0);
+
     state = resolveIdeaWorkflowState(tempDir);
     assert.equal(state.workflowPhase, 'SCOPE_CONFIRMATION');
 
@@ -1758,6 +1782,16 @@ test('Candidate 9 (Defect 1): Documented /dk-idea public workflow sequence execu
     // Advance through Design Setup and Idea Challenge turns
     presentCurrentInteraction(tempDir);
     let state = resolveIdeaWorkflowState(tempDir);
+    assert.equal(state.workflowPhase, 'DESIGN_APPLICABILITY_CHECK');
+
+    consumeDesignApplicabilityResponse(tempDir, {
+      choice: '1. Visual user interface (web, mobile, desktop)',
+      applicable: true,
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+
+    state = resolveIdeaWorkflowState(tempDir);
     assert.equal(state.workflowPhase, 'DESIGN_SYSTEM_SETUP');
 
     recordDesignAuthoritySetup(tempDir, {
@@ -1782,9 +1816,9 @@ test('Candidate 9 (Defect 1): Documented /dk-idea public workflow sequence execu
     // Confirm candidates via CLI with interaction fingerprint
     const confRes1 = spawnSync(process.execPath, [
       scriptPath,
-      '--operation=idea-confirm-candidate',
+      '--operation=idea-confirm-requirements',
       '--input-json=' + JSON.stringify({
-        id: 'IDEA-REQ-001',
+        candidateIds: ['IDEA-REQ-001', 'IDEA-REQ-002'],
         confirmedBy: 'PRODUCT_OWNER',
         expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
       })
@@ -1801,7 +1835,19 @@ test('Candidate 9 (Defect 1): Documented /dk-idea public workflow sequence execu
     assert.equal(eval1Parsed.result.ready, false);
     assert.ok(eval1Parsed.result.blockers.some(b => b.code === 'UNCLASSIFIED_MATERIAL_REQUIREMENT'));
 
-    // 4. Explicit Product Owner scope classification
+    // 4. Propose Scope and then Scope Confirmation
+    const propRes1 = spawnSync(process.execPath, [
+      scriptPath,
+      '--operation=idea-propose-scope',
+      '--input-json=' + JSON.stringify({
+        scopeProposal: {
+          'IDEA-REQ-001': 'MUST',
+          'IDEA-REQ-002': 'MUST',
+        },
+      })
+    ], { cwd: tempDir, encoding: 'utf8' });
+    assert.equal(propRes1.status, 0);
+
     state = resolveIdeaWorkflowState(tempDir);
     assert.equal(state.workflowPhase, 'SCOPE_CONFIRMATION');
 
@@ -3468,6 +3514,15 @@ test('Candidate 13 (Defect 2): Public supersession CLI operations (idea-supersed
     });
 
     state = resolveIdeaWorkflowState(tempDir);
+    assert.equal(state.pendingInteraction.type, 'DESIGN_APPLICABILITY');
+    consumeDesignApplicabilityResponse(tempDir, {
+      choice: '1. Visual user interface (web, mobile, desktop)',
+      applicable: true,
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+
+    state = resolveIdeaWorkflowState(tempDir);
     assert.equal(state.pendingInteraction.type, 'DESIGN_SYSTEM_SETUP');
     recordDesignAuthoritySetup(tempDir, {
       disposition: 'DEFERRED',
@@ -3885,10 +3940,10 @@ test('Candidate 18 (Exact Legacy Candidate 16 No-Workflow Regression): Fresh exe
     assert.equal(entryResult.success, true);
     assert.ok(entryResult.ideaWorkflow, 'Must return structured ideaWorkflow');
     assert.equal(entryResult.ideaWorkflow.ideaStage, 'DISCOVERY_IN_PROGRESS');
-    assert.equal(entryResult.ideaWorkflow.workflowPhase, 'DESIGN_SYSTEM_SETUP');
-    assert.equal(entryResult.ideaWorkflow.action, 'PROMPT_DESIGN_SYSTEM_SETUP');
-    assert.equal(entryResult.ideaWorkflow.pendingInteraction.type, 'DESIGN_SYSTEM_SETUP');
-    assert.equal(entryResult.ideaWorkflow.pendingInteraction.id, 'INTERACTION-DESIGN-SETUP');
+    assert.equal(entryResult.ideaWorkflow.workflowPhase, 'DESIGN_APPLICABILITY_CHECK');
+    assert.equal(entryResult.ideaWorkflow.action, 'PROMPT_DESIGN_APPLICABILITY');
+    assert.equal(entryResult.ideaWorkflow.pendingInteraction.type, 'DESIGN_APPLICABILITY');
+    assert.equal(entryResult.ideaWorkflow.pendingInteraction.id, 'INTERACTION-DESIGN-APPLICABILITY');
 
     // Zero side effects during read-only inspection
     const discAfter = loadDiscoveryState(rootDir);
@@ -3899,7 +3954,7 @@ test('Candidate 18 (Exact Legacy Candidate 16 No-Workflow Regression): Fresh exe
 
     // Persist runtime-derived pending interaction
     presentCurrentInteraction(rootDir, {
-      expectedInteractionId: 'INTERACTION-DESIGN-SETUP',
+      expectedInteractionId: 'INTERACTION-DESIGN-APPLICABILITY',
       expectedFingerprint: entryResult.ideaWorkflow.pendingInteraction.fingerprint,
     });
 
@@ -3910,9 +3965,9 @@ test('Candidate 18 (Exact Legacy Candidate 16 No-Workflow Regression): Fresh exe
       phase: 'entry',
     });
     assert.equal(secondEntry.success, true);
-    assert.equal(secondEntry.ideaWorkflow.workflowPhase, 'DESIGN_SYSTEM_SETUP');
+    assert.equal(secondEntry.ideaWorkflow.workflowPhase, 'DESIGN_APPLICABILITY_CHECK');
     assert.equal(secondEntry.ideaWorkflow.action, 'RESUME_PENDING_INTERACTION');
-    assert.equal(secondEntry.ideaWorkflow.pendingInteraction.type, 'DESIGN_SYSTEM_SETUP');
+    assert.equal(secondEntry.ideaWorkflow.pendingInteraction.type, 'DESIGN_APPLICABILITY');
   } finally {
     cleanupTempDir(rootDir);
   }
@@ -3940,6 +3995,19 @@ test('Candidate 19 (Guarded Typed Consumers & A–G End-to-End Suite): Public ty
       resolution: 'ANSWERED',
       resolvedBy: 'PRODUCT_OWNER',
       expectedInteractionFingerprint: turnAFp,
+    });
+
+    // --- Turn A.5: Design Applicability ---
+    state = resolveIdeaWorkflowState(rootDir);
+    assert.equal(state.workflowPhase, 'DESIGN_APPLICABILITY_CHECK');
+    assert.equal(state.pendingInteraction.type, 'DESIGN_APPLICABILITY');
+    const turnA5Fp = state.pendingInteraction.fingerprint;
+
+    consumeDesignApplicabilityResponse(rootDir, {
+      choice: '1. Visual user interface (web, mobile, desktop)',
+      applicable: true,
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: turnA5Fp,
     });
 
     // --- Turn B: Design System Setup ---
@@ -3983,7 +4051,11 @@ test('Candidate 19 (Guarded Typed Consumers & A–G End-to-End Suite): Public ty
       expectedInteractionFingerprint: turnDFp,
     });
 
-    // --- Turn E: Scope Confirmation ---
+    // --- Turn E: Scope Proposal & Confirmation ---
+    recordScopeProposal(rootDir, {
+      scopeProposal: { 'IDEA-REQ-001': 'MUST' },
+    });
+
     state = resolveIdeaWorkflowState(rootDir);
     assert.equal(state.workflowPhase, 'SCOPE_CONFIRMATION');
     assert.equal(state.pendingInteraction.type, 'SCOPE_CONFIRMATION');
@@ -4126,8 +4198,20 @@ test('Candidate 19 (Backend-Only Exemption): Confirmed backend-only skips DESIGN
       expectedInteractionFingerprint: pendingState.pendingInteraction.fingerprint,
     });
 
+    let state = resolveIdeaWorkflowState(rootDir);
+    assert.equal(state.workflowPhase, 'DESIGN_APPLICABILITY_CHECK');
+    assert.equal(state.pendingInteraction.type, 'DESIGN_APPLICABILITY');
+
+    // Confirmed non-visual/backend choice sets applicable=false
+    consumeDesignApplicabilityResponse(rootDir, {
+      choice: '2. Non-visual/backend/CLI/library',
+      applicable: false,
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+
     // Workflow state resolution must skip DESIGN_SYSTEM_SETUP directly to IDEA_CHALLENGE
-    const state = resolveIdeaWorkflowState(rootDir);
+    state = resolveIdeaWorkflowState(rootDir);
     assert.equal(state.workflowPhase, 'IDEA_CHALLENGE');
     assert.equal(state.pendingInteraction.type, 'IDEA_CHALLENGE');
   } finally {
@@ -4264,14 +4348,22 @@ test('Candidate 20 (§14: CLI Negative Tests): Direct calls without active inter
     assert.equal(resNoCp.status, 1);
     const parsedNoCp = JSON.parse(resNoCp.stderr || resNoCp.stdout);
     assert.equal(parsedNoCp.name, 'IdeaWorkflowError');
-    assert.ok(parsedNoCp.error.includes('no workflow checkpoint exists'));
+    assert.ok(parsedNoCp.error.includes('deprecated') || parsedNoCp.error.includes('no workflow checkpoint exists'));
 
     // Record a candidate and setup initial workflow
     recordRequirementCandidate(rootDir, { id: 'IDEA-REQ-001', statement: 'Req 1', origin: 'USER_STATED' });
     presentCurrentInteraction(rootDir);
 
-    // 2. Direct call to idea-classify-scope while in DESIGN_SYSTEM_SETUP fails closed
     let state = resolveIdeaWorkflowState(rootDir);
+    assert.equal(state.workflowPhase, 'DESIGN_APPLICABILITY_CHECK');
+    consumeDesignApplicabilityResponse(rootDir, {
+      choice: '1. Visual user interface (web, mobile, desktop)',
+      applicable: true,
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+
+    state = resolveIdeaWorkflowState(rootDir);
     assert.equal(state.workflowPhase, 'DESIGN_SYSTEM_SETUP');
 
     const resWrongPhase = spawnSync(process.execPath, [
@@ -4317,7 +4409,14 @@ test('Candidate 20 (§15: Group Atomicity Tests): Multi-requirement batch fails 
     presentCurrentInteraction(rootDir);
     let state = resolveIdeaWorkflowState(rootDir);
 
-    // Bypass to REQUIREMENT_CONFIRMATION
+    // Progress past applicability and design setup to REQUIREMENT_CONFIRMATION
+    consumeDesignApplicabilityResponse(rootDir, {
+      choice: '1. Visual user interface (web, mobile, desktop)',
+      applicable: true,
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+    state = resolveIdeaWorkflowState(rootDir);
     recordDesignAuthoritySetup(rootDir, {
       disposition: 'DEFERRED',
       confirmedBy: 'PRODUCT_OWNER',
@@ -4371,6 +4470,14 @@ test('Candidate 20 (§16: Crash Recovery Tests): Reconciles via receipt when cra
     recordRequirementCandidate(rootDir, { id: 'IDEA-REQ-001', statement: 'Req 1', origin: 'USER_STATED' });
     presentCurrentInteraction(rootDir);
     let state = resolveIdeaWorkflowState(rootDir);
+
+    consumeDesignApplicabilityResponse(rootDir, {
+      choice: '1. Visual user interface (web, mobile, desktop)',
+      applicable: true,
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+    state = resolveIdeaWorkflowState(rootDir);
 
     recordDesignAuthoritySetup(rootDir, {
       disposition: 'DEFERRED',
@@ -4446,6 +4553,15 @@ test('Candidate 20 (§17: Design Setup Truthfulness Tests): NEW_DIRECTION leaves
     recordRequirementCandidate(rootDir, { id: 'IDEA-REQ-001', statement: 'Req 1', origin: 'USER_STATED' });
     presentCurrentInteraction(rootDir);
     let state = resolveIdeaWorkflowState(rootDir);
+    assert.equal(state.workflowPhase, 'DESIGN_APPLICABILITY_CHECK');
+    consumeDesignApplicabilityResponse(rootDir, {
+      choice: '1. Visual user interface (web, mobile, desktop)',
+      applicable: true,
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: state.pendingInteraction.fingerprint,
+    });
+
+    state = resolveIdeaWorkflowState(rootDir);
     assert.equal(state.workflowPhase, 'DESIGN_SYSTEM_SETUP');
 
     // Execute NEW_DIRECTION disposition
@@ -4515,6 +4631,17 @@ test('Candidate 20 (§18: Public A-G End-to-End Suite via CLI spawnSync): Full s
       expectedInteractionFingerprint: wf.pendingInteraction.fingerprint,
     });
 
+    // --- Turn A.5: Design Applicability Check ---
+    wf = runCli('idea-workflow-state');
+    assert.equal(wf.workflowPhase, 'DESIGN_APPLICABILITY_CHECK');
+
+    runCli('idea-design-applicability', {
+      choice: '1. Visual user interface (web, mobile, desktop)',
+      applicable: true,
+      confirmedBy: 'PRODUCT_OWNER',
+      expectedInteractionFingerprint: wf.pendingInteraction.fingerprint,
+    });
+
     // --- Turn B: Design System Setup ---
     wf = runCli('idea-workflow-state');
     assert.equal(wf.workflowPhase, 'DESIGN_SYSTEM_SETUP');
@@ -4539,13 +4666,17 @@ test('Candidate 20 (§18: Public A-G End-to-End Suite via CLI spawnSync): Full s
     wf = runCli('idea-workflow-state');
     assert.equal(wf.workflowPhase, 'REQUIREMENT_CONFIRMATION');
 
-    runCli('idea-confirm-candidate', {
-      id: 'IDEA-REQ-001',
+    runCli('idea-confirm-requirements', {
+      candidateIds: ['IDEA-REQ-001'],
       confirmedBy: 'PRODUCT_OWNER',
       expectedInteractionFingerprint: wf.pendingInteraction.fingerprint,
     });
 
-    // --- Turn E: Scope Confirmation ---
+    // --- Turn E: Scope Proposal & Confirmation ---
+    runCli('idea-propose-scope', {
+      scopeProposal: { 'IDEA-REQ-001': 'MUST' },
+    });
+
     wf = runCli('idea-workflow-state');
     assert.equal(wf.workflowPhase, 'SCOPE_CONFIRMATION');
 

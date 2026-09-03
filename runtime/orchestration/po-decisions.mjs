@@ -12,6 +12,7 @@ export const VALID_POD_DECISION_TYPES = Object.freeze([
   'REQUIREMENT_ADOPTION',
   'QUESTION_SUPERSESSION',
   'QUESTION_RESOLUTION',
+  'DESIGN_APPLICABILITY',
 ]);
 
 export class PODecisionError extends Error {
@@ -117,6 +118,10 @@ export function validatePODecision(decision) {
     } else if (decision.decisionType === 'QUESTION_RESOLUTION') {
       if (!decision.decisionData.questionId || !decision.decisionData.newResolution) {
         throw new PODecisionError('QUESTION_RESOLUTION decisionData requires questionId and newResolution', 'DK_POD_INVALID');
+      }
+    } else if (decision.decisionType === 'DESIGN_APPLICABILITY') {
+      if (typeof decision.decisionData.applicable !== 'boolean') {
+        throw new PODecisionError('DESIGN_APPLICABILITY decisionData requires boolean applicable', 'DK_POD_INVALID');
       }
     }
   }

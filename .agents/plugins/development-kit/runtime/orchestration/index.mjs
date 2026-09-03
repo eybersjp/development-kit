@@ -1,7 +1,7 @@
 import {
   ensureDevelopmentContract,
   persistDevelopmentContract,
-  validateDevelopmentContract,
+  validateDevelopmentContract
 } from './development-contract.mjs';
 import { bindAuthoritativeSources, createPolicyBoundDevelopmentContract } from './contract-policy.mjs';
 import { buildContextPackage } from './context-package.mjs';
@@ -10,7 +10,7 @@ import {
   persistFinalRunState,
   persistRunManifest,
   persistRunStateRevision,
-  updateRun,
+  updateRun
 } from './orchestration-run.mjs';
 import { decideAcceptance } from './acceptance-engine.mjs';
 import { decideCorrection } from './correction-engine.mjs';
@@ -24,7 +24,7 @@ export function prepareTaskRun({
   runId,
   capabilities,
   impacts = {},
-  createdAt,
+  createdAt
 } = {}) {
   const desiredContractId = contractId ?? `INC-${task?.id}`;
   const boundSources = bindAuthoritativeSources({ rootDir, task, authoritativeSources });
@@ -36,8 +36,8 @@ export function prepareTaskRun({
       task,
       authoritativeSources: boundSources,
       contractId: desiredContractId,
-      createdAt,
-    }).contract;
+      createdAt
+}).contract;
   } catch (error) {
     if (error?.name !== 'ContractValidationError') throw error;
     contract = createPolicyBoundDevelopmentContract({
@@ -46,8 +46,8 @@ export function prepareTaskRun({
       task,
       authoritativeSources: boundSources,
       contractId: desiredContractId,
-      createdAt,
-    });
+      createdAt
+});
     persistDevelopmentContract(contract, rootDir);
   }
 
@@ -66,8 +66,8 @@ export function createRoleContext({ contract, role, rootDir = process.cwd(), rep
     repositoryState,
     implementationReport,
     capabilities,
-    contextIsolation: role === 'implementation-agent' || role === 'implementer' ? 'fresh' : 'rehydrated',
-  });
+    contextIsolation: role === 'implementation-agent' || role === 'implementer' ? 'fresh' : 'rehydrated'
+});
 }
 
 export function evaluateRun({ run, contract, verification, reviews, controlManifests, approvals, architectureDrift, rootDir = process.cwd() } = {}) {
@@ -78,13 +78,13 @@ export function evaluateRun({ run, contract, verification, reviews, controlManif
     controlManifests,
     approvals,
     architectureDrift,
-    rootDir,
-  });
+    rootDir
+});
   const updatedRun = updateRun(run, {
     verificationVerdict: verification?.verdict ?? null,
     acceptanceState: acceptance.state,
-    state: acceptance.state === 'ACCEPTED' ? 'ACCEPTED' : acceptance.state === 'BLOCKED' ? 'BLOCKED' : 'PAUSED',
-  });
+    state: acceptance.state === 'ACCEPTED' ? 'ACCEPTED' : acceptance.state === 'BLOCKED' ? 'BLOCKED' : 'PAUSED'
+});
   persistRunStateRevision(updatedRun, rootDir);
   if (['ACCEPTED', 'BLOCKED'].includes(updatedRun.state)) persistFinalRunState(updatedRun, rootDir);
   return { acceptance, run: updatedRun };
@@ -96,8 +96,8 @@ export function planCorrection({ run, contract, verification, blockers = [], roo
     verification,
     attempt: run.correctionAttempt,
     priorFailureSignatures: run.failureSignatures,
-    blockers,
-  });
+    blockers
+});
 
   if (decision.action === 'NONE') return { decision, run };
 
@@ -110,8 +110,8 @@ export function planCorrection({ run, contract, verification, blockers = [], roo
   const correctingRun = updateRun(run, {
     state: 'CORRECTING',
     correctionAttempt: decision.request.attempt,
-    failureSignatures: [...run.failureSignatures, decision.failureSignature],
-  });
+    failureSignatures: [...run.failureSignatures, decision.failureSignature]
+});
   persistRunStateRevision(correctingRun, rootDir);
   return { decision, run: correctingRun };
 }
@@ -133,7 +133,17 @@ export * from './execution-broker.mjs';
 export * from './reconciliation.mjs';
 export * from './plan-validator.mjs';
 export * from './authority-graph.mjs';
-export * from './po-decisions.mjs';
+export {
+  POD_SCHEMA_VERSION,
+  PODecisionError,
+  VALID_POD_DECISION_TYPES,
+  computePODecisionFingerprint,
+  createSupersedingPODecision,
+  getPODecisionStorePath,
+  loadPODecisionById,
+  loadPODecisions,
+  validatePODecision
+} from './po-decisions.mjs';
 export * from './idea-schema.mjs';
 export {
   DISCOVERY_SCHEMA_VERSION,
@@ -153,7 +163,7 @@ export {
   loadDiscoveryState,
   recordRequirementCandidate,
   recordOpenQuestion,
-  evaluateDiscoveryReadiness,
+  evaluateDiscoveryReadiness
 } from './idea-discovery.mjs';
 export {
   IDEA_STAGE_STATES,
@@ -161,8 +171,51 @@ export {
   computeIdeaStageState,
   computeEffectiveApprovalStatus,
   loadApprovalsHistory,
-  persistApprovalRecord,
-} from './idea-state.mjs';
-export * from './idea-workflow.mjs';
-export * from './idea-consumptions.mjs';
+  } from './idea-state.mjs';
+export {
+  IDEA_WORKFLOW_PHASES,
+  IDEA_WORKFLOW_SCHEMA_VERSION,
+  INTERACTION_STATUSES,
+  IdeaWorkflowError,
+  LEGAL_WORKFLOW_TRANSITIONS,
+  PENDING_INTERACTION_TYPES,
+  VALID_DESIGN_SYSTEM_DISPOSITIONS,
+  VALID_DESIGN_SYSTEM_STATUSES,
+  computeInteractionFingerprint,
+  consumeBriefApproval,
+  consumeDesignApplicabilityResponse,
+  consumeDiscoveryQuestionResponse,
+  consumeQuestionSupersession,
+  consumeRequirementConfirmation,
+  consumeRequirementModification,
+  consumeRequirementRejection,
+  consumeScopeAdjustment,
+  consumeScopeConfirmation,
+  getDesignSystemStateFilePath,
+  getWorkflowFilePath,
+  isDesignAuthorityApplicable,
+  isValidWorkflowTransition,
+  loadDesignSystemState,
+  loadWorkflowCheckpoint,
+  presentCurrentInteraction,
+  recordDesignAuthoritySetup,
+  recordIdeaChallengeResponse,
+  recordScopeProposal,
+  resolveIdeaWorkflowState,
+  validateDesignSystemStateStructure,
+  validatePendingInteractionForConsumption,
+  validateWorkflowConsistency,
+  validateWorkflowStructure
+} from './idea-workflow.mjs';
+export {
+  CONSUMPTIONS_SCHEMA_VERSION,
+  ConsumptionReceiptError,
+  computeReceiptDigest,
+  findMatchingReceipt,
+  getConsumptionsFilePath,
+  loadConsumptionReceipts,
+  loadConsumptions,
+  validateConsumptionEvidence,
+  validateConsumptionReceipt
+} from './idea-consumptions.mjs';
 export * from '../artifacts/artifact-registry.mjs';
