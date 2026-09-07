@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DKF — The reliability control plane for agentic software development</title>
+    <meta name="description" content="DKF is the reliability control plane for agentic software development. Bind autonomous work to explicit contracts, independently verify the result, and compute acceptance from evidence.">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container nav-shell">
+        <a class="brand" href="#top" aria-label="DKF home">
+          <span class="brand-mark">DKF</span>
+          <span class="brand-text">
+            <strong>Development Kit Framework</strong>
+            <small>Reliability control plane</small>
+          </span>
+        </a>
+        <button class="nav-toggle" aria-expanded="false" aria-controls="site-nav">Menu</button>
+        <nav id="site-nav" class="site-nav">
+          <a href="#why">Why DKF</a>
+          <a href="#how">How it works</a>
+          <a href="#capabilities">Capabilities</a>
+          <a href="#roadmap">Roadmap</a>
+          <a href="#get-started">Get started</a>
+          <a class="button button-secondary" href="https://github.com/eybersjp/development-kit" target="_blank" rel="noreferrer">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <div class="eyebrow">Open-source • Current release v0.10.0</div>
+            <h1>AI can write it.<br>DKF proves it.</h1>
+            <p class="hero-lead">DKF is the reliability control plane for agentic software development. It binds autonomous work to explicit contracts, preserves provenance, isolates verification, and computes acceptance from evidence instead of trusting an agent’s claim that the job is done.</p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="#get-started">Get started</a>
+              <a class="button button-secondary" href="https://github.com/eybersjp/development-kit/tree/main/docs" target="_blank" rel="noreferrer">Read documentation</a>
+            </div>
+            <ul class="hero-points">
+              <li>Development Contracts and governed execution</li>
+              <li>Independent verification and deterministic acceptance</li>
+              <li>Authority Graph traceability and stale-source detection</li>
+            </ul>
+          </div>
+          <div class="hero-visual">
+            <img src="assets/dkf-control-plane-hero.svg" alt="Diagram showing DKF sitting above autonomous agents to govern contracts, evidence, verification and acceptance.">
+          </div>
+        </div>
+      </section>
+
+      <section class="proof-strip">
+        <div class="container proof-grid">
+          <article>
+            <strong>Trust, not just throughput</strong>
+            <p>DKF is built for the harder engineering problem: whether autonomous software work should be trusted.</p>
+          </article>
+          <article>
+            <strong>Current baseline</strong>
+            <p>v0.10.0 provides the current proven foundation. Roadmap items are clearly separated from implemented capability.</p>
+          </article>
+          <article>
+            <strong>What comes next</strong>
+            <p>v0.11 introduces Adaptive Reliability so the required lifecycle is compiled from risk, scope and control policy.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="why" class="section">
+        <div class="container narrow">
+          <div class="section-header">
+            <span class="eyebrow">Why DKF</span>
+            <h2>Autonomous coding is improving fast. Trust is the remaining gap.</h2>
+          </div>
+          <div class="problem-grid">
+            <article class="card problem-card">
+              <h3>Typical agent workflow</h3>
+              <ul>
+                <li>The agent plans the work.</li>
+                <li>The agent implements the code.</li>
+                <li>The agent reports that it is done.</li>
+              </ul>
+              <p class="muted">That is useful, but it leaves major trust questions unresolved.</p>
+            </article>
+            <article class="card problem-card emphasis">
+              <h3>DKF workflow</h3>
+              <ul>
+                <li>Intent is bound to a Development Contract.</li>
+                <li>Execution happens inside governed constraints.</li>
+                <li>Verification is kept independent.</li>
+                <li>Acceptance is computed from evidence.</li>
+              </ul>
+              <p class="muted">Completion becomes a computed state, not an agent assertion.</p>
+            </article>
+          </div>
+          <div class="question-grid">
+            <div class="question">Were the right requirements actually implemented?</div>
+            <div class="question">Did required design, security or architecture controls run?</div>
+            <div class="question">Is the evidence still fresh after source or code changes?</div>
+            <div class="question">Can every accepted change be traced back to authoritative intent?</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="how" class="section section-slate">
+        <div class="container">
+          <div class="section-header narrow-left">
+            <span class="eyebrow">How it works</span>
+            <h2>The control plane sits between intent and acceptance.</h2>
+            <p>DKF coordinates a governed flow so autonomous work stays authorized, traceable and verifiable.</p>
+          </div>
+          <div class="process-layout">
+            <div class="process-visual">
+              <img src="assets/dkf-proof-loop.svg" alt="A clean step-by-step diagram showing Intent, Contract, Execution, Evidence, Verification and Acceptance.">
+            </div>
+            <div class="process-steps">
+              <article class="step-card"><span>01</span><h3>Intent</h3><p>User goals, requirements, decisions and authoritative sources are captured explicitly.</p></article>
+              <article class="step-card"><span>02</span><h3>Contract</h3><p>DKF binds the work to a Development Contract that defines what must be done and how it will be validated.</p></article>
+              <article class="step-card"><span>03</span><h3>Execution</h3><p>Implementation tasks run with controlled context, execution safeguards and scoped authority.</p></article>
+              <article class="step-card"><span>04</span><h3>Evidence</h3><p>Tests, runtime checks, reviews and control results become explicit evidence rather than informal narrative.</p></article>
+              <article class="step-card"><span>05</span><h3>Verification</h3><p>Independent verification checks that required criteria, controls and traceability are satisfied.</p></article>
+              <article class="step-card"><span>06</span><h3>Acceptance</h3><p>The Acceptance Engine derives ACCEPTED, PENDING or BLOCKED from evidence and authority state.</p></article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section architecture-showcase">
+        <div class="container">
+          <div class="section-header narrow-left">
+            <span class="eyebrow">System view</span>
+            <h2>From intent to impact. Reliably.</h2>
+            <p>DKF governs the path from human intent to accepted software outcomes while keeping agents productive beneath the control plane.</p>
+          </div>
+          <figure class="architecture-figure">
+            <img src="assets/dkf-from-intent-to-impact.webp" alt="DKF reliability control plane diagram showing intent, Development Contract, execution, evidence, verification and acceptance with governed code, test, documentation and operations agents.">
+          </figure>
+        </div>
+      </section>
+
+      <section id="capabilities" class="section">
+        <div class="container">
+          <div class="section-header">
+            <span class="eyebrow">Capabilities</span>
+            <h2>What DKF provides today</h2>
+            <p>These are current implemented capabilities reflected in the repository and v0.10 release baseline.</p>
+          </div>
+          <div class="capability-grid">
+            <article class="card capability-card"><h3>Development Contracts</h3><p>Structured execution authority for tasks, requirements, controls and completion criteria.</p></article>
+            <article class="card capability-card"><h3>Acceptance Engine</h3><p>Determines whether a change is ACCEPTED, PENDING or BLOCKED from evidence and authority state.</p></article>
+            <article class="card capability-card"><h3>Authority Graph</h3><p>Links decisions, requirements, tasks, evidence and review to prevent orphaned or unverified changes.</p></article>
+            <article class="card capability-card"><h3>Execution Safety</h3><p>Guards consequential actions and preserves approval requirements for destructive or sensitive operations.</p></article>
+            <article class="card capability-card"><h3>Independent Verification</h3><p>Prevents implementation narrative from becoming the sole basis for completion or release confidence.</p></article>
+            <article class="card capability-card"><h3>Design Authority</h3><p>Establishes design governance so frontend work stays aligned with the authoritative design source.</p></article>
+            <article class="card capability-card"><h3>Numbered Decisions</h3><p>Commands start capabilities. Numbers control decisions. Bounded Product Owner input becomes structured runtime state.</p></article>
+            <article class="card capability-card"><h3>Control Center foundation</h3><p>A growing observability layer for lifecycle state, decisions, memory, governance and verification data.</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-slate">
+        <div class="container">
+          <div class="section-header narrow-left">
+            <span class="eyebrow">Supported environments</span>
+            <h2>Agent-independent by design</h2>
+            <p>DKF is designed to work above the execution layer so it can guide and govern multiple agent environments.</p>
+          </div>
+          <div class="pill-row">
+            <span class="pill">Antigravity</span><span class="pill">OpenCode</span><span class="pill">Claude Code</span><span class="pill">Cursor</span><span class="pill">Copilot</span><span class="pill">Cline</span><span class="pill">Windsurf</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="roadmap" class="section">
+        <div class="container">
+          <div class="section-header">
+            <span class="eyebrow">Roadmap</span>
+            <h2>From proven baseline to proven reliability</h2>
+            <p>The roadmap is public and explicit. Planned items are not presented as already delivered.</p>
+          </div>
+          <div class="roadmap-grid">
+            <article class="roadmap-item current"><div class="roadmap-top"><span class="badge current">Current</span><strong>v0.10</strong></div><h3>Numbered decisions</h3><p>Structured suggestion promotion and deterministic Product Owner decision handling.</p></article>
+            <article class="roadmap-item"><div class="roadmap-top"><span class="badge next">Next</span><strong>v0.11</strong></div><h3>Adaptive Reliability</h3><p>Compile the minimum sufficient lifecycle and mandatory controls from risk, scope and policy.</p></article>
+            <article class="roadmap-item"><div class="roadmap-top"><span class="badge planned">Planned</span><strong>v0.12</strong></div><h3>DKF Proof</h3><p>Acceptance certificates and proof bundles for evidence-backed release confidence.</p></article>
+            <article class="roadmap-item"><div class="roadmap-top"><span class="badge planned">Planned</span><strong>v0.13</strong></div><h3>Repository enforcement</h3><p>GitHub PR and CI enforcement so DKF acceptance becomes a first-class repository gate.</p></article>
+            <article class="roadmap-item"><div class="roadmap-top"><span class="badge planned">Planned</span><strong>v0.14+</strong></div><h3>Broader reliability runtime</h3><p>Benchmarking, isolation, safe parallelism, multi-repository change contracts and stronger evidence intelligence.</p></article>
+            <article class="roadmap-item emphasis"><div class="roadmap-top"><span class="badge goal">Target</span><strong>v1.0</strong></div><h3>Proven Reliability</h3><p>DKF becomes the definitive reliability runtime for agentic software development.</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section id="get-started" class="section section-cta">
+        <div class="container cta-shell">
+          <div><span class="eyebrow light">Get started</span><h2>Install DKF and start with governed agentic development.</h2><p>Use the existing repository, documentation and release package as the source of truth.</p></div>
+          <div class="code-card">
+            <pre><code>npm install -g development-kit
+npx development-kit@latest --global</code></pre>
+            <div class="cta-actions"><a class="button button-primary light" href="https://www.npmjs.com/package/development-kit" target="_blank" rel="noreferrer">npm package</a><a class="button button-secondary light" href="https://github.com/eybersjp/development-kit" target="_blank" rel="noreferrer">Repository</a></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-grid">
+        <div>
+          <div class="brand footer-brand"><span class="brand-mark">DKF</span><span class="brand-text"><strong>Development Kit Framework</strong><small>The reliability control plane for agentic software development</small></span></div>
+          <p class="footer-copy">Open-source under the MIT licence. Built to help autonomous software work become more trustworthy, traceable and verifiable.</p>
+        </div>
+        <div class="footer-links"><a href="https://github.com/eybersjp/development-kit" target="_blank" rel="noreferrer">GitHub</a><a href="https://github.com/eybersjp/development-kit/tree/main/docs" target="_blank" rel="noreferrer">Documentation</a><a href="https://www.npmjs.com/package/development-kit" target="_blank" rel="noreferrer">npm</a><a href="https://github.com/eybersjp/development-kit/blob/main/ROADMAP.md" target="_blank" rel="noreferrer">Roadmap</a></div>
+      </div>
+      <div class="container footer-bottom"><span>© <span id="year"></span> DKF</span><span>Current release: v0.10.0</span></div>
+    </footer>
+    <script src="script.js"></script>
+  </body>
+</html>
