@@ -134,3 +134,6 @@ export * from './reconciliation.mjs';
 export * from './plan-validator.mjs';
 export * from './authority-graph.mjs';
 export * from './po-decisions.mjs';
+export * from './idea-suggestions.mjs';
+export * from './decision-menu.mjs';
+export * from './suggestion-promotion.mjs';

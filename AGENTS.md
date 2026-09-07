@@ -30,6 +30,13 @@ These rules are loaded at session start and apply to all work in this repository
 
 13. **Do not start the next task while the current task has unresolved failures.** The task loop is sequential and gated.
 
+## Interaction Principle: Numbered Decision Interface
+
+> **Commands start capabilities. Numbers control decisions.**
+
+Whenever Development Kit requires a bounded Product Owner decision, prefer a numbered decision interface instead of requiring the user to type or repeat an instruction.
+Numbered choices are persisted as structured runtime state before display and resolved deterministically against the active menu. An LLM must never infer what a bare response such as `2` probably means from conversational context alone.
+
 ## External Capability Provider Policy
 
 External capability providers are optional adapters, not core dependencies.
@@ -80,7 +87,7 @@ The simplicity review must never recommend removing:
 The following commands are available. Each command activates a specific workflow bundle with primary and supporting skills from the Development Kit skill library.
 
 - `/dk-autopilot` - Run the complete Development Kit software-development lifecycle in Automated Guided Workflow mode
-- `/dk-idea` - Refine a rough idea into a concrete concept with requirements interview, idea challenge, and scope definition
+- `/dk-idea` - Refine a rough idea into a concrete concept with requirements interview, idea challenge, structured suggestions, and numbered decisions
 - `/dk-research` - Gather source-backed external evidence through approved providers while preserving trust boundaries and provenance
 - `/dk-spec` - Create the minimum required specification artifacts for the approved concept
 - `/dk-design` - Produce technical and visual design including data models, API contracts, user flows, and design direction

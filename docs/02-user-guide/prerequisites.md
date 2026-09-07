@@ -1,6 +1,6 @@
 # Prerequisites
 
-Before installing Development Kit (`development-kit@0.9.0`), ensure your environment meets the following requirements:
+Before installing Development Kit (`development-kit@0.10.0`), ensure your environment meets the following requirements:
 
 ## System & Software Requirements
 

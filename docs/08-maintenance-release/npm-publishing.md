@@ -10,10 +10,10 @@ Verify the current public version with:
 npm view development-kit version
 ```
 
-For the v0.9.0 release, the expected value is:
+For the v0.10.0 release, the expected value is:
 
 ```text
-0.9.0
+0.10.0
 ```
 
 ## Required credentials
@@ -82,7 +82,7 @@ The package allowlist in `package.json` includes:
 - `LICENSE`
 - `opencode.json`
 
-For v0.9.0, installer/distribution tests explicitly confirm the orchestration runtime and JSON schemas are present in isolated installed copies. Run `npm pack --dry-run` when the allowlist changes.
+For v0.10.0, installer/distribution tests explicitly confirm the orchestration runtime and JSON schemas are present in isolated installed copies. Run `npm pack --dry-run` when the allowlist changes.
 
 ## Credential failure and retry
 
@@ -100,5 +100,5 @@ A GitHub Release can succeed while npm publication is skipped or fails. After co
 - [Release Process](release-process.md)
 - [Pre-Release Checklist](pre-release-checklist.md)
 - [Post-Release Verification](post-release-verification.md)
-- [Release Notes v0.9.0](release-notes-v0.9.0.md)
+- [Release Notes v0.10.0](release-notes-v0.10.0.md)
 - [Security Policy](../../SECURITY.md)

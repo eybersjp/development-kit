@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://development-kit.dev/schemas/idea-suggestion.schema.json",
+  "title": "Development Kit Idea Suggestion",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "title",
+    "description",
+    "rationale",
+    "impact",
+    "effort",
+    "recommendedScope",
+    "state",
+    "provenance",
+    "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^IDEA-SUG-[0-9]{3,}$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1
+    },
+    "impact": {
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH"
+      ]
+    },
+    "effort": {
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH"
+      ]
+    },
+    "recommendedScope": {
+      "enum": [
+        "MUST_HAVE",
+        "SHOULD_HAVE",
+        "COULD_HAVE",
+        "EXPLICITLY_EXCLUDED"
+      ]
+    },
+    "state": {
+      "enum": [
+        "PENDING",
+        "ACCEPTED",
+        "DEFERRED",
+        "REJECTED"
+      ]
+    },
+    "promotedScope": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "MUST_HAVE",
+        "SHOULD_HAVE",
+        "COULD_HAVE",
+        "EXPLICITLY_EXCLUDED",
+        null
+      ]
+    },
+    "decisionProvenance": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "decisionId": {
+          "type": "string"
+        },
+        "decisionAuthority": {
+          "type": "string"
+        },
+        "resolvedAt": {
+          "type": "string"
+        },
+        "selectedOption": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "provenance": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lifecycleContext": {
+      "type": "object"
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "string"
+    }
+  }
+}
