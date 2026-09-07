@@ -1,12 +1,12 @@
 # Development Kit Documentation System
 
-Welcome to the official documentation for **Development Kit v0.9.0** (`development-kit@0.9.0`).
+Welcome to the official documentation for **Development Kit v0.10.0** (`development-kit@0.10.0`).
 
 Development Kit is a disciplined AI software-development workflow for Antigravity, OpenCode, Claude Code, Cursor, VS Code (GitHub Copilot), Cline, and Windsurf. It installs lifecycle commands, specialist agents, reusable skills, verification gates, Next-Step Guidance, DK Intelligence, DK Control Center, DKF Design Authority, and the persistent `/dk-autopilot` guided workflow into supported coding-agent environments.
 
 ## Current release highlights
 
-| Package Version | 0.9.0 |
+| Package Version | 0.10.0 |
 | Lifecycle Stages | 9 (UNDERSTAND through COMPLETE) |
 | Workflow Commands | 16 |
 | Specialist Agents | 18 |

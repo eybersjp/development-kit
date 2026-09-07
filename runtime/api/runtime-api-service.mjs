@@ -1,5 +1,5 @@
 /**
- * Development Kit Runtime API — Secure Local HTTP Service
+ * Development Kit Runtime API ? Secure Local HTTP Service
  *
  * Implements local loopback HTTP service providing read and governed write surfaces
  * for DK Control Center, IDE extensions, and CLI tools.
@@ -24,6 +24,8 @@ import { LocalMemoryProvider } from '../intelligence/local-memory-provider.mjs';
 import { getCurrentState } from '../autopilot/state-store.mjs';
 import { MemoryType, MemoryStatus, MemoryAuthority } from '../intelligence/memory-enums.mjs';
 import { validateMemoryRecord, validateAuthorityTransition } from '../intelligence/memory-schema.mjs';
+import { loadActiveDecisionMenu, resolveDecisionInput } from '../orchestration/decision-menu.mjs';
+import { loadIdeaSuggestions } from '../orchestration/idea-suggestions.mjs';
 
 export class RuntimeApiService {
   constructor(options = {}) {
@@ -189,7 +191,37 @@ export class RuntimeApiService {
     if (method === 'GET' && pathname === '/v1/decisions') {
       const queryResults = await this.memoryProvider.query({ types: [MemoryType.DECISION] });
       const decisions = queryResults.map((r) => r.record);
-      return this._json(res, 200, { decisions });
+      let activeMenu = null;
+      try {
+        activeMenu = loadActiveDecisionMenu(this.rootDir);
+      } catch {
+        // active menu optional
+      }
+      let suggestions = [];
+      try {
+        suggestions = loadIdeaSuggestions(this.rootDir);
+      } catch {
+        // suggestions optional
+      }
+
+      return this._json(res, 200, {
+        decisions,
+        activeDecision: activeMenu,
+        suggestions,
+      });
+    }
+
+    if (method === 'POST' && pathname === '/v1/decisions/resolve') {
+      const body = await this._readJsonBody(req);
+      const resolution = resolveDecisionInput({
+        input: body.input ?? body.selectedNumber,
+        rootDir: this.rootDir,
+        authority: body.authority || 'Product Owner',
+      });
+      if (!resolution.success) {
+        return this._json(res, 400, { error: 'Resolution Failed', ...resolution });
+      }
+      return this._json(res, 200, resolution);
     }
 
     if (method === 'GET' && pathname === '/v1/providers') {

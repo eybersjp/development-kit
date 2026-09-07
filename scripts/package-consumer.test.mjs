@@ -15,7 +15,8 @@ test('Package Consumer: npm pack produces valid tarball with all runtime assets 
   const [packInfo] = JSON.parse(packOutput);
 
   assert.equal(packInfo.name, 'development-kit');
-  assert.equal(packInfo.version, '0.9.0');
+  const pkgJson = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8'));
+  assert.equal(packInfo.version, pkgJson.version);
 
   const filenames = packInfo.files.map((f) => f.path);
   assert.ok(filenames.some((f) => f.includes('runtime/orchestration/execution-broker.mjs')), 'Must include execution-broker.mjs');

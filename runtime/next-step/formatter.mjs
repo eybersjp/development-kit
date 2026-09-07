@@ -1,11 +1,12 @@
 /**
- * Development Kit Next-Step Guidance — Response Formatter
+ * Development Kit Next-Step Guidance ? Response Formatter
  *
  * Formats next-step recommendations into canonical user-facing Markdown
  * and provides helper utilities for appending guidance to responses.
  */
 
 import { resolveNextStep } from './resolver.mjs';
+import { createDecisionMenu, persistActiveDecisionMenu } from '../orchestration/decision-menu.mjs';
 
 /**
  * Formats a list of recommendations into standard Markdown.
@@ -55,6 +56,61 @@ export function formatNextStepGuidance(recommendations = [], options = {}) {
 }
 
 /**
+ * Creates and persists a Numbered Next-Step Decision Menu from recommendations.
+ */
+export function createNextStepDecisionMenu({
+  recommendations = [],
+  stage = 'UNDERSTAND',
+  workflowId = null,
+  rootDir = process.cwd(),
+} = {}) {
+  if (!Array.isArray(recommendations) || recommendations.length === 0) {
+    return null;
+  }
+
+  const options = [];
+  recommendations.forEach((rec, idx) => {
+    const num = idx + 1;
+    const cmd = rec.command.startsWith('/') ? rec.command : `/${rec.command}`;
+    options.push({
+      number: num,
+      label: `Proceed to ${cmd}`,
+      description: rec.description || 'Proceed to the next lifecycle step.',
+      actionType: 'EXECUTE_COMMAND',
+      payload: { command: cmd, reason: rec.reason || null },
+      isRecommended: idx === 0,
+    });
+  });
+
+  // Always append Custom response
+  options.push({
+    number: options.length + 1,
+    label: 'Custom response',
+    description: 'Provide an alternative instruction or command.',
+    actionType: 'CUSTOM',
+    payload: { mode: 'next_step_custom' },
+    isCustom: true,
+  });
+
+  const menuId = `DEC-NEXTSTEP-${Date.now()}`;
+  const menu = createDecisionMenu({
+    decisionId: menuId,
+    decisionType: 'NEXT_STEP_GUIDANCE',
+    title: 'Suggested Next Step',
+    prompt: 'Select how you want to proceed with the next lifecycle step:',
+    recommendedOption: 1,
+    options,
+    lifecycleContext: {
+      stage,
+      workflowId,
+    },
+  });
+
+  persistActiveDecisionMenu(menu, rootDir);
+  return menu;
+}
+
+/**
  * Appends next-step guidance to an existing response text if valid recommendations exist.
  *
  * @param {string} content - Existing response content
@@ -66,6 +122,21 @@ export function appendNextStepGuidance(content = '', context = {}, options = {})
   const recommendations = resolveNextStep(context, options);
   if (!recommendations || recommendations.length === 0) {
     return content;
+  }
+
+  // Persist decision menu if enabled in options or by default for interactive boundaries
+  if (options.persistDecisionMenu !== false) {
+    try {
+      const rootDir = options.rootDir || process.cwd();
+      createNextStepDecisionMenu({
+        recommendations,
+        stage: context.currentStage || 'UNDERSTAND',
+        workflowId: context.workflowId || null,
+        rootDir,
+      });
+    } catch {
+      // Gracefully handle persistence failure in read-only / test contexts
+    }
   }
 
   const formatted = formatNextStepGuidance(recommendations, options);

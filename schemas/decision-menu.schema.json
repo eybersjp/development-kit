@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://development-kit.dev/schemas/decision-menu.schema.json",
+  "title": "Development Kit Numbered Decision Menu",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "decisionId",
+    "decisionType",
+    "title",
+    "prompt",
+    "recommendedOption",
+    "options",
+    "status",
+    "lifecycleContext",
+    "sourceFingerprint",
+    "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "decisionId": {
+      "type": "string",
+      "pattern": "^DEC-[A-Za-z0-9._-]+$"
+    },
+    "decisionType": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "recommendedOption": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "options": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "number",
+          "label",
+          "actionType"
+        ],
+        "properties": {
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "actionType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payload": {
+            "type": "object"
+          },
+          "isCustom": {
+            "type": "boolean"
+          },
+          "isRecommended": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "status": {
+      "enum": [
+        "PENDING",
+        "RESOLVED",
+        "SUPERSEDED",
+        "EXPIRED"
+      ]
+    },
+    "resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selectedNumber",
+        "actionType",
+        "resolvedAt",
+        "authority"
+      ],
+      "properties": {
+        "selectedNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "actionType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "payload": {
+          "type": "object"
+        },
+        "customText": {
+          "type": "string"
+        },
+        "resolvedAt": {
+          "type": "string"
+        },
+        "authority": {
+          "type": "string"
+        }
+      }
+    },
+    "supersededBy": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lifecycleContext": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "stage"
+      ],
+      "properties": {
+        "stage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "command": {
+          "type": "string"
+        },
+        "workflowId": {
+          "type": "string"
+        },
+        "stateRevision": {
+          "type": "integer"
+        }
+      }
+    },
+    "sourceFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "resolvedAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

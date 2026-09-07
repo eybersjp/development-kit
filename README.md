@@ -30,7 +30,9 @@ It is **not** a project-management dashboard and it does not replace engineering
 
 ## Current release
 
-The current release line is **v0.9.0**.
+The current release line is **v0.10.0**.
+
+v0.10 introduces the **Numbered Decision Interface** and structured suggestion-promotion workflow under the interaction principle: *Commands start capabilities. Numbers control decisions.* Bounded Product Owner choices are presented as numbered menus persisted as structured runtime state, and bare numeric responses (e.g. , , , ) resolve deterministically without LLM guesswork. /dk-idea recommendations become structured suggestion records (IDEA-SUG-001) with explicit ACCEPT, DEFER, and REJECT semantics promoted into canonical artifacts via reconciliation.
 
 v0.9 introduces the **Reliability Control Plane**. Approved tasks become fingerprinted Development Contracts before execution. Verification and review operate from fresh or independently rehydrated authoritative context. Final acceptance is computed from evidence, required controls, risk-derived reviews, architecture/design constraints, source freshness, and approvals instead of being asserted by the implementation agent.
 
@@ -43,6 +45,7 @@ v0.8 remains the foundation for **DKF Design Authority**, including `design.md` 
 | Capability | What it provides |
 |---|---|
 | **Automated Guided Workflow** | `/dk-autopilot` coordinates the complete lifecycle and persists progress between sessions. |
+| **Numbered Decision Interface** | Framework-wide numbered choices for bounded PO decisions (*Commands start capabilities. Numbers control decisions*), deterministic numeric resolution, fail-closed validation, structured idea suggestions, and canonical promotion. |
 | **Reliability Control Plane** | Development Contracts, source fingerprints, independent verification, deterministic acceptance, bounded correction, structured reviews, execution-safety checks, PLAN validation, and canonical amendment reconciliation. |
 | **DKF Design Authority** | `/dk-design-system` establishes, inspects, verifies, and amends the authoritative project `design.md`, eliminating frontend visual drift. |
 | **DK Intelligence & Memory** | Durable local engineering memory, architecture decisions, and lifecycle-aware context budgeting with strict project isolation. |

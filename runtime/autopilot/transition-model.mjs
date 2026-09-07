@@ -1,5 +1,5 @@
 /**
- * Development Kit Autopilot — 9-Stage Transition State Machine
+ * Development Kit Autopilot ? 9-Stage Transition State Machine
  *
  * Governs the lifecycle stages:
  * UNDERSTAND -> DEFINE -> DESIGN -> PLAN -> IMPLEMENT -> VERIFY -> REVIEW -> SIMPLIFY -> COMPLETE
@@ -53,10 +53,11 @@ export function createInitialState(options = {}, rootDir = process.cwd()) {
     activeAction: null,
     pendingApproval: null,
     pendingConfirmation: null,
+    activeDecisionMenu: null,
     stateRevision: 1,
     createdAt: now,
     updatedAt: now,
-    frameworkVersion: '0.9.0'
+    frameworkVersion: '0.10.0'
   };
 }
 
@@ -205,6 +206,41 @@ export function confirmCancelState(state, confirmationToken) {
   confirmation.consumed = true;
   state.pendingConfirmation = null;
   state.workflowStatus = 'cancelled';
+  state.stateRevision += 1;
+  state.updatedAt = new Date().toISOString();
+  return state;
+}
+
+export function setPendingDecisionMenu(state, menu) {
+  if (!state) throw new Error('No state provided');
+  if (!menu || !menu.decisionId) throw new Error('Invalid decision menu');
+
+  state.workflowStatus = 'paused';
+  state.activeDecisionMenu = {
+    decisionId: menu.decisionId,
+    decisionType: menu.decisionType,
+    status: menu.status || 'PENDING',
+    recommendedOption: menu.recommendedOption,
+    optionsCount: Array.isArray(menu.options) ? menu.options.length : 0,
+    sourceFingerprint: menu.sourceFingerprint,
+    requestedAt: new Date().toISOString()
+  };
+  state.stateRevision += 1;
+  state.updatedAt = new Date().toISOString();
+  return state;
+}
+
+export function resolvePendingDecisionMenu(state, resolvedMenu) {
+  if (!state) throw new Error('No state provided');
+  if (!state.activeDecisionMenu) {
+    throw new Error('No active decision menu found on state');
+  }
+  if (state.activeDecisionMenu.decisionId !== resolvedMenu?.decisionId) {
+    throw new Error(`Decision ID mismatch: expected ${state.activeDecisionMenu.decisionId}, got ${resolvedMenu?.decisionId}`);
+  }
+
+  state.activeDecisionMenu = null;
+  state.workflowStatus = 'executing';
   state.stateRevision += 1;
   state.updatedAt = new Date().toISOString();
   return state;

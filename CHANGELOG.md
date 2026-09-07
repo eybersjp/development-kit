@@ -6,7 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-07
+
+### Added
+- **Numbered Decision Interface**: Framework-wide UX and runtime mechanism establishing the interaction principle: *Commands start capabilities. Numbers control decisions.*
+- **Structured Idea Suggestions**: Discovered recommendations in /dk-idea become structured, stable-ID records (`IDEA-SUG-001`) with rationale, impact, complexity, recommended scope, decision state, and audit provenance.
+- **Dynamic Numbered Decision Menus**: Dynamically generated, bounded suggestion menus with clearly marked recommendations and custom response options.
+- **Deterministic Decision Resolution**: Strict resolution of bare numeric responses (`1`, `2`, etc.) against persisted active menus; LLM guessing is strictly blocked.
+- **Custom Response Escape Hatch**: Supports granular suggestion selection (accept/defer/reject) or natural-language input when needed.
+- **Explicit PO Decision Semantics**: Explicit `ACCEPT`, `DEFER`, and `REJECT` state transitions; suggestions cannot enter implementation scope without explicit Product Owner approval.
+- **Canonical Artifact Reconciliation & Promotion**: Accepted suggestions promote directly into `docs/01-concept/idea-brief.md` and downstream requirement lineage via fingerprint-verified canonical reconciliation.
+- **New vs Existing Project Routing**: New projects progress forward into /dk-spec; existing projects execute impact analysis and delta reconciliation without restarting.
+- **Autopilot Decision Menus**: Numbered menus pause autopilot execution, persist active state, and resume deterministically upon numeric response.
+- **Runtime API & Control Center Support**: Extended Runtime API with `activeDecision`, suggestions, and `/v1/decisions/resolve` endpoint.
+- **Machine-Readable Schemas**: Added `schemas/idea-suggestion.schema.json` and `schemas/decision-menu.schema.json`.
+- **Numbered Next-Step Guidance**: Extended next-step formatter to optionally persist numbered decision menus for lifecycle boundaries.
+
+### Fixed
+- Resolved legacy version drift by removing obsolete root-level `plugin.json` (0.1.0) in favor of the authoritative packaged plugin manifest at `.agents/plugins/development-kit/plugin.json` (0.10.0), protected by regression tests.
+
 ## [0.9.0] - 2026-08-24
+
 
 ### Added
 - **Reliability Control Plane**: Contract-driven orchestration that turns approved tasks into fingerprinted Development Contracts before implementation.

@@ -1,6 +1,6 @@
 # Verifying Installation
 
-Use the checks below after installing Development Kit v0.9.0.
+Use the checks below after installing Development Kit v0.10.0.
 
 ## Verify the published package
 
@@ -11,7 +11,7 @@ npm view development-kit version
 Expected current version:
 
 ```text
-0.9.0
+0.10.0
 ```
 
 ## Verify framework integrity
@@ -111,7 +111,7 @@ Then start the workflow in a safe test project with:
 /dk-autopilot
 ```
 
-Confirm that it reports a valid lifecycle state, records framework version `0.9.0`, and stops at required approval/evidence gates.
+Confirm that it reports a valid lifecycle state, records framework version `0.10.0`, and stops at required approval/evidence gates.
 
 ## Failure handling
 

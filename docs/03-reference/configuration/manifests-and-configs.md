@@ -9,7 +9,7 @@ Reference for the configuration files that define Development Kit packaging and 
 | Field | Current value | Notes |
 |---|---|---|
 | `name` | `development-kit` | Public npm package name |
-| `version` | `0.9.0` | Current package version and `v0.9.0` release |
+| `version` | `0.10.0` | Current package version and `v0.10.0` release |
 | `description` | Disciplined AI software-development workflow for Antigravity and OpenCode | Public package description |
 | `license` | `MIT` | Root license file is included in the package |
 | `bin` | `development-kit` to `scripts/install-antigravity.mjs` | Enables `npx development-kit init` |
@@ -64,7 +64,7 @@ The obsolete form below is invalid and must not be generated:
 | Field | Current value |
 |---|---|
 | `name` | `development-kit` |
-| `version` | `0.9.0` |
+| `version` | `0.10.0` |
 | `skills` | 63 references: 47 engineering skills plus 16 native `/dk-*` workflow-entry adapters |
 | `agents` | 18 references |
 | `hooks` | 4 references |
@@ -78,7 +78,7 @@ The 16 `/dk-*` skill entries are Antigravity discovery adapters. They route to t
 
 ## Autopilot version state
 
-New Autopilot workflow state records the framework release version in `frameworkVersion`. For v0.9.0 this value is `0.9.0`. The v0.9 version-consistency regression checks that this value remains aligned with both `package.json` and the plugin manifest.
+New Autopilot workflow state records the framework release version in `frameworkVersion`. For v0.10.0 this value is `0.10.0`. The v0.9 version-consistency regression checks that this value remains aligned with both `package.json` and the plugin manifest.
 
 ## Validation rules
 
