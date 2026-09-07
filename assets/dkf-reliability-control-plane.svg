@@ -1,0 +1,135 @@
+<svg width="1600" height="820" viewBox="0 0 1600 820" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">DKF Reliability Control Plane</title>
+  <desc id="desc">Architecture diagram showing decisions flowing through change intelligence, lifecycle policy, contracts, execution, evidence, verification, authority graph and deterministic acceptance.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="820" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#06111E"/>
+      <stop offset="0.5" stop-color="#0A1730"/>
+      <stop offset="1" stop-color="#111329"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#41E3FF"/>
+      <stop offset="1" stop-color="#8D7BFF"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#62F2B0"/>
+      <stop offset="1" stop-color="#2FD4A1"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" stroke="#B9D3FF" stroke-opacity="0.04"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="15" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="820" rx="32" fill="url(#bg)"/>
+  <rect width="1600" height="820" rx="32" fill="url(#grid)"/>
+
+  <text x="80" y="76" fill="#F6F9FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="42" font-weight="760">DKF Reliability Control Plane</text>
+  <text x="80" y="112" fill="#9DB3CF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="20">AI can write it. DKF proves it.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="80" y="160" width="240" height="88" rx="18" fill="#102139" stroke="#365676"/>
+    <text x="200" y="194" text-anchor="middle" fill="#D8E8FC" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">USER / PRODUCT OWNER</text>
+    <text x="200" y="222" text-anchor="middle" fill="#84A1C2" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14">intent · decisions · approvals</text>
+
+    <rect x="390" y="160" width="250" height="88" rx="18" fill="#102139" stroke="#365676"/>
+    <text x="515" y="194" text-anchor="middle" fill="#D8E8FC" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">CHANGE INTELLIGENCE</text>
+    <text x="515" y="222" text-anchor="middle" fill="#84A1C2" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14">scope · risk · impact · novelty</text>
+
+    <rect x="710" y="160" width="250" height="88" rx="18" fill="#122338" stroke="#3C7D92"/>
+    <text x="835" y="194" text-anchor="middle" fill="#C9F8FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">LIFECYCLE + POLICY</text>
+    <text x="835" y="222" text-anchor="middle" fill="#7ED7E5" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14">minimum sufficient controls</text>
+
+    <rect x="1030" y="160" width="240" height="88" rx="18" fill="#171D3A" stroke="#6D64C9"/>
+    <text x="1150" y="194" text-anchor="middle" fill="#E2DEFF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">CONTRACT</text>
+    <text x="1150" y="222" text-anchor="middle" fill="#AAA4DD" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14">scope · authority · fingerprints</text>
+
+    <rect x="1340" y="160" width="180" height="88" rx="18" fill="#15243B" stroke="#365676"/>
+    <text x="1430" y="194" text-anchor="middle" fill="#D8E8FC" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">CONTEXT</text>
+    <text x="1430" y="222" text-anchor="middle" fill="#84A1C2" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14">fresh · bounded</text>
+  </g>
+
+  <g stroke="#4C6889" stroke-width="2.5" fill="none">
+    <path d="M320 204H380"/>
+    <path d="M640 204H700"/>
+    <path d="M960 204H1020"/>
+    <path d="M1270 204H1330"/>
+  </g>
+  <g fill="#4C6889">
+    <path d="M380 204L370 198V210L380 204Z"/>
+    <path d="M700 204L690 198V210L700 204Z"/>
+    <path d="M1020 204L1010 198V210L1020 204Z"/>
+    <path d="M1330 204L1320 198V210L1330 204Z"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="210" y="338" width="300" height="108" rx="20" fill="#101D34" stroke="#355374"/>
+    <text x="360" y="374" text-anchor="middle" fill="#E1ECFB" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">EXECUTION BROKER</text>
+    <text x="360" y="404" text-anchor="middle" fill="#8AA5C5" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14">agent · worktree · sandbox · provider</text>
+    <text x="360" y="427" text-anchor="middle" fill="#718CAB" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13">authorized actions only</text>
+
+    <rect x="650" y="338" width="300" height="108" rx="20" fill="#101D34" stroke="#355374"/>
+    <text x="800" y="374" text-anchor="middle" fill="#E1ECFB" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">EVIDENCE STORE</text>
+    <text x="800" y="404" text-anchor="middle" fill="#8AA5C5" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14">tests · runtime · browser · API · controls</text>
+    <text x="800" y="427" text-anchor="middle" fill="#718CAB" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13">fingerprinted provenance</text>
+
+    <rect x="1090" y="338" width="300" height="108" rx="20" fill="#101D34" stroke="#355374"/>
+    <text x="1240" y="374" text-anchor="middle" fill="#E1ECFB" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">INDEPENDENT VERIFY</text>
+    <text x="1240" y="404" text-anchor="middle" fill="#8AA5C5" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14">verification · review · controls</text>
+    <text x="1240" y="427" text-anchor="middle" fill="#718CAB" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13">implementer cannot self-certify</text>
+  </g>
+
+  <g stroke="#4C6889" stroke-width="2.5" fill="none">
+    <path d="M1430 248V292H360V328"/>
+    <path d="M510 392H640"/>
+    <path d="M950 392H1080"/>
+  </g>
+  <g fill="#4C6889">
+    <path d="M360 328L354 318H366L360 328Z"/>
+    <path d="M640 392L630 386V398L640 392Z"/>
+    <path d="M1080 392L1070 386V398L1080 392Z"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="340" y="536" width="350" height="108" rx="20" fill="#171D3A" stroke="#6D64C9"/>
+    <text x="515" y="572" text-anchor="middle" fill="#E7E3FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">AUTHORITY GRAPH</text>
+    <text x="515" y="602" text-anchor="middle" fill="#AAA4DD" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14">decision → requirement → task → evidence</text>
+    <text x="515" y="625" text-anchor="middle" fill="#8882C4" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13">no orphan or superseded authority</text>
+
+    <rect x="910" y="536" width="350" height="108" rx="20" fill="#10263A" stroke="#43A5B4"/>
+    <text x="1085" y="572" text-anchor="middle" fill="#D0F9FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">ACCEPTANCE ENGINE</text>
+    <text x="1085" y="602" text-anchor="middle" fill="#88DCE8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14">freshness · controls · reviews · approvals</text>
+    <text x="1085" y="625" text-anchor="middle" fill="#6AB8C5" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13">completion is computed</text>
+  </g>
+
+  <g stroke="#4C6889" stroke-width="2.5" fill="none">
+    <path d="M1240 446V490H515V526"/>
+    <path d="M690 590H900"/>
+  </g>
+  <g fill="#4C6889">
+    <path d="M515 526L509 516H521L515 526Z"/>
+    <path d="M900 590L890 584V596L900 590Z"/>
+  </g>
+
+  <g transform="translate(365 704)">
+    <rect x="0" y="0" width="230" height="58" rx="18" fill="#2B1722" stroke="#9B526C"/>
+    <text x="115" y="36" text-anchor="middle" fill="#FFC6D7" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="760">BLOCKED</text>
+
+    <rect x="320" y="0" width="230" height="58" rx="18" fill="#29251A" stroke="#9A8751"/>
+    <text x="435" y="36" text-anchor="middle" fill="#FFE5A8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="760">PENDING</text>
+
+    <rect x="640" y="0" width="230" height="58" rx="18" fill="#112D2A" stroke="#43B89B"/>
+    <text x="755" y="36" text-anchor="middle" fill="#BFF9E4" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="760">ACCEPTED</text>
+  </g>
+
+  <path d="M1085 644V678H480V694" stroke="#4C6889" stroke-width="2.5" fill="none"/>
+  <path d="M1085 644V678H800V694" stroke="#4C6889" stroke-width="2.5" fill="none"/>
+  <path d="M1085 644V678H1120V694" stroke="url(#green)" stroke-width="3" fill="none"/>
+  <path d="M480 694L474 684H486L480 694Z" fill="#4C6889"/>
+  <path d="M800 694L794 684H806L800 694Z" fill="#4C6889"/>
+  <path d="M1120 694L1114 684H1126L1120 694Z" fill="#62F2B0"/>
+
+  <text x="1490" y="790" text-anchor="end" fill="#5F7897" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">TARGET ARCHITECTURE · ROADMAP CAPABILITIES ARE INTRODUCED IN STAGES</text>
+</svg>

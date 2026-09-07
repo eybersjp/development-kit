@@ -1,0 +1,113 @@
+<svg width="1600" height="620" viewBox="0 0 1600 620" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">DKF Roadmap from v0.10 to v1.0</title>
+  <desc id="desc">Roadmap graphic showing the planned progression from reliability foundation through adaptive reliability, proof, repository enforcement, benchmark, isolated execution, safe parallelism, multi-repository contracts, evidence intelligence, control center flight recorder, and v1.0 proven reliability.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="620" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#06111E"/>
+      <stop offset="0.55" stop-color="#0B1730"/>
+      <stop offset="1" stop-color="#12142B"/>
+    </linearGradient>
+    <linearGradient id="line" x1="140" y1="0" x2="1460" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#52E5FF"/>
+      <stop offset="1" stop-color="#8C78FF"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" stroke="#B9D3FF" stroke-opacity="0.04"/>
+    </pattern>
+  </defs>
+  <rect width="1600" height="620" rx="32" fill="url(#bg)"/>
+  <rect width="1600" height="620" rx="32" fill="url(#grid)"/>
+
+  <text x="80" y="78" fill="#F5F8FE" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="42" font-weight="760">DKF Roadmap</text>
+  <text x="80" y="114" fill="#9CB2CF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="20">From disciplined workflow to proven reliability runtime</text>
+
+  <path d="M130 304H1470" stroke="url(#line)" stroke-width="4"/>
+
+  <g font-family="Inter, Segoe UI, Arial, sans-serif">
+    <g transform="translate(145 0)">
+      <circle cx="0" cy="304" r="16" fill="#52E5FF"/>
+      <rect x="-88" y="172" width="176" height="86" rx="16" fill="#10233A" stroke="#34768B"/>
+      <text x="0" y="200" text-anchor="middle" fill="#CFF9FF" font-size="17" font-weight="760">v0.10</text>
+      <text x="0" y="225" text-anchor="middle" fill="#9ADDE7" font-size="14">Reliability</text>
+      <text x="0" y="245" text-anchor="middle" fill="#9ADDE7" font-size="14">foundation</text>
+    </g>
+
+    <g transform="translate(300 0)">
+      <circle cx="0" cy="304" r="13" fill="#56DAF1"/>
+      <rect x="-78" y="350" width="156" height="90" rx="16" fill="#101F37" stroke="#355671"/>
+      <text x="0" y="378" text-anchor="middle" fill="#D8EBFC" font-size="16" font-weight="760">v0.11</text>
+      <text x="0" y="403" text-anchor="middle" fill="#91AAC6" font-size="13">Adaptive</text>
+      <text x="0" y="423" text-anchor="middle" fill="#91AAC6" font-size="13">Reliability</text>
+    </g>
+
+    <g transform="translate(445 0)">
+      <circle cx="0" cy="304" r="13" fill="#5CCDE8"/>
+      <rect x="-70" y="172" width="140" height="86" rx="16" fill="#101F37" stroke="#355671"/>
+      <text x="0" y="200" text-anchor="middle" fill="#D8EBFC" font-size="16" font-weight="760">v0.12</text>
+      <text x="0" y="225" text-anchor="middle" fill="#91AAC6" font-size="13">DKF Proof</text>
+      <text x="0" y="245" text-anchor="middle" fill="#91AAC6" font-size="13">Certificates</text>
+    </g>
+
+    <g transform="translate(590 0)">
+      <circle cx="0" cy="304" r="13" fill="#62BFE0"/>
+      <rect x="-76" y="350" width="152" height="90" rx="16" fill="#101F37" stroke="#355671"/>
+      <text x="0" y="378" text-anchor="middle" fill="#D8EBFC" font-size="16" font-weight="760">v0.13</text>
+      <text x="0" y="403" text-anchor="middle" fill="#91AAC6" font-size="13">Repository</text>
+      <text x="0" y="423" text-anchor="middle" fill="#91AAC6" font-size="13">Enforcement</text>
+    </g>
+
+    <g transform="translate(735 0)">
+      <circle cx="0" cy="304" r="13" fill="#6CAEDB"/>
+      <rect x="-78" y="172" width="156" height="86" rx="16" fill="#111E38" stroke="#3F557B"/>
+      <text x="0" y="200" text-anchor="middle" fill="#E0E8FF" font-size="16" font-weight="760">v0.14</text>
+      <text x="0" y="225" text-anchor="middle" fill="#A3B2D7" font-size="13">Reliability</text>
+      <text x="0" y="245" text-anchor="middle" fill="#A3B2D7" font-size="13">Benchmark</text>
+    </g>
+
+    <g transform="translate(880 0)">
+      <circle cx="0" cy="304" r="13" fill="#779ED7"/>
+      <rect x="-78" y="350" width="156" height="90" rx="16" fill="#121D39" stroke="#4A557F"/>
+      <text x="0" y="378" text-anchor="middle" fill="#E3E6FF" font-size="16" font-weight="760">v0.15</text>
+      <text x="0" y="403" text-anchor="middle" fill="#ADB4DB" font-size="13">Isolated</text>
+      <text x="0" y="423" text-anchor="middle" fill="#ADB4DB" font-size="13">Execution</text>
+    </g>
+
+    <g transform="translate(1025 0)">
+      <circle cx="0" cy="304" r="13" fill="#7D91D7"/>
+      <rect x="-76" y="172" width="152" height="86" rx="16" fill="#151C3A" stroke="#565583"/>
+      <text x="0" y="200" text-anchor="middle" fill="#E8E4FF" font-size="16" font-weight="760">v0.16</text>
+      <text x="0" y="225" text-anchor="middle" fill="#BBB4E1" font-size="13">Safe</text>
+      <text x="0" y="245" text-anchor="middle" fill="#BBB4E1" font-size="13">Parallelism</text>
+    </g>
+
+    <g transform="translate(1170 0)">
+      <circle cx="0" cy="304" r="13" fill="#847FD8"/>
+      <rect x="-84" y="350" width="168" height="90" rx="16" fill="#171B3C" stroke="#62568E"/>
+      <text x="0" y="378" text-anchor="middle" fill="#ECE5FF" font-size="16" font-weight="760">v0.17</text>
+      <text x="0" y="403" text-anchor="middle" fill="#C5B6E8" font-size="13">Multi-Repo</text>
+      <text x="0" y="423" text-anchor="middle" fill="#C5B6E8" font-size="13">Contracts</text>
+    </g>
+
+    <g transform="translate(1315 0)">
+      <circle cx="0" cy="304" r="13" fill="#8976DC"/>
+      <rect x="-82" y="172" width="164" height="86" rx="16" fill="#181A3D" stroke="#6C5598"/>
+      <text x="0" y="200" text-anchor="middle" fill="#F0E5FF" font-size="16" font-weight="760">v0.18–0.19</text>
+      <text x="0" y="225" text-anchor="middle" fill="#CFB9ED" font-size="13">Evidence +</text>
+      <text x="0" y="245" text-anchor="middle" fill="#CFB9ED" font-size="13">Flight Recorder</text>
+    </g>
+
+    <g transform="translate(1460 0)">
+      <circle cx="0" cy="304" r="18" fill="#8D7BFF"/>
+      <rect x="-82" y="350" width="164" height="90" rx="16" fill="#1B193F" stroke="#8068BE"/>
+      <text x="0" y="378" text-anchor="middle" fill="#F5ECFF" font-size="17" font-weight="800">v1.0</text>
+      <text x="0" y="403" text-anchor="middle" fill="#D8C8F4" font-size="13">Proven</text>
+      <text x="0" y="423" text-anchor="middle" fill="#D8C8F4" font-size="13">Reliability</text>
+    </g>
+  </g>
+
+  <rect x="122" y="500" width="1356" height="62" rx="16" fill="#0D192C" stroke="#273D5C"/>
+  <text x="800" y="526" text-anchor="middle" fill="#A9BDD5" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="15" font-weight="650">The roadmap is staged deliberately: proof before scale, isolation before parallelism, measurable reliability before v1.0.</text>
+  <text x="800" y="549" text-anchor="middle" fill="#7189A7" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13">Planned capabilities are not claims about the current v0.10 release.</text>
+
+  <text x="80" y="594" fill="#5E7693" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">AI CAN WRITE IT. DKF PROVES IT.</text>
+</svg>
