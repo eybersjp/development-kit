@@ -6,7 +6,7 @@ DKF is evolving into **the reliability control plane for agentic software develo
 
 > **AI can write it. DKF proves it.**
 
-The current v0.10 release is the reliability baseline. It already provides Development Contracts, independent verification, deterministic acceptance, execution-safety controls, DKF Design Authority, DK Intelligence, DK Control Center, and the Numbered Decision Interface. The future direction is published separately so planned capabilities are never confused with implemented behavior.
+The current v0.10.1 release target is the reliability baseline plus Live UI Preview hardening. It already provides Development Contracts, independent verification, deterministic acceptance, execution-safety controls, DKF Design Authority, DK Intelligence, DK Control Center, and the Numbered Decision Interface. The future direction is published separately so planned capabilities are never confused with implemented behavior.
 
 ## Strategic documents
 
@@ -16,11 +16,11 @@ The current v0.10 release is the reliability baseline. It already provides Devel
 
 ## Current release highlights
 
-| Package Version | 0.10.0 |
+| Package Version | 0.10.1 |
 | Lifecycle Stages | 9 (current fixed v0.10 lifecycle) |
 | Workflow Commands | 16 |
 | Specialist Agents | 18 |
-| Engineering Skills | 47 |
+| Engineering Skills | 48 |
 | Native Workflow Adapters | 16 |
 
 - **Reliability Control Plane:** approved tasks become fingerprinted Development Contracts before execution.
@@ -32,6 +32,7 @@ The current v0.10 release is the reliability baseline. It already provides Devel
 - **Canonical reconciliation:** artifact amendments require exact source fingerprints and write/read-back verification.
 - **Deterministic PLAN validation:** task counts, dependencies, cycles, ownership, and acceptance-criterion coverage are computed rather than trusted from prose.
 - **DKF Design Authority:** `design.md` is the authoritative frontend visual source of truth when established for a project.
+- **Live UI Preview:** UI/design context automatically arms a project-local preview; DKF starts or reuses the declared dev server when runnable and exposes a provider-neutral browser display action while preserving independent VERIFY-time browser checks.
 - **DK Intelligence and DK Control Center:** durable engineering context plus a local governance and inspection surface.
 - **Provider-neutral research:** source-backed research retains provenance, uncertainty, and explicit trust boundaries.
 - **Numbered Decision Interface:** bounded Product Owner choices resolve deterministically from structured runtime state.
