@@ -47,9 +47,9 @@ const IMPLEMENTATION_HOT_PATH = Object.freeze([
 export const TOKEN_AUDIT_BASELINE = Object.freeze({
   estimator: 'chars-div-4-v1',
   preHardeningPrioritySkills: 10436,
-  prioritySkillBudget: 5739,
+  prioritySkillBudget: 3300,
   preHardeningImplementationHotPath: 19994,
-  implementationHotPathBudget: 15000,
+  implementationHotPathBudget: 9000,
 });
 
 function listFiles(dir, predicate) {
