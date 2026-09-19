@@ -22,6 +22,8 @@ test('Package Consumer: npm pack produces valid tarball with all runtime assets 
   assert.ok(filenames.some((f) => f.includes('runtime/orchestration/execution-broker.mjs')), 'Must include execution-broker.mjs');
   assert.ok(filenames.some((f) => f.includes('schemas/development-contract.schema.json')), 'Must include development-contract schema');
   assert.ok(filenames.some((f) => f.includes('scripts/install-antigravity.mjs')), 'Must include installer script');
+  assert.ok(filenames.some((f) => f.includes('runtime/ui-preview/preview-manager.mjs')), 'Must include Live UI Preview runtime');
+  assert.ok(filenames.some((f) => f.includes('scripts/ui-preview.mjs')), 'Must include Live UI Preview CLI');
 });
 
 test('Package Consumer: install-antigravity installs cleanly and idempotently', () => {
