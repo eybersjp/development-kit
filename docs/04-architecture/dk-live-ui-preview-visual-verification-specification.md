@@ -313,11 +313,12 @@ Existing browser-runtime-verification remains the authoritative verification pro
    - `bun.lock` or `bun.lockb` -> bun
    - `package-lock.json` -> npm
    - fallback -> npm
-3. If persisted preview URL responds successfully, reuse it.
-4. Before starting a new process, probe framework candidate ports.
-5. If an already-running healthy project server is found, reuse it and record `startedByDkf: false`.
-6. Only terminate a PID when `startedByDkf: true` and the persisted PID belongs to the DKF-launched process.
-7. Store logs under `.development-kit/runtime/ui-preview/`.
+3. If the persisted project-bound preview URL responds successfully, reuse it.
+4. Never assume that an arbitrary responsive common localhost port belongs to the current project.
+5. If a development server was started outside DKF, reuse it only when the host/user explicitly supplies its localhost URL (for example via `--url`); record `startedByDkf: false`.
+6. Before launching DKF's server, probe candidate ports only to identify/exclude ports that were already healthy; identify the newly launched server from its output and post-launch health.
+7. Only terminate a PID when `startedByDkf: true` and DKF can prove process ownership using the persisted ownership token.
+8. Store logs under `.development-kit/runtime/ui-preview/`.
 
 ---
 
@@ -413,13 +414,14 @@ No generic runtime-smoke gate, baseline-failure redesign, or Acceptance Engine r
 9. start explicit fixture dev server and discover it.
 10. stop DKF-owned fixture server.
 11. refuse to stop reused external fixture server.
-12. host-browser provider action contract.
-13. none provider for headless tests.
-14. system-browser command resolution by platform without executing during unit tests.
-15. route normalization.
-16. CLI classify/status/ensure contract.
-17. documentation/command integration assertions.
-18. package tarball includes preview runtime and CLI.
+12. explicitly supplied localhost external URL may be adopted without claiming process ownership.
+13. host-browser provider action contract.
+14. none provider for headless tests.
+15. system-browser command resolution by platform without executing during unit tests.
+16. route normalization.
+17. CLI classify/status/ensure contract.
+18. documentation/command integration assertions.
+19. package tarball includes preview runtime and CLI.
 
 ---
 
@@ -432,6 +434,7 @@ New canonical files:
 - `runtime/ui-preview/state-store.mjs`
 - `runtime/ui-preview/browser-providers.mjs`
 - `runtime/ui-preview/preview-manager.mjs`
+- `runtime/ui-preview/process-host.mjs`
 - `scripts/ui-preview.mjs`
 - `scripts/ui-preview.test.mjs`
 - `skills/live-ui-preview/SKILL.md`
