@@ -44,9 +44,23 @@ DKF is not a project-management dashboard and is not intended to replace enginee
 
 ---
 
-## Current release: v0.10.0
+## Current release: v0.10.1
 
-The current released baseline is **v0.10.0**.
+The current release target is **v0.10.1**, a focused hardening update on the v0.10 reliability baseline.
+
+### v0.10.1 — Live UI Preview
+
+v0.10.1 adds **Live UI Preview & Visual Verification support** for frontend work. When DKF identifies UI/design context it arms the preview immediately, starts or reuses the project's declared development server as soon as a runnable frontend exists, and asks the active host to open or reuse a browser surface. New applications may remain safely in `WAITING_FOR_RUNNABLE_UI` until the first runnable shell exists.
+
+The preview runtime is provider-neutral, uses the normal development/HMR workflow, avoids duplicate DKF-managed servers, and keeps formal `browser-runtime-verification` independent during VERIFY.
+
+### v0.10.1 — Token & Context Efficiency
+
+v0.10.1 also hardens DKF's own prompt/context consumption. Development Contract `authoritativeSources[].sections` are now materialized as scoped excerpts instead of automatically embedding whole files, with fail-safe full-source fallback when a selector cannot be resolved.
+
+Role contexts expose a deterministic `tokenProfile` (estimated package/source tokens, savings, advisory budget and warnings), while `npm run token:audit` gates static framework instruction bloat. Frequently loaded runtime instructions were compressed without removing verification, safety or acceptance rules.
+
+The v0.10.1 audit reduced the ten priority runtime skills by about **73%** and the representative fixed implementation hot path by about **66%** before project-specific source savings.
 
 ### v0.10 — Numbered decisions
 
@@ -123,11 +137,13 @@ The Authority Graph can block acceptance when requirements are unverified, crite
 | **Authority Graph** | Traceability across requirements, tasks, criteria, evidence, and superseded authority. |
 | **Execution Safety** | Project/resource/host blast-radius classification and approval gates for consequential actions. |
 | **DKF Design Authority** | `design.md` governance, visual-reference analysis, design verification, and controlled amendments. |
+| **Live UI Preview** | Automatically arms/starts/reuses the local dev server for UI work and exposes the rendered route through a provider-neutral browser action. |
+| **Context Efficiency** | Section-aware authoritative contexts, per-role token profiles, compact handoffs, and CI token budgets reduce framework-induced prompt bloat. |
 | **DK Intelligence & Memory** | Durable local engineering memory, architecture decisions, context assembly, staleness, and project isolation. |
 | **DK Control Center** | Local browser UI and loopback Runtime API for inspecting workflow, memory, decisions, verification, approvals, and providers. |
 | **16 workflow commands** | Discovery through release-readiness workflows. |
 | **18 specialist agents** | Focused discovery, architecture, implementation, testing, security, accessibility, design, and review roles. |
-| **47 engineering skills** | Reusable engineering procedures for requirements, design, TDD, review, security, research, and verification. |
+| **48 engineering skills** | Reusable engineering procedures for requirements, design, TDD, review, security, research, and verification. |
 | **External Capability Providers** | Optional provider adapters with explicit trust and authorization boundaries. |
 | **Cross-platform integrations** | Antigravity, OpenCode, Claude Code, Cursor, VS Code with GitHub Copilot, Cline, and Windsurf. |
 

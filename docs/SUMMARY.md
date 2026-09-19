@@ -119,6 +119,7 @@
 * [idea-challenge](03-reference/skills/idea-challenge.md)
 * [idea-discovery](03-reference/skills/idea-discovery.md)
 * [incremental-implementation](03-reference/skills/incremental-implementation.md)
+* [live-ui-preview](03-reference/skills/live-ui-preview.md)
 * [minimal-diff](03-reference/skills/minimal-diff.md)
 * [native-platform-first](03-reference/skills/native-platform-first.md)
 * [next-step-guidance](03-reference/skills/next-step-guidance.md)
@@ -187,6 +188,8 @@
 * [next-step](03-reference/scripts/next-step.md)
 * [orchestration](03-reference/scripts/orchestration.md)
 * [sync-plugin](03-reference/scripts/sync-plugin.md)
+* [ui-preview](03-reference/scripts/ui-preview.md)
+* [token-audit](03-reference/scripts/token-audit.md)
 * [validate-skills](03-reference/scripts/validate-skills.md)
 * [validate-docs](03-reference/scripts/validate-docs.md)
 * [validate-evals](03-reference/scripts/validate-evals.md)
@@ -224,6 +227,8 @@
 * [DK Design Authority Feature Specification (v0.8)](04-architecture/dk-design-authority-v0.8-feature-spec.md)
 * [DK Contract-Driven Agent Orchestration Implementation Plan (v0.9)](04-architecture/dk-contract-driven-agent-orchestration-implementation-plan.md)
 * [DK Reliability Control-Plane Amendment (v0.9)](04-architecture/dk-reliability-control-plane-amendment.md)
+* [DK Live UI Preview & Visual Verification Specification (v0.10.1)](04-architecture/dk-live-ui-preview-visual-verification-specification.md)
+* [DK Token & Context Efficiency Hardening Specification (v0.10.1)](04-architecture/dk-token-context-efficiency-hardening-specification.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)
@@ -298,6 +303,7 @@
 * [Release Notes (v0.8.0)](08-maintenance-release/release-notes-v0.8.0.md)
 * [Release Notes (v0.9.0)](08-maintenance-release/release-notes-v0.9.0.md)
 * [Release Notes (v0.10.0)](08-maintenance-release/release-notes-v0.10.0.md)
+* [Release Notes (v0.10.1)](08-maintenance-release/release-notes-v0.10.1.md)
 
 ## 09. Contributing
 * [Contribution Overview](09-contributing/contribution-overview.md)

@@ -1,6 +1,6 @@
 # Skill Catalogue
 
-Complete catalogue of all 46 skills with purpose and lifecycle stage.
+Complete catalogue of all 48 engineering skills with purpose and lifecycle stage.
 
 ## A. Meta Skills
 
@@ -59,6 +59,7 @@ Complete catalogue of all 46 skills with purpose and lifecycle stage.
 | :--- | :--- | :--- |
 | [subagent-driven-implementation](subagent-driven-implementation.md) | Dispatches fresh sub-agents per task | IMPLEMENT |
 | [incremental-implementation](incremental-implementation.md) | Implements one thin vertical slice at a time | IMPLEMENT |
+| [live-ui-preview](live-ui-preview.md) | Arms/starts/reuses the local development server and rendered browser surface for UI work | DESIGN / IMPLEMENT |
 | [test-driven-development](test-driven-development.md) | Red-green-refactor discipline | IMPLEMENT |
 | [existing-code-first](existing-code-first.md) | Searches for reusable code before writing new | IMPLEMENT |
 | [native-platform-first](native-platform-first.md) | Prefers built-in capabilities over packages | IMPLEMENT |

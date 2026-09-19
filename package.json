@@ -1,6 +1,6 @@
 {
   "name": "development-kit",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "DKF is an agent-independent reliability control plane for AI software development, with Development Contracts, independent verification, deterministic acceptance, design governance, persistent intelligence, and safe autonomous workflows.",
   "author": "Juan-Pierre Eybers",
   "license": "MIT",
@@ -75,8 +75,12 @@
     "design-authority:validate": "node --test scripts/design-authority.test.mjs",
     "evals:validate": "node scripts/validate-evals.mjs",
     "autopilot:validate": "npm run autopilot:test && npm run evals:validate",
-    "release:validate": "npm run validate && npm run skills:validate:test && npm run doctor && npm run sync:validate:test && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run platform:validate && npm run research:validate && npm run next-step:test && npm run installer:validate:test && npm run orchestration:validate && npm run execution-safety:validate && npm run evidence:validate && npm run orchestration-core:validate && npm run orchestration-integration:validate && npm run v09-reliability:validate && npm run intelligence:validate && npm run v071:validate && npm run design-authority:validate && npm run autopilot:validate && npm run numbered-decisions:test",
-    "numbered-decisions:test": "node --test scripts/numbered-decisions.test.mjs scripts/numbered-decisions-adversarial.test.mjs"
+    "release:validate": "npm run validate && npm run skills:validate:test && npm run doctor && npm run sync:validate:test && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run platform:validate && npm run research:validate && npm run next-step:test && npm run installer:validate:test && npm run orchestration:validate && npm run execution-safety:validate && npm run evidence:validate && npm run orchestration-core:validate && npm run orchestration-integration:validate && npm run v09-reliability:validate && npm run intelligence:validate && npm run v071:validate && npm run ui-preview:test && npm run token-efficiency:test && npm run token:audit:check && npm run design-authority:validate && npm run autopilot:validate && npm run numbered-decisions:test",
+    "numbered-decisions:test": "node --test scripts/numbered-decisions.test.mjs scripts/numbered-decisions-adversarial.test.mjs",
+    "ui-preview:test": "node --test scripts/ui-preview.test.mjs",
+    "token:audit": "node scripts/token-audit.mjs",
+    "token:audit:check": "node scripts/token-audit.mjs --check",
+    "token-efficiency:test": "node --test scripts/token-efficiency.test.mjs"
   },
   "engines": {
     "node": ">=18.0.0"

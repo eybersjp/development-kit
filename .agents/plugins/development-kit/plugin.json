@@ -1,6 +1,6 @@
 {
   "name": "development-kit",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "DKF is an agent-independent reliability control plane for AI software development, with Development Contracts, independent verification, deterministic acceptance, design governance, persistent intelligence, and safe autonomous workflows.",
   "author": "Juan-Pierre Eybers",
   "skills": [
@@ -42,6 +42,7 @@
     "../../../skills/idea-challenge",
     "../../../skills/idea-discovery",
     "../../../skills/incremental-implementation",
+    "../../../skills/live-ui-preview",
     "../../../skills/minimal-diff",
     "../../../skills/native-platform-first",
     "../../../skills/next-step-guidance",
