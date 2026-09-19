@@ -10,7 +10,7 @@ This roadmap is directional. It distinguishes current capability from planned wo
 
 ---
 
-## Current baseline — v0.10.0
+## Current baseline — v0.10.1
 
 The current release provides the reliability foundation:
 
@@ -26,6 +26,7 @@ The current release provides the reliability foundation:
 - DK Intelligence and Memory;
 - DK Control Center;
 - Numbered Decision Interface;
+- Live UI Preview for UI/design work;
 - structured idea-suggestion promotion;
 - adversarial regression testing;
 - cross-platform agent integrations.
