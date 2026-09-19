@@ -6,7 +6,7 @@ Development Kit ships **48 engineering skills** covering the full lifecycle from
 
 | Category | Skills | Lifecycle Stage |
 | :--- | :--- | :--- |
-| **Meta** (4) | using-development-kit, skill-routing, repository-orientation, context-packing | Always / session start |
+| **Meta** (5) | using-development-kit, skill-routing, next-step-guidance, repository-orientation, context-packing | Always / session start |
 | **Research & External Capability** (2) | external-research, agent-reach-integration | Conditional, primarily UNDERSTAND / DEFINE |
 | **Idea & Definition** (5) | idea-discovery, requirements-interview, idea-challenge, scope-definition, acceptance-criteria-writing | UNDERSTAND -> DEFINE |
 | **Artifact & Governance** (9) | adaptive-artifact-planning, feature-specification, technical-design, data-model-design, api-contract-design, user-flow-design, design-direction, design-authority, test-strategy | DEFINE -> DESIGN |
