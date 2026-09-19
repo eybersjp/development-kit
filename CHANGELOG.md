@@ -6,6 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-09-19
+
+### Added
+- **Live UI Preview Runtime**: Project-local preview state, deterministic UI-context classification, frontend/package-manager discovery, and automatic startup of the project's declared `scripts.dev`.
+- **Provider-Neutral Browser Display Contract**: `host-browser`, `system-browser`, and `none` providers allow Antigravity and other capable hosts to open/reuse the running UI without making DKF depend on one agent platform.
+- **New-App Preview Arming**: UI/design discussions can enter `WAITING_FOR_RUNNABLE_UI`; DKF automatically starts preview once a runnable frontend exists.
+- **Ownership-Safe Preview Processes**: DKF records a unique process ownership token and never terminates a reused external server it did not start.
+- **Live UI Preview Skill**: Adds `live-ui-preview` and integrates it into Autopilot, design, manual build, build-auto, the development conductor, and frontend implementer.
+
+### Changed
+- UI work now uses the normal development server and HMR/fast refresh for continuous rendered visibility instead of waiting until verification to display the interface.
+- `browser-runtime-verification` reuses a healthy Live UI Preview when available while remaining the authoritative browser verification procedure during VERIFY.
+- Engineering skill count is now 48. The public command surface remains 16 commands; Live UI Preview is automatic runtime capability rather than a new slash command.
+
+### Security
+- DKF does not infer project ownership from an arbitrary responsive common localhost port. External local servers are adopted only when their URL is explicitly supplied.
+- Preview shutdown requires proof that the persisted process was started by DKF and carries the expected ownership token.
+
+
 ## [0.10.0] - 2026-09-07
 
 ### Added
@@ -237,7 +256,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Production-grade 12-section documentation system.
 - Documentation validation suite and installer synchronization verification.
 
-[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/eybersjp/development-kit/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/eybersjp/development-kit/compare/v0.10.0...v0.10.1
+[0.10.0]: https://github.com/eybersjp/development-kit/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/eybersjp/development-kit/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/eybersjp/development-kit/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/eybersjp/development-kit/compare/v0.7.1...v0.8.0
