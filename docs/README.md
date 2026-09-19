@@ -33,6 +33,7 @@ The current v0.10.1 release target is the reliability baseline plus Live UI Prev
 - **Deterministic PLAN validation:** task counts, dependencies, cycles, ownership, and acceptance-criterion coverage are computed rather than trusted from prose.
 - **DKF Design Authority:** `design.md` is the authoritative frontend visual source of truth when established for a project.
 - **Live UI Preview:** UI/design context automatically arms a project-local preview; DKF starts or reuses the declared dev server when runnable and exposes a provider-neutral browser display action while preserving independent VERIFY-time browser checks.
+- **Token & Context Efficiency:** Development Contract source sections are delivered as bounded excerpts, role contexts report estimated token profiles, and CI gates fixed instruction bloat.
 - **DK Intelligence and DK Control Center:** durable engineering context plus a local governance and inspection surface.
 - **Provider-neutral research:** source-backed research retains provenance, uncertainty, and explicit trust boundaries.
 - **Numbered Decision Interface:** bounded Product Owner choices resolve deterministically from structured runtime state.
