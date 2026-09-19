@@ -78,6 +78,11 @@ jobs:
       - name: Validate Live UI Preview runtime
         run: npm run ui-preview:test
 
+      - name: Validate token and context efficiency
+        run: |
+          npm run token-efficiency:test
+          npm run token:audit:check
+
       - name: Validate Design Authority governance
         run: npm run design-authority:validate
 
