@@ -1,6 +1,6 @@
 # Verifying Installation
 
-Use the checks below after installing Development Kit v0.10.0.
+Use the checks below after installing Development Kit v0.10.1.
 
 ## Verify the published package
 
@@ -11,7 +11,7 @@ npm view development-kit version
 Expected current version:
 
 ```text
-0.10.0
+0.10.1
 ```
 
 ## Verify framework integrity
@@ -75,7 +75,7 @@ Run:
 npm run doctor
 ```
 
-Confirm that the plugin is synchronized and contains 47 engineering skills plus 16 Antigravity-native workflow-entry skills, 18 agents, and 4 hooks. The plugin manifest version must match `package.json`.
+Confirm that the plugin is synchronized and contains 48 engineering skills plus 16 Antigravity-native workflow-entry skills, 18 agents, and 4 hooks. The plugin manifest version must match `package.json`.
 
 Then open Antigravity and type:
 
@@ -111,7 +111,7 @@ Then start the workflow in a safe test project with:
 /dk-autopilot
 ```
 
-Confirm that it reports a valid lifecycle state, records framework version `0.10.0`, and stops at required approval/evidence gates.
+Confirm that it reports a valid lifecycle state, records framework version `0.10.1`, and stops at required approval/evidence gates.
 
 ## Failure handling
 
