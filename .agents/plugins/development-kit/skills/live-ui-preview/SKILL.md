@@ -7,6 +7,19 @@ compatibility: opencode
 
 # Live UI Preview
 
+## Overview
+
+Keeps frontend work rendered and visible while DKF designs and implements UI changes. It arms preview as soon as UI/design intent appears, starts or reuses the project's declared dev server when runnable, and exposes a provider-neutral browser action without changing formal VERIFY-time acceptance semantics.
+
+## Process
+
+1. Detect material UI/design context.
+2. Run `node scripts/ui-preview.mjs --ensure` immediately.
+3. If the frontend is not runnable, preserve `WAITING_FOR_RUNNABLE_UI` and ensure again after scaffold.
+4. Fulfil any host `OPEN_OR_REUSE` action and keep the browser surface available.
+5. Reuse the same healthy dev server/HMR process through UI implementation.
+6. During VERIFY, hand formal runtime/browser checking to `browser-runtime-verification`.
+
 ## Rule
 
 If UI/design context is present, do not wait for `/dk-test` to render the application.
