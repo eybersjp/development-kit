@@ -189,3 +189,71 @@ test('CLI classify and status contracts are JSON and deterministic', () => {
   assert.equal(JSON.parse(status.stdout).state.status, 'INACTIVE');
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+
+test('explicit localhost external server is adopted without ownership', { timeout: 5000 }, async (t) => {
+  const http = await import('node:http');
+  const root = tempDir('dkf-preview-external-');
+  writeJson(path.join(root, 'package.json'), {
+    scripts: { dev: 'node unused-server.mjs' },
+    dependencies: { next: '16.0.0' },
+  });
+
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<h1>External Next Preview</h1>');
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  const url = `http://127.0.0.1:${address.port}`;
+
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const result = await ensurePreview({
+    rootDir: root,
+    context: 'Update the Next.js dashboard UI',
+    providerId: 'none',
+    existingUrl: url,
+    startupTimeoutMs: 500,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.reusedServer, true);
+  assert.equal(result.startedByDkf, false);
+  assert.equal(readPreviewState(root).startedByDkf, false);
+
+  const stopped = stopPreview({ rootDir: root });
+  assert.equal(stopped.success, true);
+  assert.equal(stopped.stopped, false);
+  const stillHealthy = await fetch(url).then((response) => response.ok).catch(() => false);
+  assert.equal(stillHealthy, true, 'DKF must leave explicitly adopted external server running');
+});
+
+test('priority DKF workflows integrate live preview before formal browser verification', () => {
+  const files = [
+    'commands/dk-autopilot.md',
+    'commands/dk-design.md',
+    'commands/dk-build.md',
+    'commands/dk-build-auto.md',
+    'agents/development-conductor.md',
+    'agents/frontend-implementer.md',
+  ];
+
+  for (const relative of files) {
+    const content = fs.readFileSync(path.join(ROOT, relative), 'utf8');
+    assert.match(content, /scripts\/ui-preview\.mjs --ensure/, `${relative} must ensure Live UI Preview`);
+  }
+
+  const browserVerification = fs.readFileSync(path.join(ROOT, 'skills', 'browser-runtime-verification', 'SKILL.md'), 'utf8');
+  assert.match(browserVerification, /ui-preview\.mjs --status/);
+  assert.match(browserVerification, /not a verification verdict|not evidence that the required browser behaviours pass/i);
+
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  assert.match(pkg.scripts['release:validate'], /ui-preview:test/);
+});
