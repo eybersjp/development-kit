@@ -10,6 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Added
 - **Live UI Preview Runtime**: Project-local preview state, deterministic UI-context classification, frontend/package-manager discovery, and automatic startup of the project's declared `scripts.dev`.
+- **Token & Context Efficiency Runtime**: Section-aware authoritative-source materialization, deterministic token estimates, per-role context budgets, and fail-safe full-source fallback when selectors cannot resolve.
 - **Provider-Neutral Browser Display Contract**: `host-browser`, `system-browser`, and `none` providers allow Antigravity and other capable hosts to open/reuse the running UI without making DKF depend on one agent platform.
 - **New-App Preview Arming**: UI/design discussions can enter `WAITING_FOR_RUNNABLE_UI`; DKF automatically starts preview once a runnable frontend exists.
 - **Ownership-Safe Preview Processes**: DKF records a unique process ownership token and never terminates a reused external server it did not start.
@@ -17,8 +18,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Changed
 - UI work now uses the normal development server and HMR/fast refresh for continuous rendered visibility instead of waiting until verification to display the interface.
+- Frequently loaded runtime skills, orchestration commands, and chained role prompts were compacted while preserving the same safety/verification invariants; the audited priority skill set fell by about 73% and the representative fixed implementation hot path by about 66%.
 - `browser-runtime-verification` reuses a healthy Live UI Preview when available while remaining the authoritative browser verification procedure during VERIFY.
 - Engineering skill count is now 48. The public command surface remains 16 commands; Live UI Preview is automatic runtime capability rather than a new slash command.
+- `npm run token:audit` and `npm run token:audit:check` expose and gate deterministic framework instruction-weight estimates.
 
 ### Security
 - DKF does not infer project ownership from an arbitrary responsive common localhost port. External local servers are adopted only when their URL is explicitly supplied.
