@@ -10,6 +10,7 @@ import {
 } from '../runtime/orchestration/token-efficiency.mjs';
 import { buildContextPackage } from '../runtime/orchestration/context-package.mjs';
 import { createPolicyBoundDevelopmentContract } from '../runtime/orchestration/contract-policy.mjs';
+import { buildTokenAudit } from './token-audit.mjs';
 
 function tempProject(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dkf-token-efficiency-'));
@@ -182,4 +183,13 @@ test('oversized package is reported, not silently truncated', (t) => {
   assert.equal(context.tokenProfile.overBudget, true);
   assert.ok(context.tokenProfile.warnings.some((warning) => warning.code === 'CONTEXT_BUDGET_EXCEEDED'));
   assert.equal(context.repositoryState.diff.length, 60000);
+});
+
+
+test('static DKF instruction hot paths stay inside post-hardening budgets', () => {
+  const report = buildTokenAudit();
+  assert.equal(report.priorityRuntimeSkills.withinBudget, true, JSON.stringify(report.priorityRuntimeSkills));
+  assert.equal(report.implementationHotPath.withinBudget, true, JSON.stringify(report.implementationHotPath));
+  assert.ok(report.priorityRuntimeSkills.reductionPercent >= 45);
+  assert.ok(report.implementationHotPath.reductionPercent >= 50);
 });
