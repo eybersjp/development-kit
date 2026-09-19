@@ -61,14 +61,26 @@ export function candidatePorts({ framework = 'generic', devScript = '', env = pr
 }
 
 export function devCommandFor(packageManager, platform = process.platform) {
-  const suffix = platform === 'win32' ? '.cmd' : '';
-  switch (packageManager) {
-    case 'pnpm': return { command: `pnpm${suffix}`, args: ['run', 'dev'] };
-    case 'yarn': return { command: `yarn${suffix}`, args: ['dev'] };
-    case 'bun': return { command: `bun${suffix}`, args: ['run', 'dev'] };
-    case 'npm':
-    default: return { command: `npm${suffix}`, args: ['run', 'dev'] };
-  }
+  const invocation = (() => {
+    switch (packageManager) {
+      case 'pnpm': return { command: 'pnpm', args: ['run', 'dev'] };
+      case 'yarn': return { command: 'yarn', args: ['dev'] };
+      case 'bun': return { command: 'bun', args: ['run', 'dev'] };
+      case 'npm':
+      default: return { command: 'npm', args: ['run', 'dev'] };
+    }
+  })();
+
+  if (platform !== 'win32') return invocation;
+
+  // npm/pnpm/yarn/bun are commonly exposed as .cmd shims on Windows.
+  // Node cannot reliably spawn those shims directly without a command shell.
+  // Keep the shell surface deterministic: only the known package-manager
+  // invocation assembled above is passed to cmd.exe.
+  return {
+    command: 'cmd.exe',
+    args: ['/d', '/s', '/c', [invocation.command, ...invocation.args].join(' ')],
+  };
 }
 
 export function detectFrontendProject(rootDir = process.cwd()) {
