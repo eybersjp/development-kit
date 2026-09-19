@@ -27,6 +27,7 @@ The current release provides the reliability foundation:
 - DK Control Center;
 - Numbered Decision Interface;
 - Live UI Preview for UI/design work;
+- Token/context efficiency hardening with scoped authoritative-source delivery, role token profiles, compact runtime prompts, and CI budgets;
 - structured idea-suggestion promotion;
 - adversarial regression testing;
 - cross-platform agent integrations.
