@@ -189,6 +189,7 @@
 * [orchestration](03-reference/scripts/orchestration.md)
 * [sync-plugin](03-reference/scripts/sync-plugin.md)
 * [ui-preview](03-reference/scripts/ui-preview.md)
+* [token-audit](03-reference/scripts/token-audit.md)
 * [validate-skills](03-reference/scripts/validate-skills.md)
 * [validate-docs](03-reference/scripts/validate-docs.md)
 * [validate-evals](03-reference/scripts/validate-evals.md)
@@ -227,6 +228,7 @@
 * [DK Contract-Driven Agent Orchestration Implementation Plan (v0.9)](04-architecture/dk-contract-driven-agent-orchestration-implementation-plan.md)
 * [DK Reliability Control-Plane Amendment (v0.9)](04-architecture/dk-reliability-control-plane-amendment.md)
 * [DK Live UI Preview & Visual Verification Specification (v0.10.1)](04-architecture/dk-live-ui-preview-visual-verification-specification.md)
+* [DK Token & Context Efficiency Hardening Specification (v0.10.1)](04-architecture/dk-token-context-efficiency-hardening-specification.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)
