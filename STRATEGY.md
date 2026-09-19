@@ -33,6 +33,7 @@ DKF already includes the foundations of the reliability-control-plane model:
 - the local DK Control Center;
 - a Numbered Decision Interface for deterministic Product Owner choices;
 - Live UI Preview for continuous rendered frontend visibility;
+- token/context efficiency through scoped authority, compact role prompts, measurable context budgets, and structured reference-first handoffs;
 - adversarial regression coverage based on real development failures.
 
 These are implemented capabilities. The roadmap below describes the next evolution and must not be interpreted as functionality already present in v0.10.
