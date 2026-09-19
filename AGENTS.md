@@ -30,6 +30,8 @@ These rules are loaded at session start and apply to all work in this repository
 
 13. **Do not start the next task while the current task has unresolved failures.** The task loop is sequential and gated.
 
+14. **Render UI work while building it.** As soon as UI/design intent is present, run `node scripts/ui-preview.mjs --ensure --context="<current UI intent>" --route=<affected-route>`. `WAITING_FOR_RUNNABLE_UI` keeps preview armed for a new app; ensure again when the frontend becomes runnable. Fulfil host `OPEN_OR_REUSE` browser actions immediately, keep HMR/fast refresh running, and never treat preview availability as a verification or acceptance verdict.
+
 ## Interaction Principle: Numbered Decision Interface
 
 > **Commands start capabilities. Numbers control decisions.**
