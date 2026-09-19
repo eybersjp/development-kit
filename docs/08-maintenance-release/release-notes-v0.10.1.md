@@ -30,3 +30,24 @@ npx development-kit@0.10.1 --global
 ```
 
 For project-local installation use the existing supported installer mode documented in the user guide.
+
+
+## Token & Context Efficiency
+
+v0.10.1 also reduces DKF's own framework-induced token usage.
+
+- Development Contract `authoritativeSources[].sections` now produce scoped excerpts instead of automatically embedding whole files.
+- Whole-file fingerprints remain authoritative, so section delivery does not weaken staleness detection.
+- Unresolved selectors fail safe to full-source delivery with an explicit warning.
+- Role contexts now include `tokenProfile` metrics for raw/delivered source tokens, estimated savings, role budget and over-budget state.
+- Runtime skills and chained role prompts were rewritten as compact execution capsules.
+- Repository orientation is cache-first/delta-oriented instead of requiring an unconditional full scan each session/task.
+- Handoffs prefer IDs, paths, fingerprints, line ranges and evidence references over repeated narrative.
+- `npm run token:audit` reports static instruction weight and `npm run token:audit:check` prevents regression.
+
+Audit baseline versus hardened v0.10.1:
+
+- ten priority runtime skills: ~10,436 -> ~2,820 estimated tokens (about 73% lower);
+- representative fixed implementation hot path: ~19,994 -> ~6,878 estimated tokens (about 66% lower).
+
+These are deterministic chars/4 estimates for DKF regression analysis, not provider billing-token claims.
