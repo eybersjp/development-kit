@@ -18,11 +18,20 @@ Coordinate UNDERSTAND -> DEFINE -> DESIGN -> PLAN -> IMPLEMENT -> VERIFY -> REVI
 - Keep implementation assertions separate from independent verification, technical review and deterministic acceptance.
 - Use automatic correction only when the correction engine explicitly returns `CORRECT`.
 - Preserve all existing human approval gates.
+- When UI/design intent is identified, immediately arm/ensure Live UI Preview, fulfil host `OPEN_OR_REUSE` browser actions, and keep the same healthy preview available through visual implementation.
 
 ## Workflow
 
 ### UNDERSTAND / DEFINE / DESIGN
 Gather repository context, clarify the real user need, use current external evidence only when materially necessary, produce the minimum authoritative artifacts, and obtain required approvals. For UI work establish/maintain `design.md` as Design Authority.
+
+At the first material UI/design discussion, run:
+
+```text
+node scripts/ui-preview.mjs --ensure --context="<current UI intent>" --route=<affected-route>
+```
+
+If the result is `WAITING_FOR_RUNNABLE_UI`, keep preview armed and run `--ensure` again as soon as the first runnable frontend exists. If the result contains `browserAction.type = OPEN_OR_REUSE`, immediately fulfil it with the current host browser capability. Never wait until VERIFY merely to show the user the UI.
 
 ### PLAN
 Use the `task-planner-agent`. Every task has stable IDs, dependencies, acceptance criteria, verification and owned resources. Run deterministic PLAN validation before approval. Do not trust narrative counts/diagrams/traceability claims.
@@ -32,8 +41,10 @@ If Product Owner feedback changes an existing canonical artifact, use amendment 
 ### IMPLEMENT
 For each approved task, create/resolve the Development Contract and run manifest, select host strategy, rehydrate the implementation context and spawn a fresh implementation agent. The agent may assert criterion status but cannot certify it. Enforce command safety before consequential operations.
 
+For UI work, ensure/reuse Live UI Preview before visual implementation and keep the project's normal HMR/fast-refresh process running. Do not create duplicate DKF preview servers. If a dev server was started outside DKF, reuse it only when its localhost URL is explicitly identified.
+
 ### VERIFY
-Rehydrate authoritative sources independently. Use test-engineer/spec-reviewer contexts to verify every criterion and required control with evidence. PASS without required evidence is invalid; missing required controls are UNVERIFIED. Do not equate all executed tests passing with full verification coverage.
+Rehydrate authoritative sources independently. Use test-engineer/spec-reviewer contexts to verify every criterion and required control with evidence. PASS without required evidence is invalid; missing required controls are UNVERIFIED. Do not equate all executed tests passing with full verification coverage. Live UI Preview may supply the running surface, but `browser-runtime-verification` remains the authoritative browser verification procedure.
 
 ### REVIEW
 Run structured code and conditional security/accessibility/design/architecture reviewers. MAJOR/CRITICAL findings require evidence; accepted risk requires approval. Detect architecture drift explicitly.
@@ -48,10 +59,11 @@ Simplification stays inside contract scope and is reverified after code changes.
 
 1. Query `node scripts/autopilot.mjs --next`.
 2. Execute the issued stage action.
-3. For contract-aware IMPLEMENT onward, maintain active contract/run/source fingerprint and evidence under `.development-kit/`.
-4. Submit results with `node scripts/autopilot.mjs --record-result --input-file=<path>` including the compact `orchestration` block.
-5. Autopilot refuses VERIFY completion without verification PASS and REVIEW/COMPLETE without acceptance ACCEPTED.
-6. Approval-required actions pause until the existing cryptographic approval flow succeeds.
+3. When the active stage reveals UI/design intent, run Live UI Preview immediately; do not defer it to VERIFY.
+4. For contract-aware IMPLEMENT onward, maintain active contract/run/source fingerprint and evidence under `.development-kit/`.
+5. Submit results with `node scripts/autopilot.mjs --record-result --input-file=<path>` including the compact `orchestration` block.
+6. Autopilot refuses VERIFY completion without verification PASS and REVIEW/COMPLETE without acceptance ACCEPTED.
+7. Approval-required actions pause until the existing cryptographic approval flow succeeds.
 
 ## External Capability Rules
 
@@ -64,6 +76,8 @@ Prefer native/already-connected capabilities. Default external operations to rea
 - Never let an implementation agent verify or accept itself.
 - Never let a reviewer override authoritative source fingerprints or runtime verdict computation.
 - Never weaken safety, provenance, controls or approvals as a simplification.
+- For UI/design work, ensure the live preview as soon as UI intent appears; `WAITING_FOR_RUNNABLE_UI` is an armed state, not permission to forget preview.
+- Live preview is continuous development visibility, not an alternative Acceptance Engine or browser-verification verdict.
 - Backward-compatible projects may use the legacy result path until a Development Contract becomes active; once active, contract-aware gates fail closed.
 
 ## Commands
