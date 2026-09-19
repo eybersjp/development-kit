@@ -39,9 +39,10 @@ Based on the scope of work:
 - **API contract design**: If APIs or module boundaries are being defined or changed
 - **User flow design**: If a user-facing workflow changes
 - **Design Authority & Direction**: For UI work, establish, inspect, and enforce `design.md` via `/dk-design-system` and `design-authority` to govern visual tokens, layouts, and components.
+- **Live UI Preview**: At the first material UI/design discussion, run `node scripts/ui-preview.mjs --ensure --context="<current UI intent>" --route=<affected-route>`. A new app may return `WAITING_FOR_RUNNABLE_UI`; preserve that armed state and ensure again as soon as a runnable frontend exists. Fulfil any `OPEN_OR_REUSE` browser action immediately.
 
 ### 5. Present for Approval
-Show the design to the user for approval before proceeding.
+Show the design to the user for approval before proceeding. When a runnable UI exists, keep the live preview available so the user can inspect rendered design work rather than relying only on source descriptions.
 
 ## Skills Activated
 
@@ -54,6 +55,7 @@ Supporting (conditional on scope):
 - `user-flow-design` — User workflows and journeys (UI workflow changes only)
 - `design-direction` — Visual language, typography, colour, interaction patterns (UI work only)
 - `design-authority` — Governs authoritative `design.md` and 7-level conflict priority (UI work only)
+- `live-ui-preview` — Arms/starts/reuses the development preview and host browser during UI/design work
 
 Overarching:
 - `using-development-kit` — Methodology context for the design phase
@@ -74,3 +76,4 @@ A technical design document including:
 - Data flow
 - Open questions
 - Conditional: data model, API contracts, user flows, design direction
+- Conditional UI work: current live-preview state and rendered route when available
