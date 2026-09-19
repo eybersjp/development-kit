@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { classifyUiContext } from '../runtime/ui-preview/ui-context-classifier.mjs';
 import {
@@ -17,7 +18,7 @@ import { createBrowserProvider, normalizeRoute, resolveSystemBrowserCommand, wit
 import { ensurePreview, openPreview, ownsPreviewProcess, stopPreview } from '../runtime/ui-preview/preview-manager.mjs';
 import { readPreviewState, writePreviewState } from '../runtime/ui-preview/state-store.mjs';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function tempDir(prefix = 'dkf-preview-') {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -62,7 +63,7 @@ test('framework and candidate port detection is deterministic', () => {
 
 test('dev command uses platform-safe package manager executable', () => {
   assert.deepEqual(devCommandFor('npm', 'linux'), { command: 'npm', args: ['run', 'dev'] });
-  assert.deepEqual(devCommandFor('pnpm', 'win32'), { command: 'pnpm.cmd', args: ['run', 'dev'] });
+  assert.deepEqual(devCommandFor('pnpm', 'win32'), { command: 'cmd.exe', args: ['/d', '/s', '/c', 'pnpm run dev'] });
   assert.deepEqual(devCommandFor('yarn', 'linux'), { command: 'yarn', args: ['dev'] });
 });
 
