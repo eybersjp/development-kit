@@ -1,6 +1,6 @@
 # Scripts Index
 
-Development Kit ships **7 non-test Node.js scripts** in `scripts/`, exposed through the installer or `package.json`:
+Development Kit ships **8 primary non-test Node.js scripts** in `scripts/`, exposed through the installer or `package.json`:
 
 | Script | Package Entry | Purpose | Reference |
 | :--- | :--- | :--- | :--- |
@@ -8,6 +8,7 @@ Development Kit ships **7 non-test Node.js scripts** in `scripts/`, exposed thro
 | **install-antigravity.mjs** | `npx development-kit init` / `npm run init` / `bin` | Installs the plugin into Antigravity, standalone, or OpenCode | [install-antigravity.md](install-antigravity.md) |
 | **install-platform-adapters.mjs** | Platform flags on `npx development-kit init` | Installs project-local Claude Code, Cursor, VS Code with GitHub Copilot, Cline, and Windsurf adapters | [install-platform-adapters.md](install-platform-adapters.md) |
 | **sync-plugin.mjs** | `npm run doctor` (`--check`) | Regenerates / checks the plugin manifest | [sync-plugin.md](sync-plugin.md) |
+| **ui-preview.mjs** | Automatic during UI/design work | Arms/starts/reuses local UI preview and exposes provider-neutral browser actions | [ui-preview.md](ui-preview.md) |
 | **validate-skills.mjs** | `npm run validate` | Validates skills, agents, commands, and manifest references | [validate-skills.md](validate-skills.md) |
 | **validate-docs.mjs** | `npm run docs:validate` | Validates documentation coverage, links, and placeholders | [validate-docs.md](validate-docs.md) |
 | **validate-evals.mjs** | `npm run evals:validate` | Validates evaluation suite scenarios structure and JSON syntax | [validate-evals.md](validate-evals.md) |
