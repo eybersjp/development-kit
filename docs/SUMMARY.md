@@ -119,6 +119,7 @@
 * [idea-challenge](03-reference/skills/idea-challenge.md)
 * [idea-discovery](03-reference/skills/idea-discovery.md)
 * [incremental-implementation](03-reference/skills/incremental-implementation.md)
+* [live-ui-preview](03-reference/skills/live-ui-preview.md)
 * [minimal-diff](03-reference/skills/minimal-diff.md)
 * [native-platform-first](03-reference/skills/native-platform-first.md)
 * [next-step-guidance](03-reference/skills/next-step-guidance.md)
@@ -187,6 +188,7 @@
 * [next-step](03-reference/scripts/next-step.md)
 * [orchestration](03-reference/scripts/orchestration.md)
 * [sync-plugin](03-reference/scripts/sync-plugin.md)
+* [ui-preview](03-reference/scripts/ui-preview.md)
 * [validate-skills](03-reference/scripts/validate-skills.md)
 * [validate-docs](03-reference/scripts/validate-docs.md)
 * [validate-evals](03-reference/scripts/validate-evals.md)
@@ -224,6 +226,7 @@
 * [DK Design Authority Feature Specification (v0.8)](04-architecture/dk-design-authority-v0.8-feature-spec.md)
 * [DK Contract-Driven Agent Orchestration Implementation Plan (v0.9)](04-architecture/dk-contract-driven-agent-orchestration-implementation-plan.md)
 * [DK Reliability Control-Plane Amendment (v0.9)](04-architecture/dk-reliability-control-plane-amendment.md)
+* [DK Live UI Preview & Visual Verification Specification (v0.10.1)](04-architecture/dk-live-ui-preview-visual-verification-specification.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)
