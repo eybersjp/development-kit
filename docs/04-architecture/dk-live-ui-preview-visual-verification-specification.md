@@ -112,6 +112,42 @@ ARMED
                                   DISPLAYED
 ```
 
+### 5.1 Runtime state diagram
+
+```mermaid
+flowchart TD
+  A[UI/design context detected] --> B[ARMED]
+  B --> C{Runnable frontend?}
+  C -- No --> D[WAITING_FOR_RUNNABLE_UI]
+  D --> C
+  C -- Yes --> E[DISCOVERING]
+  E --> F{Healthy project-bound preview?}
+  F -- Yes --> H[HEALTHY]
+  F -- No --> G[STARTING declared scripts.dev]
+  G --> H
+  H --> I[BrowserProvider]
+  I --> J[DISPLAYED / OPEN_OR_REUSE]
+  J --> K[HMR / Fast Refresh]
+  K --> J
+```
+
+### 5.2 Provider boundary
+
+```mermaid
+flowchart LR
+  W[DKF UI workflow] --> M[PreviewRuntimeManager]
+  M --> S[Declared dev server]
+  M --> P[BrowserProvider contract]
+  P --> A[host-browser: Antigravity / capable host]
+  P --> B[system-browser: OS default browser]
+  P --> C[none: test/headless]
+  S --> R[Rendered application]
+  A --> R
+  B --> R
+  V[browser-runtime-verification] --> R
+  V -. remains independent .-> W
+```
+
 Failure/recovery states:
 
 ```text
