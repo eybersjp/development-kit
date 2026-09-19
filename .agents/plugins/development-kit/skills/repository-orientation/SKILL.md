@@ -1,8 +1,7 @@
 ---
 name: repository-orientation
 description: >-
-  Inspects a new or unfamiliar repository before changes begin. Understands
-  project structure, conventions, and architecture before any work starts.
+  Establishes or refreshes only the repository context needed for the current work.
 compatibility: opencode
 ---
 
@@ -10,116 +9,27 @@ compatibility: opencode
 
 ## Overview
 
-Inspects a new or unfamiliar repository before changes begin. Understands the project structure, file organisation, conventions, dependencies, architecture patterns, testing approach, and deployment model before any work starts.
+Understand the repository before editing, but do not repeat a full scan when valid project context already exists.
 
 ## When to Use
 
-- When starting work on an unfamiliar repository
-- When the repository-scout is gathering task context
-- Before making any changes to a project you haven't worked on before
-- At the start of a new session in an existing project
+Use a full orientation for a new repository, stale/missing project context, architecture-level change, or material repository restructuring. Otherwise perform task-specific delta inspection.
 
 ## Process
 
-### 1. Ensure Project Runtime State
-Verify that the project-local `.development-kit/` runtime state is established (project identity, workspace ID, settings, memory, and autopilot roots). If missing, run `node scripts/bootstrap.mjs` or ensure bootstrap completes before recording persistent project context.
+1. Ensure project-local `.development-kit/` state exists.
+2. Reuse a valid prior orientation snapshot when stack/architecture/conventions remain current.
+3. For the current task, inspect only relevant entry points, configuration, source files, tests and dependency boundaries.
+4. Refresh the broader orientation only when fingerprints/structure indicate material change.
+5. Record concise findings: stack, relevant architecture flow, reusable assets, conventions, test locations and risks.
 
-### 2. Analyse Project Structure
+## Output
 
-Read the top-level directory listing. Identify:
-- Configuration files (package.json, tsconfig, Dockerfile, etc.)
-- Source directory organisation
-- Test directory organisation
-- Documentation location
-
-### 3. Understand the Stack
-
-From configuration files, determine:
-- **Language**: TypeScript, Python, Go, Rust, etc.
-- **Framework**: React, Next.js, Express, Django, etc.
-- **Database**: PostgreSQL, SQLite, MongoDB, etc.
-- **Testing**: Jest, pytest, Playwright, etc.
-- **Build tools**: Webpack, Vite, esbuild, etc.
-
-### 4. Identify Architecture Patterns
-
-Review existing source code to understand:
-- Module/component organisation
-- Data flow patterns
-- State management approach
-- Routing and navigation
-- API patterns
-- Error handling conventions
-- Testing patterns and locations
-
-### 5. Find Conventions
-
-Identify implicit project conventions:
-- Naming conventions (camelCase, kebab-case, PascalCase)
-- File organisation (feature-based, type-based)
-- Import/export patterns
-- Code style
-- Commit message format
-- Branch naming
-
-### 6. Produce Orientation Report
-
-Provide a structured report covering:
-- **Stack**: Languages, frameworks, databases, tools
-- **Architecture**: High-level architecture overview
-- **Entry Points**: Where to start reading
-- **Testing**: Where tests live, what testing framework is used
-- **Key Files**: Important configuration and source files
-- **Conventions**: Patterns to follow
-- **Risks**: Common pitfalls or areas of complexity
-
-## Orientation Report Template
-
-```
-## Repository Orientation
-
-### Stack
-[Languages, frameworks, databases, tools]
-
-### Architecture
-[High-level overview]
-
-### Entry Points
-[Where to start reading]
-
-### Testing
-[Testing framework, test locations, patterns]
-
-### Key Files
-- `path/to/file` — What it does
-
-### Conventions
-[Patterns to follow]
-
-### Risks
-[Areas of complexity or common pitfalls]
-```
-
-## Rationalizations
-
-| Rationalization | Rebuttal |
-|----------------|----------|
-| "I've worked on this repo before, I know it" | Even familiar repos change. Re-orient to catch new patterns. |
-| "I'll learn as I go" | That leads to inconsistent code and missed conventions. |
-| "The repo is simple, I don't need orientation" | Simple repos still have conventions. 5 minutes of orientation prevents 30 minutes of rework. |
-
-## Red Flags
-
-- Changes are made without reading existing code
-- New code doesn't match existing patterns
-- The project structure is misunderstood
-- Dependencies are added when the project already has them
-- Test patterns are violated
+Return paths and concise findings, not copied source files or a full repository tree.
 
 ## Verification
 
-- [ ] Project stack is identified
-- [ ] Architecture patterns are understood
-- [ ] Key configuration files are read
-- [ ] Testing conventions are identified
-- [ ] Orientation report is produced before changes begin
+- [ ] Relevant stack/architecture is known
+- [ ] Existing reusable code was checked
+- [ ] Test/convention locations are known
+- [ ] Full re-scan occurred only when justified
