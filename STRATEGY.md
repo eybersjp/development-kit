@@ -16,7 +16,7 @@ That is the category DKF is designed to own.
 
 ## 1. Current baseline: v0.10
 
-The current released baseline is **v0.10.0**.
+The current release target is **v0.10.1**.
 
 DKF already includes the foundations of the reliability-control-plane model:
 
@@ -32,6 +32,7 @@ DKF already includes the foundations of the reliability-control-plane model:
 - durable engineering intelligence and memory;
 - the local DK Control Center;
 - a Numbered Decision Interface for deterministic Product Owner choices;
+- Live UI Preview for continuous rendered frontend visibility;
 - adversarial regression coverage based on real development failures.
 
 These are implemented capabilities. The roadmap below describes the next evolution and must not be interpreted as functionality already present in v0.10.
