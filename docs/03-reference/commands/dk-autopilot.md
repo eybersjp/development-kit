@@ -11,6 +11,10 @@ Executes the complete Development Kit software-development lifecycle in Automate
 - Starting a new feature, project, or lifecycle workflow.
 - You want guided, automated management across all nine lifecycle stages with deterministic state tracking.
 
+## Project Methodology Initialization
+
+Before starting the first lifecycle action, inspect mode configuration through `node scripts/bootstrap.mjs --status`. A fresh project receives a numbered choice of five development methodologies; Maintenance & Evolution also selects an underlying methodology. Store the explicit choice through project bootstrap and preserve it on resume. A legacy project without selection receives a recorded migration, while invalid configuration blocks progression. Mode selection is distinct from Autopilot's autonomy level and does not replace any runtime approval gate. See [Development Modes](../../02-user-guide/development-modes.md).
+
 ## Lifecycle Stage Sequence
 
 1. **UNDERSTAND**: Product discovery and requirements interview (`/dk-idea`)
