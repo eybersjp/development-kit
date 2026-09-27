@@ -19,11 +19,13 @@ import path from 'node:path';
 import { getProjectIdentity } from '../autopilot/project-identity.mjs';
 import { LocalMemoryProvider } from '../intelligence/local-memory-provider.mjs';
 import { resolveEffectiveSettings, getProjectSettingsPath, DEFAULT_SETTINGS } from '../intelligence/settings.mjs';
+import { getDefaultModeConfiguration, resolveDevelopmentModeConfiguration } from '../development-modes/policy-contract.mjs';
+import { initializeDevelopmentMode, inspectDevelopmentMode } from '../development-modes/config-store.mjs';
 
 export function getProjectBootstrapStatus(rootDir = process.cwd()) {
   const dkDir = path.join(rootDir, '.development-kit');
   if (!fs.existsSync(dkDir)) {
-    return { initialized: false, dkDirExists: false };
+    return { initialized: false, dkDirExists: false, modeConfigurationStatus: 'absent' };
   }
 
   const projectFile = path.join(dkDir, 'project.json');
@@ -31,17 +33,42 @@ export function getProjectBootstrapStatus(rootDir = process.cwd()) {
   const memoryManifest = path.join(dkDir, 'intelligence', 'memory', 'manifest.json');
 
   const initialized = fs.existsSync(projectFile) && fs.existsSync(workspaceFile);
+  let modeConfigurationStatus = 'absent';
+  let modeRevision = null;
+  let modeError = null;
+  try {
+    const modeState = inspectDevelopmentMode(rootDir);
+    modeConfigurationStatus = modeState.status;
+    modeRevision = modeState.revision ?? null;
+  } catch (error) {
+    modeConfigurationStatus = 'invalid';
+    modeError = error.message;
+  }
   return {
     initialized,
     dkDirExists: true,
     hasProjectJson: fs.existsSync(projectFile),
     hasWorkspaceId: fs.existsSync(workspaceFile),
-    hasMemoryManifest: fs.existsSync(memoryManifest)
+    hasMemoryManifest: fs.existsSync(memoryManifest),
+    modeConfigurationStatus,
+    modeRevision,
+    ...(modeError ? { modeError } : {})
   };
 }
 
 export async function bootstrapProject(rootDir = process.cwd(), options = {}) {
   try {
+    // Validate before mutating existing project state.
+    if (options.modeConfig !== undefined) resolveDevelopmentModeConfiguration(options.modeConfig);
+    const previousStatus = getProjectBootstrapStatus(rootDir);
+    if (previousStatus.modeConfigurationStatus === 'invalid') {
+      throw new Error(`Existing Development Modes configuration is invalid: ${previousStatus.modeError}`);
+    }
+    const existingMode = inspectDevelopmentMode(rootDir);
+    const requestedMode = options.modeConfig ?? existingMode.selection ?? getDefaultModeConfiguration();
+    const modeSource = options.modeConfig ? 'explicit'
+      : previousStatus.initialized ? 'legacy-migration' : 'default';
+
     const dkDir = path.join(rootDir, '.development-kit');
     if (!fs.existsSync(dkDir)) {
       fs.mkdirSync(dkDir, { recursive: true });
@@ -67,13 +94,20 @@ export async function bootstrapProject(rootDir = process.cwd(), options = {}) {
       fs.writeFileSync(settingsPath, JSON.stringify(initialSettings, null, 2), 'utf8');
     }
 
-    // 3. Establish autopilot state directory (.development-kit/autopilot/state/)
+    // 3. Persist repository-owned methodology without replacing existing selections.
+    const developmentMode = initializeDevelopmentMode(rootDir, requestedMode, {
+      source: modeSource,
+      actor: options.modeConfig ? 'developer-bootstrap' : 'dk-bootstrap',
+      reason: previousStatus.initialized ? 'Existing DKF project methodology recorded' : 'Initial project methodology recorded',
+    });
+
+    // 4. Establish autopilot state directory (.development-kit/autopilot/state/)
     const autopilotStateDir = path.join(dkDir, 'autopilot', 'state');
     if (!fs.existsSync(autopilotStateDir)) {
       fs.mkdirSync(autopilotStateDir, { recursive: true });
     }
 
-    // 4. Establish memory provider storage & index (.development-kit/intelligence/memory/)
+    // 5. Establish memory provider storage & index (.development-kit/intelligence/memory/)
     const memoryProvider = new LocalMemoryProvider({ rootDir });
     await memoryProvider.activate();
 
@@ -84,7 +118,8 @@ export async function bootstrapProject(rootDir = process.cwd(), options = {}) {
       initialized: true,
       rootDir,
       identity,
-      settings: effectiveSettings
+      settings: effectiveSettings,
+      developmentMode
     };
   } catch (err) {
     return {
