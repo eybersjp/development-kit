@@ -45,3 +45,11 @@
 - Pure `runtime/development-modes/policy-contract.mjs`: validates a v1 selection, resolves profile + optional `customPolicies` + only-strengthening `projectOverrides`, returns immutable provenance and mandatory-control manifest. No persistence, no Autopilot/gate mutation and no additional dependency in Increment 001.
 - Canonical design and acceptance: `docs/04-architecture/dkf-development-modes-increment-001-{spec,architecture}.md`; portable schema under `schemas/development-mode-config.schema.json`; test entry `npm run development-modes:validate` in full release validation.
 - Next: Increment 002 bootstrap/persistence and historical mode changes; 003 adaptive lifecycle; 004 documentation integration; 005 compatibility and runtime acceptance. Coordinate with still-draft PR #41 (Live UI Preview v0.10.1) before rebase/release. Do not claim full end-to-end acceptance on the strength of foundation unit tests.
+
+## Development Modes — Increment 002 (stacked draft branch, 27 September 2026)
+
+- New `feature/development-modes-increment-002` is stacked on Increment 001 rather than merged into `main`. Both upstream PRs #41 and #42 are drafts at implementation time.
+- Project bootstrap records explicit/legacy/default methodology under tracked `.development-kit/development-mode.json` using one atomically replaced revisioned record and logical history, with validation and writer lock.
+- Bootstrap CLI supports numbered TTY selection, headless `--mode`/`--config-file`, read-only recommendation, status/history, and explicit `--set-mode` with expected revision and reason. Existing valid selection is preserved.
+- Mode configuration remains separate from autonomy level; no new Autopilot, Development Contract, gate-selector or acceptance-engine policy consumers are installed yet. Increment 003 must bind the stored snapshot and handle active-contract reconciliation.
+- Verification: `npm run development-modes:init:validate` and both OS full CI required. Independent review and Product Owner acceptance remain outstanding until evidenced.
