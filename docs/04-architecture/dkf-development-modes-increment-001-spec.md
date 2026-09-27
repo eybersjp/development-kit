@@ -47,6 +47,7 @@ It returns an immutable, deterministic snapshot with `mode`, `baseMethodology`, 
 - **MOD-008:** Unknown/malformed configuration and safety-bypass attempts fail closed.
 - **MOD-009:** Mandatory-control manifest is immutable and mode-independent.
 - **MOD-010:** Resolution is deterministic, pure and does not mutate caller input.
+- **MOD-011:** The published machine-readable schema stays aligned with the runtime modes, policies and enums.
 
 ## Non-goals and reserved work
 
