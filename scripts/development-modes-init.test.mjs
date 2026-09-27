@@ -253,7 +253,7 @@ test('INIT-004 CLI rejects a corrupt persisted mode without rewriting it', clean
   const initialized = cli(dir, '--init', '--no-interactive');
   assert.equal(initialized.status, 1);
   assert.equal(fs.readFileSync(file, 'utf8'), before);
-});
+}));
 
 test('INIT-009 refuses an existing non-file mode path', clean(async dir => {
   await bootstrapProject(dir);
