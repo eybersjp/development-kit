@@ -142,3 +142,19 @@ test('MOD-010 mode policy resolution is deterministic, read-only and does not mu
   assert.notStrictEqual(first.effectivePolicies, input.customPolicies);
   assert.ok(Object.isFrozen(first.policySources));
 });
+
+test('MOD-011 published JSON schema stays aligned with runtime enum and keys', async () => {
+  const { readFileSync } = await import('node:fs');
+  const schema = JSON.parse(readFileSync(new URL('../schemas/development-mode-config.schema.json', import.meta.url), 'utf8'));
+  assert.deepEqual(schema.properties.mode.enum, Object.keys(DEVELOPMENT_MODES));
+  assert.deepEqual(schema.properties.baseMethodology.enum,
+    Object.keys(DEVELOPMENT_MODES).filter((mode) => mode !== 'maintenance-evolution'));
+  assert.deepEqual(Object.keys(schema.properties.customPolicies.properties), Object.keys(POLICY_VALUES));
+  assert.deepEqual(Object.keys(schema.properties.projectOverrides.properties),
+    Object.keys(POLICY_VALUES).filter((key) => key !== 'contextPacking'));
+  for (const [key, values] of Object.entries(POLICY_VALUES)) {
+    assert.deepEqual(schema.properties.customPolicies.properties[key].enum, values);
+  }
+  assert.equal(schema.additionalProperties, false);
+  assert.deepEqual(schema.required, ['schemaVersion', 'mode']);
+});
