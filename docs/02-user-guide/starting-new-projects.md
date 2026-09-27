@@ -12,7 +12,17 @@ npx development-kit init --all --dry-run
 npx development-kit init --all
 ```
 
-3. Start the methodology immediately — the empty or near-empty repo is exactly what `repository-orientation` expects:
+3. Initialize the project's development methodology before starting the lifecycle. A terminal prompts for one of five modes; automation can supply `--mode` explicitly:
+
+```bash
+node scripts/bootstrap.mjs --init
+# headless example
+node scripts/bootstrap.mjs --init --mode=balanced --no-interactive
+```
+
+See [Development Modes](development-modes.md) for the mode selection and policy configuration contract.
+
+4. Start the methodology immediately — the empty or near-empty repo is exactly what `repository-orientation` expects:
 
 ```bash
 /dk-idea
