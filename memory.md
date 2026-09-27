@@ -37,3 +37,11 @@
 3. **Safety Gates Authoritative**: Consequential actions (e.g. `/dk-ship`) require all human approvals to be satisfied before recommendation.
 4. **Valid Commands Only**: Unregistered or fabricated commands are strictly filtered out by the canonical registry.
 5. **No Intermediate Automation Spam**: Batch/automated workflows suppress intermediate next-step outputs until control returns to the user.
+
+## Development Modes — Increment 001 (draft branch, 27 September 2026)
+
+- Scope: isolated methodology policy foundation on `feature/development-modes-increment-001`, based on v0.10.0 `main`. This is **not released or accepted**.
+- Four methodologies: Rapid, Balanced (default), Specification-Driven, Documentation-Driven. Fifth user-facing mode Maintenance & Evolution wraps an inherited methodology and requires an existing-project audit.
+- Pure `runtime/development-modes/policy-contract.mjs`: validates a v1 selection, resolves profile + optional `customPolicies` + only-strengthening `projectOverrides`, returns immutable provenance and mandatory-control manifest. No persistence, no Autopilot/gate mutation and no additional dependency in Increment 001.
+- Canonical design and acceptance: `docs/04-architecture/dkf-development-modes-increment-001-{spec,architecture}.md`; portable schema under `schemas/development-mode-config.schema.json`; test entry `npm run development-modes:validate` in full release validation.
+- Next: Increment 002 bootstrap/persistence and historical mode changes; 003 adaptive lifecycle; 004 documentation integration; 005 compatibility and runtime acceptance. Coordinate with still-draft PR #41 (Live UI Preview v0.10.1) before rebase/release. Do not claim full end-to-end acceptance on the strength of foundation unit tests.
