@@ -233,3 +233,32 @@ test('INIT-011 explicit --interactive fails without TTY only on unconfigured pro
   assert.match(result.json.error, /requires a terminal/);
   assert.equal(fs.existsSync(path.join(dir, '.development-kit')), false);
 }));
+
+test('INIT-010 canonical and installed Antigravity command mirror share the mode initialization instruction', () => {
+  const canonical = fs.readFileSync(new URL('../commands/dk-autopilot.md', import.meta.url), 'utf8');
+  const mirror = fs.readFileSync(new URL('../.agents/plugins/development-kit/commands/dk-autopilot.md', import.meta.url), 'utf8');
+  assert.equal(mirror, canonical);
+  assert.match(canonical, /modeConfigurationStatus/);
+  assert.match(canonical, /--set-mode/);
+});
+
+test('INIT-004 CLI rejects a corrupt persisted mode without rewriting it', clean(async dir => {
+  await bootstrapProject(dir);
+  const file = getDevelopmentModePath(dir);
+  fs.writeFileSync(file, '{"formatVersion":1,"revision":1,"history":[]}');
+  const before = fs.readFileSync(file, 'utf8');
+  const status = cli(dir, '--status');
+  assert.equal(status.status, 1);
+  assert.equal(status.json.status.modeConfigurationStatus, 'invalid');
+  const initialized = cli(dir, '--init', '--no-interactive');
+  assert.equal(initialized.status, 1);
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+});
+
+test('INIT-009 refuses an existing non-file mode path', clean(async dir => {
+  await bootstrapProject(dir);
+  const file = getDevelopmentModePath(dir);
+  fs.rmSync(file);
+  fs.mkdirSync(file);
+  assert.throws(() => readDevelopmentMode(dir), /regular file/);
+}));
