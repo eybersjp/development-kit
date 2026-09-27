@@ -28,16 +28,23 @@ function fail(message, code) {
 
 function safeStateDir(rootDir) {
   const dir = path.join(rootDir, '.development-kit');
-  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+  if (!fs.existsSync(dir)) {
     fail('Project is not bootstrapped: .development-kit directory missing', 'DK_MODE_BOOTSTRAP_MISSING');
   }
-  if (fs.lstatSync(dir).isSymbolicLink()) fail('Symlinked Development Kit state directory is not allowed');
+  if (fs.lstatSync(dir).isSymbolicLink() || !fs.lstatSync(dir).isDirectory()) {
+    fail('Development Kit state directory must be a real directory, not a symlink');
+  }
   return dir;
 }
 
 function safeFile(filePath) {
-  if (fs.existsSync(filePath) && (!fs.lstatSync(filePath).isFile()
-    || fs.lstatSync(filePath).isSymbolicLink())) {
+  let stat;
+  try { stat = fs.lstatSync(filePath); }
+  catch (error) {
+    if (error.code === 'ENOENT') return;
+    throw error;
+  }
+  if (!stat.isFile() || stat.isSymbolicLink()) {
     fail('Mode configuration must be a regular file, not a symlink or directory');
   }
 }
@@ -75,7 +82,7 @@ function validateRecord(record) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)
       || Object.keys(entry).some((key) => !['revision', 'at', 'actor', 'reason', 'source', 'selection'].includes(key))
       || entry.revision !== index + 1
-      || !Number.isFinite(Date.parse(entry.at))
+      || typeof entry.at !== 'string' || !Number.isFinite(Date.parse(entry.at))
       || typeof entry.actor !== 'string' || !entry.actor.trim()
       || typeof entry.reason !== 'string' || !entry.reason.trim()
       || !['default', 'explicit', 'legacy-migration', 'mode-change'].includes(entry.source)
@@ -96,12 +103,10 @@ function validateRecord(record) {
 
 export function readDevelopmentMode(rootDir = process.cwd()) {
   const filePath = getDevelopmentModePath(rootDir);
-  if (!fs.existsSync(filePath)) {
-    if (fs.existsSync(path.dirname(filePath))) safeStateDir(rootDir);
-    return null;
-  }
-  safeStateDir(rootDir);
+  if (fs.existsSync(path.dirname(filePath))) safeStateDir(rootDir);
+  if (!fs.existsSync(path.dirname(filePath))) return null;
   safeFile(filePath);
+  if (!fs.existsSync(filePath)) return null;
   let record;
   try { record = JSON.parse(fs.readFileSync(filePath, 'utf8')); }
   catch (error) { fail(`Unable to read mode configuration: ${error.message}`); }
