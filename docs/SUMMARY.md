@@ -26,6 +26,7 @@
 
 ## 02. User Guide
 * [Getting Started](02-user-guide/getting-started.md)
+* [Development Modes](02-user-guide/development-modes.md)
 * [Prerequisites](02-user-guide/prerequisites.md)
 * [Installation Overview](02-user-guide/installation-overview.md)
 * [Install Antigravity Global](02-user-guide/install-antigravity-global.md)
@@ -226,6 +227,7 @@
 * [DK Reliability Control-Plane Amendment (v0.9)](04-architecture/dk-reliability-control-plane-amendment.md)
 * [DKF Development Modes — Increment 001 Specification](04-architecture/dkf-development-modes-increment-001-spec.md)
 * [DKF Development Modes — Increment 001 Architecture](04-architecture/dkf-development-modes-increment-001-architecture.md)
+* [DKF Development Modes — Increment 002 Specification](04-architecture/dkf-development-modes-increment-002-spec.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)
