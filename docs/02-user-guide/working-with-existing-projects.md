@@ -19,6 +19,10 @@ npx development-kit init --opencode
 
 **Safety**: the installer never overwrites an existing `AGENTS.md` or `README.md` without `--force`. Your project's existing rules and docs are preserved.
 
+## Establish the Project Methodology
+
+Before a new lifecycle, run `node scripts/bootstrap.mjs --init`. A legacy project without a saved selection receives a recorded Balanced migration, while a new explicit selection can use `--mode=maintenance-evolution --base-methodology=balanced`. Existing selections cannot be replaced by repeating initialization; use an explicit reasoned `--set-mode` revision instead. See [Development Modes](development-modes.md).
+
 ## How the Methodology Adapts
 
 | Existing-Project Concern | Behavior |
