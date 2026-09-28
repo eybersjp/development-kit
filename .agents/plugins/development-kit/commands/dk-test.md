@@ -18,7 +18,7 @@ description: >-
 
 ## UI Verification
 
-Re-read bound `design.md` and use browser/visual evidence when required. If host visual capability is unavailable, record the evidence gap and require manual evidence.
+Re-read bound `design.md`, run Design System Compliance checks, and use browser/visual evidence when required. If host visual capability is unavailable, record the evidence gap and require manual evidence.
 
 ## Output
 

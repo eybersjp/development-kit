@@ -10,7 +10,7 @@ description: >-
 
 1. Select the next approved validated PLAN task.
 2. Use cached repository orientation when valid; perform task-specific delta inspection and readiness checks.
-3. For UI work verify `design.md`, ensure Live UI Preview, fulfil `OPEN_OR_REUSE`, and preserve HMR.
+3. For UI work execute DESIGN SYSTEM PRE-FLIGHT to verify `design.md`, ensure Live UI Preview, fulfil `OPEN_OR_REUSE`, and preserve HMR.
 4. Create/resolve contract + run with `node scripts/orchestration.mjs --operation=prepare-run`.
 5. Build fresh implementation context. Use source sections and inspect `tokenProfile`; repack over-budget context instead of dropping required authority.
 6. Preflight consequential commands through execution safety.

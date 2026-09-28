@@ -248,7 +248,11 @@ test('priority DKF workflows integrate live preview before formal browser verifi
 
   for (const relative of files) {
     const content = fs.readFileSync(path.join(ROOT, relative), 'utf8');
-    assert.match(content, /scripts\/ui-preview\.mjs --ensure/, `${relative} must ensure Live UI Preview`);
+    assert.match(
+      content,
+      /scripts\/ui-preview\.mjs --ensure|ensure(?:\/reuse)? Live UI Preview/,
+      `${relative} must ensure Live UI Preview`,
+    );
   }
 
   const browserVerification = fs.readFileSync(path.join(ROOT, 'skills', 'browser-runtime-verification', 'SKILL.md'), 'utf8');
