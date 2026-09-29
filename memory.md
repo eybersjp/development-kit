@@ -37,3 +37,11 @@
 3. **Safety Gates Authoritative**: Consequential actions (e.g. `/dk-ship`) require all human approvals to be satisfied before recommendation.
 4. **Valid Commands Only**: Unregistered or fabricated commands are strictly filtered out by the canonical registry.
 5. **No Intermediate Automation Spam**: Batch/automated workflows suppress intermediate next-step outputs until control returns to the user.
+
+## 2026-09-29 Production Readiness Audit (unreleased)
+
+- `main` and the published stable baseline remain v0.10.0; PR #41 targets v0.10.1 and is draft. No release/tag/npm publication is authorized from a green CI result alone.
+- Audited the Live UI Preview Windows system-browser launcher. The original `cmd.exe /c start` URL path exposed application route/query metacharacters to a command interpreter. On PR #41, regression coverage now requires a direct `rundll32.exe url.dll,FileProtocolHandler` argument-vector invocation; source changed accordingly (commits `bceea90` and `7c37fe2`).
+- Product Owner acceptance still requires actual local Energy Capital dev-server startup, browser open/reuse, and HMR after an edit. CI fixture tests and source/consumer mapping cannot substitute for this observation.
+- Development Modes PR #42 (policy) and stacked PR #43 (initialization/persistence) remain draft and separately validated; increments 003–005 and merge-base integration remain outstanding. Do not silently include incomplete modes work in the v0.10.1 preview release.
+- Re-run Ubuntu/Windows `npm run release:validate` at the latest PR head after any change and again on the final integrated release candidate. Verify npm publication and clean installed-package behavior after authorized release.
