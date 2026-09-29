@@ -236,8 +236,20 @@ export async function ensurePreview({
   state = writePreviewState({ ...state, ...launch, startedByDkf: true }, rootDir);
   const healthy = await waitForHealthy(project.candidatePorts, startupTimeoutMs, { excludedPorts: preexistingHealthyPorts, logPath: launch.logPath });
   if (!healthy) {
-    state = writePreviewState({ ...state, status: 'HEALTH_CHECK_FAILED', reason: `Development server did not become healthy within ${startupTimeoutMs}ms.` }, rootDir);
-    return { success: false, previewRequired: true, state: state.status, reason: state.reason, logPath: launch.logPath };
+    // A long-running dev command can fail readiness without exiting. Do not
+    // strand its process tree or leave stale ownership for a later retry.
+    const cleanup = stopOwnedProcess(state);
+    const timeoutReason = `Development server did not become healthy within ${startupTimeoutMs}ms.`;
+    const reason = cleanup.stopped
+      ? timeoutReason
+      : `${timeoutReason} Owned process cleanup could not be confirmed: ${cleanup.reason}`;
+    state = writePreviewState({
+      ...state,
+      status: 'HEALTH_CHECK_FAILED',
+      reason,
+      ...(cleanup.stopped ? { startedByDkf: false, pid: null, ownershipToken: null } : {}),
+    }, rootDir);
+    return { success: false, previewRequired: true, state: state.status, reason, cleanup, logPath: launch.logPath };
   }
 
   state = writePreviewState({ ...state, status: 'HEALTHY', url: healthy.url, port: healthy.port, reason: null }, rootDir);
