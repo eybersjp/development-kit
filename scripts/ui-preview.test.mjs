@@ -175,6 +175,35 @@ process.on('SIGTERM',()=>server.close(()=>process.exit(0)));
   assert.equal(afterStop, false, 'owned preview process tree must stop with the wrapper');
 });
 
+test('startup health-check timeout cleans up a still-running DKF-owned process', { timeout: 20000 }, async (t) => {
+  const root = tempDir('dkf-preview-unhealthy-');
+  writeJson(path.join(root, 'package.json'), {
+    scripts: { dev: 'node idle.mjs' },
+    devDependencies: { vite: '7.0.0' },
+  });
+  fs.writeFileSync(path.join(root, 'idle.mjs'), 'setInterval(() => {}, 1000);\\n', 'utf8');
+
+  t.after(() => {
+    try { stopPreview({ rootDir: root }); } catch {}
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const result = await ensurePreview({
+    rootDir: root,
+    context: 'Create the dashboard UI',
+    providerId: 'none',
+    startupTimeoutMs: 1200,
+  });
+  assert.equal(result.success, false, JSON.stringify(result));
+  assert.equal(result.state, 'HEALTH_CHECK_FAILED');
+  assert.equal(result.cleanup?.stopped, true, 'failed startup must terminate its owned process tree');
+  const persisted = readPreviewState(root);
+  assert.equal(persisted.status, 'HEALTH_CHECK_FAILED');
+  assert.equal(persisted.startedByDkf, false, 'successful cleanup must clear persisted ownership');
+  assert.equal(persisted.pid, null);
+  assert.equal(persisted.ownershipToken, null);
+});
+
 test('stop never kills a reused external server', () => {
   const root = tempDir();
   writePreviewState({ status: 'HEALTHY', startedByDkf: false, pid: process.pid, url: 'http://127.0.0.1:65534' }, root);
