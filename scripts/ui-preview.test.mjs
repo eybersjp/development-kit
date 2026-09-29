@@ -181,7 +181,7 @@ test('startup health-check timeout cleans up a still-running DKF-owned process',
     scripts: { dev: 'node idle.mjs' },
     devDependencies: { vite: '7.0.0' },
   });
-  fs.writeFileSync(path.join(root, 'idle.mjs'), 'setInterval(() => {}, 1000);\\n', 'utf8');
+  fs.writeFileSync(path.join(root, 'idle.mjs'), 'setInterval(() => {}, 1000);', 'utf8');
 
   t.after(() => {
     try { stopPreview({ rootDir: root }); } catch {}
