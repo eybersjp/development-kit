@@ -15,7 +15,10 @@ export function withRoute(baseUrl, route = '/') {
 }
 
 export function resolveSystemBrowserCommand(url, platform = process.platform) {
-  if (platform === 'win32') return { command: 'cmd.exe', args: ['/d', '/s', '/c', 'start', '', url] };
+  // Invoke the Windows URL protocol handler directly instead of passing the
+  // route/query string through cmd.exe. Ampersands, pipes, and percent signs in
+  // an application URL must never be parsed as command-shell syntax.
+  if (platform === 'win32') return { command: 'rundll32.exe', args: ['url.dll,FileProtocolHandler', url] };
   if (platform === 'darwin') return { command: 'open', args: [url] };
   return { command: 'xdg-open', args: [url] };
 }
