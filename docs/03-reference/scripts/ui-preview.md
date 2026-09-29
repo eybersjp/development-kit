@@ -54,6 +54,8 @@ node scripts/ui-preview.mjs --stop
 
 A reused external development server is left running.
 
+If a newly spawned DKF-owned server fails to pass startup health checks, the preview manager attempts to terminate only the ownership-proven process tree. Successful cleanup clears its persisted PID/token; unconfirmed cleanup is reported explicitly without killing unowned processes.
+
 ## Persisted state
 
 ```text
