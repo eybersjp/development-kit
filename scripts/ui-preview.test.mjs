@@ -109,7 +109,15 @@ test('browser providers expose host action, none mode, and system command resolu
 
   assert.equal(resolveSystemBrowserCommand('http://127.0.0.1:3000', 'linux').command, 'xdg-open');
   assert.equal(resolveSystemBrowserCommand('http://127.0.0.1:3000', 'darwin').command, 'open');
-  assert.equal(resolveSystemBrowserCommand('http://127.0.0.1:3000', 'win32').command, 'cmd.exe');
+  const windowsLauncher = resolveSystemBrowserCommand('http://127.0.0.1:3000', 'win32');
+  assert.deepEqual(windowsLauncher, {
+    command: 'rundll32.exe',
+    args: ['url.dll,FileProtocolHandler', 'http://127.0.0.1:3000'],
+  });
+  const metacharacterUrl = 'http://127.0.0.1:3000/dashboard?tab=live&filter=%25PATH%25';
+  const safeWindowsLauncher = resolveSystemBrowserCommand(metacharacterUrl, 'win32');
+  assert.equal(safeWindowsLauncher.command, 'rundll32.exe', 'Windows URL launch must not invoke a command interpreter');
+  assert.equal(safeWindowsLauncher.args[1], metacharacterUrl, 'URL must remain a single literal argument');
 });
 
 test('route normalization produces stable preview URLs', () => {
