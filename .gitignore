@@ -26,4 +26,7 @@ desktop.ini
 .development-kit/autopilot/
 .development-kit/contracts/
 .development-kit/runs/
+.development-kit/decisions/
+.development-kit/secrets/
+freebuff-chat-*.md
 

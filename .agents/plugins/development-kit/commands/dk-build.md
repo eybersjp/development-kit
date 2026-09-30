@@ -14,20 +14,25 @@ Implements one approved task without allowing the implementation agent to certif
 
 1. Select the next approved task from the validated PLAN.
 2. Run repository orientation and task-readiness checks. For visual UI work, execute DESIGN SYSTEM PRE-FLIGHT to verify `design.md` exists and is approved.
-3. Create or resolve the active Development Contract and orchestration run using `node scripts/orchestration.mjs --operation=prepare-run`. Bind `design.md` automatically for UI/design-governed work.
-4. Build a fresh implementation context from the contract and authoritative sources. The implementation report is an assertion only.
-5. Before consequential shell, database, publication, deployment, infrastructure, or destructive actions, run the execution-safety assessment. `BLOCK` must not execute. `REQUIRE_APPROVAL` must use the normal explicit approval gate.
-6. Implement only contract scope using existing-code-first, native-platform-first, dependency-restraint, minimal-diff, and test-first discipline.
-7. Run `/dk-test` in an independently rehydrated verification context. Every acceptance criterion receives PASS, FAIL, PARTIAL, UNVERIFIED, or NOT_APPLICABLE with evidence where required.
-8. Run `/dk-review` with structured reviewer findings selected by risk and impact.
-9. Evaluate deterministic acceptance from persisted verification, required reviews, control manifests, architecture drift, source freshness, and approvals.
-10. If verification fails, call the correction engine. Automatically correct only when it returns `CORRECT`; obey its exact scope and attempt number. `PAUSE` never authorizes redesign or scope expansion.
-11. Run simplification only inside the approved contract, reverify after changes, and evaluate acceptance again.
-12. Mark the task complete only when runtime acceptance is `ACCEPTED`.
+3. Check and discover configuration dependencies (`node scripts/orchestration.mjs --operation=configuration-readiness --action=discover`). If missing configuration is detected:
+   - Prepare target locations (`.env.local`) safely with line numbers and `.gitignore` safety.
+   - Generate `.development-kit/SECRETS_SETUP.md`.
+   - PAUSE for Product Owner decision (`configure`, `defer`, `generate`, `cancel`). Never invent credentials or fake values.
+4. Create or resolve the active Development Contract (v1.1) and orchestration run using `node scripts/orchestration.mjs --operation=prepare-run`. Bind `design.md` automatically for UI/design-governed work.
+5. Build a fresh implementation context from the contract and authoritative sources. Sensitive values are never exposed to AI contexts. The implementation report is an assertion only.
+6. Before consequential shell, database, publication, deployment, infrastructure, or destructive actions, run the execution-safety assessment. `BLOCK` must not execute. `REQUIRE_APPROVAL` must use the normal explicit approval gate.
+7. Implement only contract scope using existing-code-first, native-platform-first, dependency-restraint, minimal-diff, and test-first discipline.
+8. Run `/dk-test` in an independently rehydrated verification context. Every acceptance criterion receives PASS, FAIL, PARTIAL, UNVERIFIED, or NOT_APPLICABLE with evidence where required. Any criterion depending on deferred or missing configuration is forced to UNVERIFIED.
+9. Run `/dk-review` with structured reviewer findings selected by risk and impact.
+10. Evaluate deterministic acceptance from persisted verification, required reviews, control manifests, architecture drift, source freshness, configuration readiness, and approvals.
+11. If verification fails, call the correction engine. Automatically correct only when it returns `CORRECT`; obey its exact scope and attempt number. `PAUSE` never authorizes redesign or scope expansion.
+12. Run simplification only inside the approved contract, reverify after changes, and evaluate acceptance again.
+13. Mark the task complete only when runtime acceptance is `ACCEPTED`.
 
 ## Non-Negotiable Gates
 
 - No self-certification by implementation context.
+- Secrets & Configuration Readiness Gate: Unresolved or invalid configuration blocks acceptance; missing release-critical configuration blocks release; deferred configuration forces dependent criteria to UNVERIFIED.
 - PASS without required evidence is invalid.
 - Stale authoritative source fingerprints block progress.
 - Unverified required security/control coverage blocks acceptance.

@@ -13,18 +13,22 @@ Final release gate. Shipping is not authorized by an agent's completion claim: e
 ## Workflow
 
 1. Verify no active contract/run is PENDING or BLOCKED. For contract-aware work, acceptance must be `ACCEPTED`, source fingerprints current, required controls/reviews complete, and no unresolved architecture/design/security gate present.
-2. For UI scope verify authoritative `design.md`, Same Design Team/visual evidence requirements, and no blocking Design Authority findings.
-3. Run `npm run release:validate` from the exact candidate commit. Do not substitute a smaller test subset.
-4. Inspect the complete diff for scope, generated/stale files, dependency/architecture delta, credentials/secrets, migration history, installer/package contents and version consistency.
-5. Run the full independent spec/code/simplicity and conditional security/accessibility/design/architecture reviews required by the release risk.
-6. Verify README/docs/changelog/release notes/migration guidance and active-version references.
-7. Verify package version, plugin manifest version, release tag target and installable npm package contents agree.
-8. Prepare the PR/merge only when all gates are green.
-9. Publication/tag/npm/GitHub Release remains a consequential remote action and must use the repository's controlled maintainer release workflow after the final main commit is verified.
+2. Verify Secrets & Configuration Readiness Gate state:
+   - Overall gate state must be `READY` or `CLEARED_WITH_DEFERRED_REQUIREMENTS`.
+   - No requirement marked with `requiredBy: 'release'` may remain deferred, missing, or invalid. Any missing release requirement halts shipping immediately.
+   - Verify no secrets or credentials appear in git diff, commits, or tracked files.
+3. For UI scope verify authoritative `design.md`, Same Design Team/visual evidence requirements, and no blocking Design Authority findings.
+4. Run `npm run release:validate` from the exact candidate commit. Do not substitute a smaller test subset.
+5. Inspect the complete diff for scope, generated/stale files, dependency/architecture delta, credentials/secrets, migration history, installer/package contents and version consistency.
+6. Run the full independent spec/code/simplicity and conditional security/accessibility/design/architecture reviews required by the release risk.
+7. Verify README/docs/changelog/release notes/migration guidance and active-version references.
+8. Verify package version, plugin manifest version, release tag target and installable npm package contents agree.
+9. Prepare the PR/merge only when all gates are green.
+10. Publication/tag/npm/GitHub Release remains a consequential remote action and must use the repository's controlled maintainer release workflow after the final main commit is verified.
 
 ## Fail-Closed Conditions
 
-Stop shipping for any PENDING/BLOCKED acceptance, stale contract, unverified required control, failed regression, docs validation error, plugin/package mismatch, install isolation failure, unresolved reviewer finding, unauthorized architecture drift, or release-validation failure.
+Stop shipping for any PENDING/BLOCKED acceptance, unresolved release configuration requirement (`CONFIGURATION_RELEASE_REQUIREMENT_MISSING`), stale contract, unverified required control, failed regression, docs validation error, plugin/package mismatch, install isolation failure, unresolved reviewer finding, unauthorized architecture drift, or release-validation failure.
 
 ## Skills Activated
 

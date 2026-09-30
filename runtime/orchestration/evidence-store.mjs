@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { loadConfigurationRegistry } from './configuration-readiness.mjs';
 
 const CRITERION_STATUSES = Object.freeze([
   'PASS',
@@ -358,7 +359,26 @@ function normalizeVerificationCriteria(contract, criteria = []) {
     if (!CRITERION_STATUSES.includes(status)) throw new EvidenceValidationError(`Unsupported criterion status for ${id}: ${status}`);
     const evidence = normalizeEvidenceList(criterion.evidence ?? []);
     const reason = criterion.reason === undefined || criterion.reason === null ? null : nonEmptyString(criterion.reason, `criterion ${id} reason`);
-    const normalized = { ...expected.get(id), status, evidence, reason };
+    let finalStatus = status;
+
+    // Invariant: If a criterion depends on a deferred or missing configuration requirement, it MUST be UNVERIFIED, never PASS
+    try {
+      const reg = loadConfigurationRegistry();
+      const deferredOrInvalid = new Set(
+        (reg?.requirements || [])
+          .filter((r) => r.status === 'DEFERRED_BY_PRODUCT_OWNER' || r.status === 'MISSING' || r.status === 'INVALID')
+          .map((r) => r.id)
+      );
+      const dependsOnDeferred = (reg?.requirements || []).some(
+        (r) => (r.status === 'DEFERRED_BY_PRODUCT_OWNER' || r.status === 'MISSING' || r.status === 'INVALID') &&
+          Array.isArray(r.requiredByCriteria) && r.requiredByCriteria.includes(id)
+      );
+      if (dependsOnDeferred && finalStatus === 'PASS') {
+        finalStatus = 'UNVERIFIED';
+      }
+    } catch {}
+
+    const normalized = { ...expected.get(id), status: finalStatus, evidence, reason };
     validateEvidenceBearingStatus(normalized, `criterion ${id}`);
     validateVerificationTypeEvidence(normalized, `criterion ${id}`);
     observed.set(id, normalized);

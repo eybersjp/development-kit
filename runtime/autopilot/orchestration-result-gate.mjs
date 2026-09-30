@@ -47,6 +47,32 @@ export function enforceAutopilotOrchestrationGate(state, result) {
     throw new AutopilotOrchestrationGateError('COMPLETE stage cannot complete unless the active increment is accepted');
   }
 
+  const configurationReadiness = object(orchestration.configurationReadiness)
+    ? {
+        gateState: orchestration.configurationReadiness.gateState ?? 'NOT_APPLICABLE',
+        blockingRequirements: Array.isArray(orchestration.configurationReadiness.blockingRequirements)
+          ? [...orchestration.configurationReadiness.blockingRequirements]
+          : [],
+        deferredRequirements: Array.isArray(orchestration.configurationReadiness.deferredRequirements)
+          ? [...orchestration.configurationReadiness.deferredRequirements]
+          : [],
+        totalRequirements: Number.isInteger(orchestration.configurationReadiness.totalRequirements)
+          ? orchestration.configurationReadiness.totalRequirements
+          : 0,
+        missingRequirements: Number.isInteger(orchestration.configurationReadiness.missingRequirements)
+          ? orchestration.configurationReadiness.missingRequirements
+          : 0
+      }
+    : state.orchestration?.configurationReadiness ?? null;
+
+  if (result.status === 'completed' && configurationReadiness) {
+    if (configurationReadiness.gateState === 'BLOCKED' || configurationReadiness.gateState === 'WAITING_FOR_USER') {
+      if (state.currentStage === 'VERIFY' || state.currentStage === 'REVIEW' || state.currentStage === 'COMPLETE') {
+        throw new AutopilotOrchestrationGateError(`${state.currentStage} stage cannot complete while configuration readiness gate is ${configurationReadiness.gateState}`);
+      }
+    }
+  }
+
   state.orchestration = {
     activeContractId,
     activeRunId,
@@ -57,6 +83,7 @@ export function enforceAutopilotOrchestrationGate(state, result) {
     acceptanceState: orchestration.acceptanceState ?? state.orchestration?.acceptanceState ?? 'PENDING',
     requiredGates: Array.isArray(orchestration.requiredGates) ? structuredClone(orchestration.requiredGates) : state.orchestration?.requiredGates ?? [],
     completedGates: Array.isArray(orchestration.completedGates) ? structuredClone(orchestration.completedGates) : state.orchestration?.completedGates ?? [],
+    configurationReadiness
   };
   return { legacy: false, enforced: true, orchestration: state.orchestration };
 }

@@ -19,11 +19,18 @@ import path from 'node:path';
 import { getProjectIdentity } from '../autopilot/project-identity.mjs';
 import { LocalMemoryProvider } from '../intelligence/local-memory-provider.mjs';
 import { resolveEffectiveSettings, getProjectSettingsPath, DEFAULT_SETTINGS } from '../intelligence/settings.mjs';
+import { bootstrapGit, inspectGitState } from './git-bootstrap.mjs';
 
 export function getProjectBootstrapStatus(rootDir = process.cwd()) {
   const dkDir = path.join(rootDir, '.development-kit');
+  const gitState = inspectGitState(rootDir);
+
   if (!fs.existsSync(dkDir)) {
-    return { initialized: false, dkDirExists: false };
+    return {
+      initialized: false,
+      dkDirExists: false,
+      git: gitState
+    };
   }
 
   const projectFile = path.join(dkDir, 'project.json');
@@ -36,7 +43,8 @@ export function getProjectBootstrapStatus(rootDir = process.cwd()) {
     dkDirExists: true,
     hasProjectJson: fs.existsSync(projectFile),
     hasWorkspaceId: fs.existsSync(workspaceFile),
-    hasMemoryManifest: fs.existsSync(memoryManifest)
+    hasMemoryManifest: fs.existsSync(memoryManifest),
+    git: gitState
   };
 }
 
@@ -77,6 +85,9 @@ export async function bootstrapProject(rootDir = process.cwd(), options = {}) {
     const memoryProvider = new LocalMemoryProvider({ rootDir });
     await memoryProvider.activate();
 
+    // 5. Bootstrap Git & reconcile .gitignore
+    const git = bootstrapGit(rootDir, options);
+
     const effectiveSettings = resolveEffectiveSettings(rootDir);
 
     return {
@@ -84,6 +95,7 @@ export async function bootstrapProject(rootDir = process.cwd(), options = {}) {
       initialized: true,
       rootDir,
       identity,
+      git,
       settings: effectiveSettings
     };
   } catch (err) {
@@ -142,4 +154,3 @@ export function assertProjectBootstrapped(rootDir = process.cwd(), { requireMuta
     frameworkVersion: projectData.frameworkVersion,
   };
 }
-

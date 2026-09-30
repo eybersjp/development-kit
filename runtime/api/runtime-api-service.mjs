@@ -26,6 +26,14 @@ import { MemoryType, MemoryStatus, MemoryAuthority } from '../intelligence/memor
 import { validateMemoryRecord, validateAuthorityTransition } from '../intelligence/memory-schema.mjs';
 import { loadActiveDecisionMenu, resolveDecisionInput } from '../orchestration/decision-menu.mjs';
 import { loadIdeaSuggestions } from '../orchestration/idea-suggestions.mjs';
+import {
+  loadConfigurationRegistry,
+  evaluateConfigurationReadiness,
+  loadConfigurationGateState,
+  recordConfigurationDecision,
+  generateConfigurationSetupGuide,
+  saveConfigurationGateState,
+} from '../orchestration/configuration-readiness.mjs';
 
 export class RuntimeApiService {
   constructor(options = {}) {
@@ -245,6 +253,59 @@ export class RuntimeApiService {
     if (method === 'GET' && pathname === '/v1/settings') {
       const effective = resolveEffectiveSettings(this.rootDir);
       return this._json(res, 200, { settings: effective });
+    }
+
+    if (method === 'GET' && pathname === '/v1/configuration-readiness') {
+      const reg = loadConfigurationRegistry(this.rootDir);
+      const gate = evaluateConfigurationReadiness({
+        rootDir: this.rootDir,
+        requirements: reg.requirements,
+      });
+      // Metadata only - NEVER expose credentials
+      const safeRequirements = reg.requirements.map((r) => ({
+        id: r.id,
+        name: r.name,
+        kind: r.kind,
+        provider: r.provider,
+        status: r.status,
+        requiredBy: r.requiredBy,
+        requiredByTasks: r.requiredByTasks,
+        requiredByCriteria: r.requiredByCriteria,
+        target: r.target ? {
+          type: r.target.type,
+          file: r.target.file,
+          variable: r.target.variable,
+          line: r.target.line,
+        } : null,
+        description: r.description,
+      }));
+
+      return this._json(res, 200, {
+        gate,
+        requirements: safeRequirements,
+        setupGuidePath: '.development-kit/SECRETS_SETUP.md',
+      });
+    }
+
+    if (method === 'POST' && pathname === '/v1/configuration-readiness/decision') {
+      const body = await this._readJsonBody(req);
+      const result = recordConfigurationDecision({
+        rootDir: this.rootDir,
+        requirementId: body.requirementId,
+        decision: body.decision,
+        confirmed: body.confirmed !== false,
+        contractId: body.contractId || null,
+        sourceFingerprint: body.sourceFingerprint || null,
+        authority: body.authority || 'Product Owner',
+      });
+      const reg = loadConfigurationRegistry(this.rootDir);
+      const gate = evaluateConfigurationReadiness({
+        rootDir: this.rootDir,
+        requirements: reg.requirements,
+      });
+      saveConfigurationGateState(gate, this.rootDir);
+      generateConfigurationSetupGuide(this.rootDir, reg.requirements);
+      return this._json(res, 200, { result, gate });
     }
 
     // Governed memory write endpoints

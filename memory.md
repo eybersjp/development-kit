@@ -4,6 +4,13 @@
 
 - **Core Lifecycle**: 9 gated stages (`UNDERSTAND` → `DEFINE` → `DESIGN` → `PLAN` → `IMPLEMENT` → `VERIFY` → `REVIEW` → `SIMPLIFY` → `COMPLETE`).
 - **Autopilot Runtime (`runtime/autopilot/`)**: Deterministic state machine, cryptographic tokens, lease management, non-bypassable policy engine.
+- **Secrets & Configuration Readiness Gate (`runtime/orchestration/configuration-readiness.mjs`)**:
+  - Non-bypassable runtime control-plane gate: `DETECT → REGISTER → PREPARE → EXPLAIN → PAUSE → PRODUCT OWNER DECISION → VALIDATE → RESUME`.
+  - Zero-credential exposure invariant: DKF knows a secret is valid without AI model receiving its value.
+  - Fail-closed acceptance and release: Unresolved configuration blocks acceptance; missing release requirements block `/dk-ship`.
+  - Deferred dependencies force affected criteria to `UNVERIFIED`.
+  - Git tracking protection: Halts immediately if secret target is tracked by Git.
+  - Targets safe preparation with `.env.local` line numbers and `.development-kit/SECRETS_SETUP.md` generation.
 - **Next-Step Guidance Subsystem (`runtime/next-step/`)**:
   - `command-registry.mjs`: Canonical registry for all 14 `/dk-*` commands with safety metadata.
   - `resolver.mjs`: Context-aware `NextStepResolver` enforcing 8 recommendation rules.

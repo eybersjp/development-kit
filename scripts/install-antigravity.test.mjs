@@ -163,6 +163,12 @@ test('project plugin installation is self-contained, version-aligned, and remove
   );
   assert.equal(autopilotResult.status, 0, autopilotResult.stderr || autopilotResult.stdout);
   assert.equal(JSON.parse(autopilotResult.stdout).success, true);
+
+  // Requirement 9 / GIT-014: project installation establishes DKF runtime state and bootstraps Git
+  assert.ok(existsSync(join(tempTarget, '.development-kit', 'project.json')), 'Project bootstrap state must be created by --project');
+  assert.ok(existsSync(join(tempTarget, '.development-kit', 'workspace-id')), 'Workspace ID must be created by --project');
+  assert.ok(existsSync(join(tempTarget, '.gitignore')), '.gitignore must be reconciled by --project');
+  assert.ok(existsSync(join(tempTarget, '.git')), 'Git repository must be bootstrapped by --project');
 });
 
 test('distribution package (npm pack) includes all runtime, schemas, skills, scripts, and plugins', (t) => {

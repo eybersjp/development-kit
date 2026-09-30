@@ -1,7 +1,7 @@
 {
   "name": "development-kit",
-  "version": "0.10.0",
-  "description": "DKF is an agent-independent reliability control plane for AI software development, with Development Contracts, independent verification, deterministic acceptance, design governance, persistent intelligence, and safe autonomous workflows.",
+  "version": "0.11.0",
+  "description": "DKF is an agent-independent reliability control plane for AI software development, with Development Contracts, independent verification, deterministic acceptance, design governance, persistent intelligence, Secrets & Configuration Readiness Gate, and safe autonomous workflows.",
   "author": "Juan-Pierre Eybers",
   "license": "MIT",
   "homepage": "https://github.com/eybersjp/development-kit#readme",
@@ -75,7 +75,9 @@
     "design-authority:validate": "node --test scripts/design-authority.test.mjs",
     "evals:validate": "node scripts/validate-evals.mjs",
     "autopilot:validate": "npm run autopilot:test && npm run evals:validate",
-    "release:validate": "npm run validate && npm run skills:validate:test && npm run doctor && npm run sync:validate:test && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run platform:validate && npm run research:validate && npm run next-step:test && npm run installer:validate:test && npm run orchestration:validate && npm run execution-safety:validate && npm run evidence:validate && npm run orchestration-core:validate && npm run orchestration-integration:validate && npm run v09-reliability:validate && npm run intelligence:validate && npm run v071:validate && npm run design-authority:validate && npm run autopilot:validate && npm run numbered-decisions:test",
+    "git-bootstrap:test": "node --test scripts/git-bootstrap.test.mjs",
+    "configuration-readiness:validate": "node --test scripts/configuration-readiness.test.mjs scripts/configuration-readiness-integration.test.mjs scripts/configuration-readiness-security.test.mjs",
+    "release:validate": "npm run validate && npm run skills:validate:test && npm run doctor && npm run sync:validate:test && npm run docs:validate && npm run docs:validate:test && npm run opencode:validate && npm run platform:validate && npm run research:validate && npm run next-step:test && npm run installer:validate:test && npm run git-bootstrap:test && npm run orchestration:validate && npm run execution-safety:validate && npm run evidence:validate && npm run orchestration-core:validate && npm run orchestration-integration:validate && npm run v09-reliability:validate && npm run intelligence:validate && npm run v071:validate && npm run design-authority:validate && npm run autopilot:validate && npm run numbered-decisions:test && npm run configuration-readiness:validate",
     "numbered-decisions:test": "node --test scripts/numbered-decisions.test.mjs scripts/numbered-decisions-adversarial.test.mjs"
   },
   "engines": {
