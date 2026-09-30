@@ -138,8 +138,18 @@ export function inspectGitState(rootDir, options = {}) {
   const gitRootRaw = revParseRes.stdout;
   const gitRoot = path.resolve(gitRootRaw);
 
-  // Compare git root with resolvedRoot
-  // Note: On Windows, paths might differ in casing
+  const canonicalize = (p) => {
+    try {
+      if (fs.existsSync(p)) {
+        return fs.realpathSync.native ? fs.realpathSync.native(p) : fs.realpathSync(p);
+      }
+    } catch {}
+    return path.resolve(p);
+  };
+
+  const canonicalGitRoot = canonicalize(gitRoot);
+  const canonicalTarget = canonicalize(resolvedRoot);
+
   const isSamePath = (p1, p2) => {
     if (process.platform === 'win32') {
       return p1.toLowerCase() === p2.toLowerCase();
@@ -148,9 +158,13 @@ export function inspectGitState(rootDir, options = {}) {
   };
 
   let relationship = 'ancestor';
-  if (isSamePath(gitRoot, resolvedRoot)) {
+  if (isSamePath(canonicalGitRoot, canonicalTarget)) {
     relationship = 'root';
-  } else if (resolvedRoot.startsWith(gitRoot)) {
+  } else if (
+    process.platform === 'win32'
+      ? canonicalTarget.toLowerCase().startsWith(canonicalGitRoot.toLowerCase() + path.sep)
+      : canonicalTarget.startsWith(canonicalGitRoot + path.sep)
+  ) {
     relationship = 'ancestor';
   } else {
     relationship = 'external';
