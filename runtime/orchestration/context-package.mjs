@@ -7,6 +7,10 @@ import {
   validateDevelopmentContract,
 } from './development-contract.mjs';
 import { loadConfigurationRegistry } from './configuration-readiness.mjs';
+import {
+  buildTokenProfile,
+  materializeScopedContent,
+} from './token-efficiency.mjs';
 
 const ROLE_PURPOSE = Object.freeze({
   implementer: 'implementation',
@@ -60,10 +64,26 @@ function resolveSource(rootDir, source) {
   if (stat.size > 2 * 1024 * 1024) {
     throw new ContextPackageError(`Authoritative source exceeds 2 MiB context safety limit: ${source.path}`);
   }
+
+  const materialized = materializeScopedContent(
+    fs.readFileSync(absolute, 'utf8'),
+    source.sections ?? [],
+  );
+
   return {
     ...structuredClone(source),
     currentFingerprint: fingerprint,
-    content: fs.readFileSync(absolute, 'utf8'),
+    content: materialized.content,
+    delivery: {
+      mode: materialized.deliveryMode,
+      resolvedSelectors: materialized.resolvedSelectors,
+      unresolvedSelectors: materialized.unresolvedSelectors,
+      rawChars: materialized.rawChars,
+      deliveredChars: materialized.deliveredChars,
+      rawTokens: materialized.rawTokens,
+      deliveredTokens: materialized.deliveredTokens,
+      warnings: materialized.warnings,
+    },
   };
 }
 
@@ -185,6 +205,12 @@ export function buildContextPackage({
       value: structuredClone(implementationReport),
     },
   };
+
+  pkg.tokenProfile = buildTokenProfile({
+    purpose,
+    packageValue: pkg,
+    sources,
+  });
 
   return Object.freeze(pkg);
 }

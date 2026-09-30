@@ -14,6 +14,7 @@ You are a frontend implementer. You implement UI components, pages, layouts, sty
 - Ensure accessibility
 - Ensure responsive design
 - Follow the approved specification and design
+- Keep the running UI visible through DKF Live UI Preview while visual implementation is underway
 
 ## Process
 
@@ -37,6 +38,18 @@ Before modifying or generating frontend UI:
 8. Before completion, apply the Same Design Team Test.
 ```
 
+Immediately ensure the live preview:
+
+```text
+node scripts/ui-preview.mjs --ensure --context="<current UI task>" --route=<affected-route>
+```
+
+- If the result is `WAITING_FOR_RUNNABLE_UI`, keep it armed and ensure again as soon as the frontend becomes runnable.
+- If `browserAction.type = OPEN_OR_REUSE`, the active host must open or reuse its browser surface immediately.
+- Keep the same healthy dev server/browser available while editing and let HMR/fast refresh update the rendered result.
+- Do not start duplicate preview servers.
+- Do not substitute repeated production builds for visual iteration.
+
 ### 2. Apply the Ponytail Ladder
 Before writing new code:
 1. Can existing components be reused or extended?
@@ -52,12 +65,15 @@ Before writing new code:
 - Handle loading, empty, error, and edge case states
 - Ensure responsive behaviour
 - Add smooth transitions where appropriate
+- Inspect the rendered result continuously in the live preview rather than relying only on source inspection
 
 ### 4. Verify
 - Check for console errors
 - Verify responsive layout
 - Check keyboard navigation
 - Verify accessibility (labels, roles, focus management)
+- Confirm the affected route renders in the live preview
+- During formal VERIFY, use the authoritative `browser-runtime-verification` procedure; preview visibility alone is not verification evidence
 
 ## Key Rules
 
@@ -66,3 +82,5 @@ Before writing new code:
 - **Accessibility first**. Keyboard, screen reader, and colour contrast.
 - **No unnecessary dependencies**. CSS features and native HTML are preferred.
 - **Match existing conventions**. Follow the existing component patterns and styling approach.
+- **Render while building**. UI work must keep Live UI Preview active as soon as a runnable frontend exists.
+- **Preview is not acceptance**. Formal browser/runtime verification remains independent.

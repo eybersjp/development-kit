@@ -12,6 +12,8 @@ compatibility: opencode
 
 Checks runtime behaviour in the browser: console errors, network failures, DOM behaviour, responsive layout, accessibility, and user interactions. This is a verification skill used to validate frontend implementations in real browser environments.
 
+DKF Live UI Preview may already have a healthy development server and browser surface running. Reuse that surface when valid; do not create an unnecessary duplicate server. Live preview is development visibility, not a verification verdict.
+
 ## When to Use
 
 - After implementing UI components or pages
@@ -21,6 +23,22 @@ Checks runtime behaviour in the browser: console errors, network failures, DOM b
 - Before marking frontend tasks as complete
 
 ## Process
+
+### 0. Reuse Live UI Preview When Available
+
+Check preview state first:
+
+```text
+node scripts/ui-preview.mjs --status
+```
+
+If a healthy project-bound preview exists, use it for verification and navigate to the required route. If the host requires an explicit browser request, use:
+
+```text
+node scripts/ui-preview.mjs --open --route=<route>
+```
+
+Fulfil any `OPEN_OR_REUSE` browser action using the host browser capability. Do not treat the existence of a healthy preview as proof that the acceptance criteria pass.
 
 ### 1. Check Console
 
@@ -89,6 +107,7 @@ Report any issues found with reproduction steps.
 ## Verification Checklist
 
 ```
+- [ ] Live preview reused when healthy, without duplicate server
 - [ ] Console: No errors
 - [ ] Console: No warnings relevant to the implementation
 - [ ] Network: API calls succeed
@@ -112,6 +131,7 @@ Report any issues found with reproduction steps.
 | Rationalization | Rebuttal |
 |----------------|----------|
 | "The unit tests pass, so the UI must work" | Unit tests don't verify browser behaviour. Test in the browser. |
+| "The live preview is open, so verification is done" | Preview availability is not evidence that the required browser behaviours pass. Verify them independently. |
 | "I tested it at one screen size, it's fine" | One screen size is not enough. Test the responsive range. |
 | "I'll check accessibility later" | Accessibility issues found later cost more to fix. Check now. |
 | "The console is clean during development" | Console errors from edge cases appear during real use. Check carefully. |
@@ -125,9 +145,12 @@ Report any issues found with reproduction steps.
 - Loading and empty states are missing
 - Rapid clicking causes duplicate submissions or crashes
 - Keyboard navigation is broken or missing
+- A second dev server is started even though a healthy DKF preview already exists
+- Preview visibility is treated as an acceptance verdict
 
 ## Verification
 
+- [ ] Live preview was reused when appropriate without weakening verifier independence
 - [ ] Console is clean (no errors or relevant warnings)
 - [ ] Network requests succeed with proper error handling
 - [ ] DOM renders correctly with dynamic updates
