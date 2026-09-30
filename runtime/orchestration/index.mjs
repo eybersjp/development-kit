@@ -137,3 +137,4 @@ export * from './po-decisions.mjs';
 export * from './idea-suggestions.mjs';
 export * from './decision-menu.mjs';
 export * from './suggestion-promotion.mjs';
+export * from './configuration-readiness.mjs';

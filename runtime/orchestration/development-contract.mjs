@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const DEVELOPMENT_CONTRACT_SCHEMA_VERSION = '1.0.0';
+export const DEVELOPMENT_CONTRACT_SCHEMA_VERSION = '1.1.0';
+export const SUPPORTED_DEVELOPMENT_CONTRACT_SCHEMA_VERSIONS = Object.freeze(['1.0.0', '1.1.0']);
 export const DEFAULT_CORRECTION_ATTEMPTS = 3;
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -28,6 +29,7 @@ const CONTRACT_KEYS = new Set([
   'requiredReviewers',
   'correctionPolicy',
   'approvalPolicy',
+  'configurationDependencies',
   'sourceFingerprint',
 ]);
 
@@ -290,9 +292,12 @@ export function normalizeAcceptanceCriteria(criteria = []) {
       throw new ContractValidationError(`Acceptance criterion ${id} requires at least one verification type`);
     }
 
+    const requirementId = typeof value.requirementId === 'string' && value.requirementId.trim() ? value.requirementId.trim() : null;
+
     return {
       id,
       statement,
+      requirementId,
       source,
       verificationType,
       requiredEvidence: value.requiredEvidence !== false,
@@ -382,6 +387,10 @@ export function createDevelopmentContract({
     sourceFingerprint: computeSourceFingerprint(sources),
   };
 
+  if (Array.isArray(task.configurationDependencies)) {
+    contract.configurationDependencies = structuredClone(task.configurationDependencies);
+  }
+
   validateDevelopmentContract(contract);
   return contract;
 }
@@ -405,7 +414,9 @@ export function validateDevelopmentContract(contract) {
     }
   }
 
-  if (contract.schemaVersion !== DEVELOPMENT_CONTRACT_SCHEMA_VERSION) errors.push(`Unsupported schemaVersion: ${contract.schemaVersion}`);
+  if (!SUPPORTED_DEVELOPMENT_CONTRACT_SCHEMA_VERSIONS.includes(contract.schemaVersion)) {
+    errors.push(`Unsupported schemaVersion: ${contract.schemaVersion}`);
+  }
   if (contract.status !== 'approved') errors.push('Contract status must be approved before execution');
   if (typeof contract.createdAt === 'string' && Number.isNaN(Date.parse(contract.createdAt))) errors.push('createdAt is not a valid timestamp');
   if (typeof contract.sourceFingerprint === 'string' && !SHA256_PATTERN.test(contract.sourceFingerprint)) errors.push('sourceFingerprint must be a sha256 fingerprint');
@@ -456,7 +467,7 @@ export function validateDevelopmentContract(contract) {
   if (!Array.isArray(contract.acceptanceCriteria) || contract.acceptanceCriteria.length === 0) {
     errors.push('acceptanceCriteria must contain at least one criterion');
   } else {
-    const criterionKeys = new Set(['id', 'statement', 'source', 'verificationType', 'requiredEvidence']);
+    const criterionKeys = new Set(['id', 'statement', 'requirementId', 'source', 'verificationType', 'requiredEvidence']);
     const criterionIds = new Set();
     for (const criterion of contract.acceptanceCriteria) {
       if (!isPlainObject(criterion)) {
@@ -504,6 +515,36 @@ export function validateDevelopmentContract(contract) {
   }
 
   if (!isPlainObject(contract.approvalPolicy)) errors.push('approvalPolicy must be an object');
+
+  if (contract.configurationDependencies !== undefined) {
+    if (!Array.isArray(contract.configurationDependencies)) {
+      errors.push('configurationDependencies must be an array');
+    } else {
+      const depKeys = new Set(['id', 'name', 'kind', 'provider', 'required', 'requiredBy', 'target', 'status', 'discovery']);
+      const depIds = new Set();
+      for (const dep of contract.configurationDependencies) {
+        if (!isPlainObject(dep)) {
+          errors.push('configurationDependencies entries must be objects');
+          continue;
+        }
+        if (typeof dep.id !== 'string' || !IDENTIFIER_PATTERN.test(dep.id)) {
+          errors.push(`Invalid configuration dependency id: ${dep.id}`);
+        } else {
+          if (depIds.has(dep.id)) errors.push(`Duplicate configuration dependency id: ${dep.id}`);
+          depIds.add(dep.id);
+        }
+        if (typeof dep.name !== 'string' || !dep.name.trim()) {
+          errors.push(`Configuration dependency ${dep.id ?? 'entry'} requires name`);
+        }
+        if (dep.kind && !['secret', 'public_config', 'identifier', 'generated_secret', 'manual_setup'].includes(dep.kind)) {
+          errors.push(`Unsupported configuration kind: ${dep.kind}`);
+        }
+        if (dep.requiredBy && !['implementation', 'runtime-verification', 'release'].includes(dep.requiredBy)) {
+          errors.push(`Unsupported requiredBy stage: ${dep.requiredBy}`);
+        }
+      }
+    }
+  }
 
   if (Array.isArray(contract.authoritativeSources) && contract.authoritativeSources.length > 0) {
     try {

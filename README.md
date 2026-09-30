@@ -38,15 +38,29 @@ DKF is designed around that problem.
 
 It provides an agent-independent engineering runtime that binds work to explicit contracts, preserves provenance, isolates verification, computes control coverage, detects drift and stale authority, and derives acceptance from evidence.
 
+The current release line is **v0.11.0**.
+
+v0.11 introduces the **Secrets & Configuration Readiness Gate**, a non-bypassable runtime control-plane gate that detects when project development depends on external configuration or secrets requiring Product Owner action (API keys, database credentials, public environment variables, tenant IDs, OAuth secrets, generated application secrets, or provider consoles). Operating via `DETECT → REGISTER → PREPARE → EXPLAIN → PAUSE → PRODUCT OWNER DECISION → VALIDATE → RESUME`, it enforces the zero-credential AI exposure invariant: DKF knows a secret is present and valid without the model ever seeing its value.
+
 > **Completion is a computed state, not an agent assertion.**
 
 DKF is not a project-management dashboard and is not intended to replace engineering judgment. It is a reliability and execution-governance layer for turning intent into evidence-backed, release-ready software changes.
 
 ---
 
-## Current release: v0.10.0
+## Current release: v0.11.0
 
-The current released baseline is **v0.10.0**.
+The current released baseline is **v0.11.0**.
+
+### v0.11 — Secrets & Configuration Readiness Gate
+
+v0.11 introduces the **Secrets & Configuration Readiness Gate**, ensuring an AI development agent cannot invent API keys, database credentials, public environment variables, tenant IDs, or cloud provider console settings. It enforces:
+
+- Deterministic requirement states (`DISCOVERED`, `MISSING`, `WAITING_FOR_USER`, `CONFIGURED`, `VALIDATING`, `VALID`, `INVALID`, `DEFERRED_BY_PRODUCT_OWNER`) separated from overall gate state;
+- Non-bypassable pause for Product Owner decision on newly discovered configuration dependencies;
+- Zero-credential exposure invariant across logs, transcripts, setup guides, and AI role contexts;
+- Git tracking protection against committing secret-bearing files;
+- Fail-closed verification where deferred credentials force dependent criteria to `UNVERIFIED` and missing release-critical configs block shipping.
 
 ### v0.10 — Numbered decisions
 
@@ -314,7 +328,66 @@ npx development-kit init --windsurf
 
 The installer preserves guarded user files by default. Use `--force` only when explicit replacement is intended. `--dry-run` performs no writes.
 
+<<<<<<< Updated upstream
 ---
+=======
+### Available installer modes
+
+| Flag | Purpose |
+|---|---|
+| *(none)* | Detect Antigravity and install the plugin. |
+| `--global` | Install to the global Antigravity configuration. |
+| `--project` | Install to the current project's `.agents/` directory, establish DKF runtime state, and bootstrap Git. |
+| `--all` | Copy the complete standalone framework into the project. |
+| `--opencode` | Install the OpenCode-compatible configuration, rules, and skill library. |
+| `--claude` | Install `CLAUDE.md` and native `.claude/skills/<dk-command>/SKILL.md` packages. |
+| `--cursor` | Install `.cursor/rules/dkf.mdc`. |
+| `--vscode` | Install `.github/copilot-instructions.md` for VS Code with GitHub Copilot. |
+| `--cline` | Install `.clinerules/dkf.md`. |
+| `--windsurf` | Install `.windsurf/rules/dkf.md`. |
+| `--all-platforms` | Install all five adapters above (does not include Antigravity or OpenCode). |
+| `--dry-run` | Preview changes without writing files. |
+| `--force` | Explicitly allow replacement where safety guards normally preserve user files. |
+
+The installer preserves existing guarded files by default, including `AGENTS.md` and platform-adapter destinations. Platform dry runs perform no writes. Rule-based adapters expose DK workflow names as instructions where native slash commands are unavailable; Claude skills are natively invokable.
+
+## Core commands
+
+| Command | Outcome |
+|---|---|
+| `/dk-autopilot` | Run the complete lifecycle through the automated guided workflow. |
+| `/dk-idea` | Turn a rough idea into a clear, challenged, scoped concept. |
+| `/dk-research` | Gather source-backed external evidence through approved capabilities while preserving provenance and trust boundaries. |
+| `/dk-spec` | Produce the minimum sufficient specification and acceptance criteria. |
+| `/dk-design` | Define the smallest compatible technical and user-experience design. |
+| `/dk-design-system` | Establish, inspect, verify, or amend the authoritative frontend design system. |
+| `/dk-tasks` | Create ordered, independently verifiable implementation tasks and validate plan consistency. |
+| `/dk-build` | Implement the next approved contract-scoped task through the required evidence and review gates. |
+| `/dk-build-auto` | Process an approved task plan automatically, stopping on unresolved failures, drift, or approvals. |
+| `/dk-test` | Run independent task-specific verification and produce evidence-backed criterion results. |
+| `/dk-review` | Run structured specification, code, security, accessibility, design, and architecture reviews as required. |
+| `/dk-debug` | Reproduce, localise, identify root cause, fix, and protect. |
+| `/dk-simplify` | Remove unnecessary code, files, abstractions, and dependencies. |
+| `/dk-ship` | Perform final release-readiness and branch-completion checks. |
+| `/dk-control` | Launch the local Development Kit Control Center web interface. |
+| `/dk-status` | Inspect lifecycle, contract, verification, review, acceptance, correction, and blocker state. |
+
+## How the discipline works
+
+Every non-trivial change follows the same principles:
+
+1. **Inspect before editing.** Understand the repository and reuse what already exists.
+2. **Clarify before assuming.** Make material product decisions explicit.
+3. **Research when freshness matters.** Use current external evidence only when it materially improves a decision, and preserve provenance.
+4. **Specify before implementing.** Define observable acceptance criteria.
+5. **Contract before execution.** Bind approved task scope and authoritative source fingerprints before implementation when the reliability runtime applies.
+6. **Work in small slices.** Keep tasks and diffs independently verifiable.
+7. **Prove behaviour independently.** The implementation agent's report is not final proof.
+8. **Compute coverage.** Missing required controls stay visible even when every executed test passes.
+9. **Review the right thing first.** Specification compliance precedes style opinions.
+10. **Simplify after correctness.** Remove unnecessary complexity before shipping.
+11. **Stop on unresolved failure.** Do not advance the lifecycle by hiding broken gates.
+>>>>>>> Stashed changes
 
 ## Supported environments
 

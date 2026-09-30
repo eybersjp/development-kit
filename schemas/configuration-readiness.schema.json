@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://development-kit.dev/schemas/configuration-readiness.schema.json",
+  "title": "Development Kit Configuration Readiness Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "definitions": {
+    "ConfigurationKind": {
+      "type": "string",
+      "enum": ["secret", "public_config", "identifier", "generated_secret", "manual_setup"]
+    },
+    "RequirementStatus": {
+      "type": "string",
+      "enum": [
+        "DISCOVERED",
+        "MISSING",
+        "WAITING_FOR_USER",
+        "CONFIGURED",
+        "VALIDATING",
+        "VALID",
+        "INVALID",
+        "DEFERRED_BY_PRODUCT_OWNER",
+        "NOT_APPLICABLE"
+      ]
+    },
+    "GateState": {
+      "type": "string",
+      "enum": [
+        "NOT_APPLICABLE",
+        "READY",
+        "BLOCKED",
+        "WAITING_FOR_USER",
+        "CLEARED_WITH_DEFERRED_REQUIREMENTS"
+      ]
+    },
+    "RequiredByStage": {
+      "type": "string",
+      "enum": ["implementation", "runtime-verification", "release"]
+    },
+    "ValidationLevel": {
+      "type": "string",
+      "enum": ["presence", "structure", "runtime", "provider"]
+    },
+    "ConfigurationTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "enum": ["environment-variable", "manual", "external-console"] },
+        "file": { "type": ["string", "null"] },
+        "variable": { "type": ["string", "null"] },
+        "line": { "type": ["integer", "null"] },
+        "unresolvedReason": { "type": ["string", "null"] }
+      }
+    },
+    "ConfigurationDiscovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source"],
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "development-contract",
+            "approved-specification",
+            "architecture",
+            "task-plan",
+            "repository-reference",
+            "configuration-template",
+            "configuration-schema",
+            "runtime-error",
+            "implementation-delta"
+          ]
+        },
+        "path": { "type": ["string", "null"] },
+        "symbol": { "type": ["string", "null"] },
+        "detail": { "type": ["string", "null"] }
+      }
+    },
+    "ConfigurationRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "provider",
+        "required",
+        "requiredBy",
+        "requiredByTasks",
+        "requiredByCriteria",
+        "status",
+        "target",
+        "discovery"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^CFG-[A-Za-z0-9._-]+$" },
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "$ref": "#/definitions/ConfigurationKind" },
+        "provider": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "requiredBy": { "$ref": "#/definitions/RequiredByStage" },
+        "requiredByTasks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "requiredByCriteria": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "status": { "$ref": "#/definitions/RequirementStatus" },
+        "target": { "$ref": "#/definitions/ConfigurationTarget" },
+        "discovery": { "$ref": "#/definitions/ConfigurationDiscovery" },
+        "description": { "type": "string" },
+        "expectedFormat": { "type": "string" },
+        "validationLevel": { "$ref": "#/definitions/ValidationLevel" },
+        "verificationMethod": { "type": "string" },
+        "deferConsequence": { "type": "string" }
+      }
+    },
+    "ConfigurationDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requirementId",
+        "decision",
+        "confirmed",
+        "decidedAt",
+        "decisionAuthority"
+      ],
+      "properties": {
+        "requirementId": { "type": "string" },
+        "decision": { "type": "string", "enum": ["defer", "configure", "generate", "cancel"] },
+        "confirmed": { "type": "boolean" },
+        "contractId": { "type": ["string", "null"] },
+        "sourceFingerprint": { "type": ["string", "null"] },
+        "decidedAt": { "type": "string", "format": "date-time" },
+        "decisionAuthority": { "type": "string" }
+      }
+    },
+    "ConfigurationRegistry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "updatedAt", "requirements"],
+      "properties": {
+        "schemaVersion": { "type": "string", "enum": ["1.0.0", "1.1.0"] },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "requirements": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/ConfigurationRequirement" }
+        }
+      }
+    },
+    "ConfigurationGateState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "gate",
+        "state",
+        "blockingRequirements",
+        "deferredRequirements",
+        "productOwnerActionRequired",
+        "updatedAt"
+      ],
+      "properties": {
+        "schemaVersion": { "type": "string", "enum": ["1.0.0", "1.1.0"] },
+        "gate": { "const": "SECRET_READINESS_GATE" },
+        "state": { "$ref": "#/definitions/GateState" },
+        "activeContractId": { "type": ["string", "null"] },
+        "activeRunId": { "type": ["string", "null"] },
+        "blockingRequirements": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "deferredRequirements": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "productOwnerActionRequired": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/definitions/ConfigurationRegistry" },
+    { "$ref": "#/definitions/ConfigurationGateState" },
+    { "$ref": "#/definitions/ConfigurationRequirement" },
+    { "$ref": "#/definitions/ConfigurationDecision" }
+  ]
+}

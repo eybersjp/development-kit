@@ -29,6 +29,7 @@ function normalizeTasks(tasks) {
       dependsOn: stringArray(task.dependsOn ?? [], `${id}.dependsOn`).sort(),
       acceptanceCriteria: stringArray(task.acceptanceCriteria ?? [], `${id}.acceptanceCriteria`).sort(),
       owns: stringArray(task.owns ?? [], `${id}.owns`).sort(),
+      configurationDependencies: stringArray(task.configurationDependencies ?? [], `${id}.configurationDependencies`).sort(),
     };
   });
 }
@@ -69,6 +70,7 @@ export function validatePlanModel({
   declaredDependencyEdges = null,
   requiredResources = [],
   requiredAcceptanceCriteria = [],
+  availableConfigurationRequirements = null,
 } = {}) {
   const normalizedTasks = normalizeTasks(tasks);
   const taskIds = new Set(normalizedTasks.map((task) => task.id));
@@ -128,6 +130,32 @@ export function validatePlanModel({
   const uncoveredCriteria = requiredCriteria.filter((criterion) => !criterionOwners.has(criterion));
   if (uncoveredCriteria.length) issues.push({ code: 'ACCEPTANCE_CRITERIA_UNCOVERED', criterionIds: uncoveredCriteria });
 
+  const configDepsByTask = new Map();
+  const allConfigDeps = new Set();
+  const duplicateConfigDeps = [];
+  for (const task of normalizedTasks) {
+    configDepsByTask.set(task.id, task.configurationDependencies);
+    const seenInTask = new Set();
+    for (const dep of task.configurationDependencies) {
+      if (seenInTask.has(dep)) duplicateConfigDeps.push({ taskId: task.id, dependency: dep });
+      seenInTask.add(dep);
+      allConfigDeps.add(dep);
+    }
+  }
+
+  if (availableConfigurationRequirements !== null) {
+    const availableSet = new Set(stringArray(availableConfigurationRequirements, 'availableConfigurationRequirements'));
+    const unknownConfigDeps = [];
+    for (const task of normalizedTasks) {
+      for (const dep of task.configurationDependencies) {
+        if (!availableSet.has(dep)) {
+          unknownConfigDeps.push({ taskId: task.id, dependency: dep });
+        }
+      }
+    }
+    if (unknownConfigDeps.length) issues.push({ code: 'UNKNOWN_CONFIGURATION_DEPENDENCY', entries: unknownConfigDeps });
+  }
+
   return {
     schemaVersion: '1.0.0',
     valid: issues.length === 0,
@@ -136,6 +164,7 @@ export function validatePlanModel({
       dependencyEdges: computedEdges,
       resourceOwners: Object.fromEntries([...ownerMap.entries()].sort(([a], [b]) => a.localeCompare(b))),
       acceptanceCriterionOwners: Object.fromEntries([...criterionOwners.entries()].sort(([a], [b]) => a.localeCompare(b))),
+      configurationDependencies: Object.fromEntries([...configDepsByTask.entries()].sort(([a], [b]) => a.localeCompare(b))),
     },
     issues,
   };

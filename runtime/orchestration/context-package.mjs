@@ -6,6 +6,7 @@ import {
   computeFileFingerprint,
   validateDevelopmentContract,
 } from './development-contract.mjs';
+import { loadConfigurationRegistry } from './configuration-readiness.mjs';
 
 const ROLE_PURPOSE = Object.freeze({
   implementer: 'implementation',
@@ -162,6 +163,23 @@ export function buildContextPackage({
       fingerprint: designSource.fingerprint,
       bound: true,
     } : { bound: false },
+    configurationReadiness: (() => {
+      try {
+        const reg = loadConfigurationRegistry(rootDir);
+        return (reg?.requirements || []).map((r) => ({
+          id: r.id,
+          name: r.name,
+          kind: r.kind,
+          provider: r.provider,
+          status: r.status,
+          requiredBy: r.requiredBy,
+          requiredByTasks: r.requiredByTasks,
+          requiredByCriteria: r.requiredByCriteria,
+        }));
+      } catch {
+        return [];
+      }
+    })(),
     upstreamImplementationReport: implementationReport === null ? null : {
       authority: 'non-authoritative',
       value: structuredClone(implementationReport),

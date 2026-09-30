@@ -8,6 +8,22 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const REPO_ROOT = path.resolve(__dirname, '..', '..');
+
+function getFrameworkVersion() {
+  try {
+    const pkgPath = path.join(REPO_ROOT, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      if (pkg.version) return pkg.version;
+    }
+  } catch {}
+  return '0.10.1';
+}
 
 export function getProjectIdentity(rootDir = process.cwd()) {
   const dkDir = path.join(rootDir, '.development-kit');
@@ -32,7 +48,7 @@ export function getProjectIdentity(rootDir = process.cwd()) {
     const payload = {
       projectId,
       createdAt: new Date().toISOString(),
-      frameworkVersion: '0.4.0'
+      frameworkVersion: getFrameworkVersion()
     };
     fs.writeFileSync(projectFile, JSON.stringify(payload, null, 2), 'utf8');
   }

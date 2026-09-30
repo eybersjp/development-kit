@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-30
+
+### Added
+- **Secrets & Configuration Readiness Gate**: A non-bypassable runtime control-plane gate (`runtime/orchestration/configuration-readiness.mjs`) detecting when development depends on configuration requiring Product Owner action (API keys, secrets, tokens, database credentials, public config, project/tenant IDs, OAuth secrets, generated application secrets, and manual setup).
+- **Automated Lifecycle Integration**: `DETECT → REGISTER → PREPARE → EXPLAIN → PAUSE → PRODUCT OWNER DECISION → VALIDATE → RESUME` operates automatically across `/dk-build`, `/dk-build-auto`, `/dk-autopilot`, `/dk-test`, `/dk-ship`, and `/dk-status`.
+- **Zero-Credential AI Context Exposure**: Guaranteed invariant: DKF knows a secret is present and valid without the AI model ever receiving or knowing its value. Plaintext secrets are banned from AI contexts, context packages, state files, docs, git commits, API responses, and Control Center views.
+- **Fail-Closed Security & Acceptance**: Acceptance engine strictly blocks acceptance on missing/invalid configuration (`CONFIGURATION_ACTION_REQUIRED`, `CONFIGURATION_INVALID`) and missing release requirements (`CONFIGURATION_RELEASE_REQUIREMENT_MISSING`). Acceptance criteria depending on deferred configuration are forced to `UNVERIFIED` even if the agent claimed PASS.
+- **Git Tracking Protection**: Automatically ensures secret-bearing target files (`.env.local`) are ignored in `.gitignore`; if a secret file is already tracked by Git, halts immediately with a security blocker refusing to allow credential entry until removed from source tracking.
+- **Secure Local Secret Generation**: Cryptographically secure local generation (`crypto.randomBytes`) for `generated_secret` requirements (e.g. `SESSION_SECRET`, `JWT_SECRET`).
+- **Setup Guide Generation**: Deterministic generation of `.development-kit/SECRETS_SETUP.md` with line numbers and instructions without sensitive values.
+- **CLI & Runtime API**: `--operation=configuration-readiness` in `scripts/orchestration.mjs`, and `GET /v1/configuration-readiness` / `POST /v1/configuration-readiness/decision` in `RuntimeApiService`.
+- **Control Center Integration**: Dedicated Configuration Readiness tab and visual status view in Control Center.
+- **Machine-Readable Schema**: Added `schemas/configuration-readiness.schema.json` and Development Contract v1.1.0 schema support.
+
 ## [0.10.0] - 2026-09-07
 
 ### Added

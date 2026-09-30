@@ -4,6 +4,13 @@ import { validateReviewResult } from './review-result.mjs';
 import { validateArchitectureDrift } from './architecture-drift.mjs';
 import { selectRequiredGates } from './gate-selector.mjs';
 import { buildAuthorityGraphFromContract } from './authority-graph.mjs';
+import {
+  evaluateConfigurationReadiness,
+  loadConfigurationRegistry,
+  loadConfigurationGateState,
+  REQUIREMENT_STATUSES,
+  GATE_STATES,
+} from './configuration-readiness.mjs';
 
 const ACCEPTANCE_STATES = Object.freeze(['ACCEPTED', 'PENDING', 'BLOCKED']);
 
@@ -84,6 +91,7 @@ export function decideAcceptance({
   controlManifests = [],
   approvals = [],
   architectureDrift = null,
+  configurationReadiness = null,
   rootDir = process.cwd(),
   createdAt = new Date().toISOString(),
 } = {}) {
@@ -192,6 +200,63 @@ export function decideAcceptance({
     }
   }
 
+  // Configuration Readiness evaluation
+  let configGate = configurationReadiness;
+  if (!configGate) {
+    try {
+      const registry = loadConfigurationRegistry(rootDir);
+      if (registry && Array.isArray(registry.requirements) && registry.requirements.length > 0) {
+        configGate = evaluateConfigurationReadiness({
+          rootDir,
+          requirements: registry.requirements,
+          activeContractId: contract.contractId,
+          activeRunId: evidenceRunId,
+        });
+      }
+    } catch {
+      // Configuration registry is optional for projects with no configuration requirements
+    }
+  }
+
+  if (configGate) {
+    if (configGate.state === GATE_STATES.WAITING_FOR_USER) {
+      blockers.push({
+        code: 'CONFIGURATION_ACTION_REQUIRED',
+        detail: 'Configuration requires Product Owner action before acceptance',
+        blockingRequirements: configGate.blockingRequirements,
+      });
+    } else if (configGate.state === GATE_STATES.BLOCKED) {
+      blockers.push({
+        code: 'CONFIGURATION_INVALID',
+        detail: 'Configuration is invalid or blocked',
+        blockingRequirements: configGate.blockingRequirements,
+      });
+    }
+
+    // Check if any requirement required by release is deferred or missing
+    if (Array.isArray(configGate.deferredRequirements)) {
+      try {
+        const registry = loadConfigurationRegistry(rootDir);
+        for (const defId of configGate.deferredRequirements) {
+          const req = registry.requirements.find((r) => r.id === defId);
+          if (req && req.requiredBy === 'release') {
+            blockers.push({
+              code: 'CONFIGURATION_RELEASE_REQUIREMENT_MISSING',
+              requirementId: defId,
+              detail: `Release-critical configuration requirement ${defId} (${req.name}) remains unresolved`,
+            });
+          } else if (req && req.requiredBy === 'runtime-verification') {
+            pending.push({
+              code: 'CONFIGURATION_VERIFICATION_DEFERRED',
+              requirementId: defId,
+              detail: `Configuration requirement ${defId} (${req.name}) was deferred; dependent criteria remain unverified`,
+            });
+          }
+        }
+      } catch {}
+    }
+  }
+
   const state = blockers.length > 0 ? 'BLOCKED' : pending.length > 0 ? 'PENDING' : 'ACCEPTED';
   const record = {
     schemaVersion: '1.0.0',
@@ -231,4 +296,5 @@ export function validateAcceptanceRecord(record) {
   return true;
 }
 
+export const evaluateAcceptance = decideAcceptance;
 export { ACCEPTANCE_STATES };

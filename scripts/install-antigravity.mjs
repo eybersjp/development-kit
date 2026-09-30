@@ -40,6 +40,7 @@ import {
   installPlatformAdapters,
   resolvePlatformSelection,
 } from './install-platform-adapters.mjs';
+import { bootstrapProject } from '../runtime/bootstrap/project-bootstrap.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -358,7 +359,7 @@ function installAll(dryRun = false, force = false) {
   printCommands();
 }
 
-function main() {
+async function main() {
   const rawArgs = process.argv.slice(2);
   const args = rawArgs[0] === 'init' ? rawArgs.slice(1) : rawArgs;
 
@@ -431,6 +432,7 @@ function main() {
     const projectDir = join(process.cwd(), '.agents');
     if (!existsSync(projectDir)) mkdirSync(projectDir, { recursive: true });
     installPlugin(projectDir, force);
+    await bootstrapProject(process.cwd());
     process.exit(0);
   }
 

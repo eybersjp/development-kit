@@ -13,10 +13,11 @@ Shows concise Development Kit progress without hiding unresolved control-plane s
 ## Workflow
 
 1. Inspect project-local `.development-kit/` state. If absent, report `Uninitialized` and explain that a lifecycle command will bootstrap the project.
-2. Read the current Autopilot state when present.
-3. If `state.orchestration` exists, report its compact references and use the run manifest/evidence files under `.development-kit/runs/` for detail rather than treating agent summaries as truth.
-4. Check whether the active Development Contract is stale before reporting it as executable.
-5. Report only persisted/computed gate states.
+2. Read project Git status and source-control readiness (Git availability, repository detected/initialized/relationship, and `.gitignore` status).
+3. Read the current Autopilot state when present.
+4. If `state.orchestration` exists, report its compact references and use the run manifest/evidence files under `.development-kit/runs/` for detail rather than treating agent summaries as truth.
+5. Check whether the active Development Contract is stale before reporting it as executable.
+6. Report only persisted/computed gate states.
 
 ## Output
 
@@ -25,6 +26,12 @@ Shows concise Development Kit progress without hiding unresolved control-plane s
 Lifecycle stage: <stage>
 Current task: <task>
 Workflow status: <status>
+
+Source-control readiness:
+- Git available: yes / no
+- Repository: detected (<relationship>) / none
+- Repository root: <path>
+- .gitignore: reconciled (created / updated / up-to-date)
 
 Contract-driven orchestration, when active:
 - Contract: <activeContractId>
@@ -37,6 +44,14 @@ Contract-driven orchestration, when active:
 - Required gates: <list>
 - Completed gates: <list>
 - Contract stale: yes / no
+
+Secrets & Configuration Readiness Gate:
+- Gate state: READY / WAITING_FOR_USER / BLOCKED / CLEARED_WITH_DEFERRED_REQUIREMENTS / NOT_APPLICABLE
+- Requirements: <total> total (<valid> valid, <missing> missing, <invalid> invalid, <deferred> deferred)
+- Blocking requirements: <list or none>
+- Deferred requirements: <list or none>
+- Product Owner action required: yes / no
+- Setup guide: .development-kit/SECRETS_SETUP.md
 
 Pending reviews/controls/approvals: <list>
 Blocked items: <exact reasons>

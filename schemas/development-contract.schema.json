@@ -29,7 +29,7 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": "1.0.0"
+      "enum": ["1.0.0", "1.1.0"]
     },
     "contractId": {
       "$ref": "#/$defs/identifier"
@@ -127,6 +127,20 @@
     },
     "approvalPolicy": {
       "type": "object"
+    },
+    "configurationDependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "kind", "requiredBy"],
+        "properties": {
+          "id": { "$ref": "#/$defs/identifier" },
+          "name": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["secret", "public_config", "identifier", "generated_secret", "manual_setup"] },
+          "provider": { "type": "string" },
+          "requiredBy": { "enum": ["implementation", "runtime-verification", "release"] }
+        }
+      }
     },
     "sourceFingerprint": { "$ref": "#/$defs/sha256" }
   },

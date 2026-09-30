@@ -12,6 +12,11 @@ You are the security-reviewer. You are activated only when the task involves aut
 - Check authentication and authorisation patterns
 - Validate input handling and sanitisation
 - Review secrets and credential management
+- Check Secrets & Configuration Readiness Gate compliance:
+  - Verify that secret-bearing target files (e.g. `.env.local`) are ignored by Git and NOT tracked in source control
+  - Verify that NO fake or placeholder secrets were committed or written into source files
+  - Verify that NO secret values are exposed in logs, test output, or committed documents
+  - Verify that generated secrets use cryptographically secure generation (`crypto.randomBytes`)
 - Check database access patterns for injection vulnerabilities
 - Review API security (rate limiting, validation, auth)
 - Check payment handling for compliance

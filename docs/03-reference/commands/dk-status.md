@@ -14,7 +14,7 @@ Shows the current workflow state: active lifecycle stage, current task, complete
 
 ## Workflow
 
-1. **Gather State**: Collect active lifecycle stage, current task, completed tasks with gate results, pending tasks, blocked items, and pending reviews.
+1. **Gather State**: Collect active lifecycle stage, current task, completed tasks with gate results, pending tasks, blocked items, pending reviews, and source-control readiness (Git repository status and .gitignore reconciliation).
 2. **Report**: Present a structured status summary.
 
 ## Skills Invoked

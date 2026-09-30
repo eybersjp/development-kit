@@ -204,6 +204,7 @@ export function renderControlCenterHtml(config = {}) {
       <button class="nav-item" onclick="switchView('workflow')">Workflow</button>
       <button class="nav-item" onclick="switchView('memory')">Memory</button>
       <button class="nav-item" onclick="switchView('decisions')">Decisions</button>
+      <button class="nav-item" onclick="switchView('configuration')">Configuration</button>
       <button class="nav-item" onclick="switchView('providers')">Providers</button>
       <button class="nav-item" onclick="switchView('settings')">Settings</button>
     </nav>
@@ -348,6 +349,59 @@ export function renderControlCenterHtml(config = {}) {
           <div class="card" style="margin-bottom: 16px;">
             <div class="card-header">9-Stage Autopilot Lifecycle</div>
             \${stagePills}
+          </div>
+        \`;
+      } else if (currentView === 'configuration') {
+        const configData = await apiFetch('/v1/configuration-readiness');
+        const gate = configData.gate;
+        const reqs = configData.requirements || [];
+
+        const statusIcon = (st) => {
+          if (st === 'VALID') return '<span style="color: var(--success)">✓ VALID</span>';
+          if (st === 'CONFIGURED') return '<span style="color: var(--primary)">○ CONFIGURED</span>';
+          if (st === 'DEFERRED_BY_PRODUCT_OWNER') return '<span style="color: var(--warning)">! DEFERRED</span>';
+          if (st === 'INVALID') return '<span style="color: var(--danger)">× INVALID</span>';
+          return '<span style="color: var(--danger)">× MISSING</span>';
+        };
+
+        const rows = reqs.map(r => \`
+          <tr>
+            <td><strong>\${r.id}</strong></td>
+            <td>\${r.name}</td>
+            <td>\${r.provider}</td>
+            <td><span class="tag">\${r.kind}</span></td>
+            <td>\${statusIcon(r.status)}</td>
+            <td>\${r.requiredBy}</td>
+            <td>\${r.requiredByTasks?.join(', ') || '—'}</td>
+            <td>\${r.target?.file || r.target?.type || '—'}</td>
+          </tr>
+        \`).join('');
+
+        content.innerHTML = \`
+          <div class="grid" style="margin-bottom: 16px;">
+            <div class="card">
+              <div class="card-header">Gate State</div>
+              <div class="card-value" style="font-size: 18px;">\${gate.state}</div>
+            </div>
+            <div class="card">
+              <div class="card-header">Total Requirements</div>
+              <div class="card-value">\${gate.counts?.total || reqs.length}</div>
+            </div>
+            <div class="card">
+              <div class="card-header">Valid / Missing / Deferred</div>
+              <div class="card-value" style="font-size: 18px;">
+                \${gate.counts?.valid || 0} / \${gate.counts?.missing || 0} / \${gate.counts?.deferred || 0}
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">Configuration Readiness (\${reqs.length})</div>
+            <table>
+              <thead>
+                <tr><th>ID</th><th>Name</th><th>Provider</th><th>Type</th><th>Status</th><th>Required By</th><th>Task</th><th>Location</th></tr>
+              </thead>
+              <tbody>\${rows || '<tr><td colspan="8">No configuration requirements registered.</td></tr>'}</tbody>
+            </table>
           </div>
         \`;
       } else if (currentView === 'providers') {

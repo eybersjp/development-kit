@@ -14,6 +14,15 @@ import {
   prepareTaskRun,
   validatePlanModel,
   verifyFromContext,
+  discoverConfigurationRequirements,
+  loadConfigurationRegistry,
+  saveConfigurationRegistry,
+  evaluateConfigurationReadiness,
+  prepareConfigurationTargets,
+  generateConfigurationSetupGuide,
+  validateConfigurationRequirement,
+  recordConfigurationDecision,
+  saveConfigurationGateState,
 } from '../runtime/orchestration/index.mjs';
 import { reconcileCanonicalArtifact } from '../runtime/orchestration/reconciliation.mjs';
 
@@ -70,6 +79,88 @@ function main() {
     case 'reconcile': return output(reconcileCanonicalArtifact({ ...payload, rootDir }));
     case 'plan-validate': return output(validatePlanModel(payload));
     case 'run-status': return output(loadCurrentRunState(payload.contractId, payload.runId, rootDir));
+    case 'configuration-readiness': {
+      const targetRoot = payload.rootDir || rootDir;
+      const action = options.action || payload.action || 'status';
+      switch (action) {
+        case 'discover': {
+          const existing = loadConfigurationRegistry(targetRoot).requirements;
+          const discovered = discoverConfigurationRequirements({
+            rootDir: targetRoot,
+            contract: payload.contract || null,
+            task: payload.task || null,
+            plan: payload.plan || null,
+            existingRequirements: existing,
+          });
+          saveConfigurationRegistry({ requirements: discovered }, targetRoot);
+          const gate = evaluateConfigurationReadiness({
+            rootDir: targetRoot,
+            requirements: discovered,
+            activeContractId: payload.contractId || payload.contract?.contractId || null,
+            activeRunId: payload.runId || null,
+          });
+          saveConfigurationGateState(gate, targetRoot);
+          generateConfigurationSetupGuide(targetRoot, discovered);
+          return output({ requirements: discovered, gate });
+        }
+        case 'status': {
+          const reg = loadConfigurationRegistry(targetRoot);
+          const gate = evaluateConfigurationReadiness({
+            rootDir: targetRoot,
+            requirements: reg.requirements,
+            activeContractId: payload.contractId || null,
+            activeRunId: payload.runId || null,
+          });
+          return output({ requirements: reg.requirements, gate });
+        }
+        case 'prepare': {
+          const reg = loadConfigurationRegistry(targetRoot);
+          const prep = prepareConfigurationTargets(targetRoot, reg.requirements);
+          saveConfigurationRegistry(reg, targetRoot);
+          generateConfigurationSetupGuide(targetRoot, reg.requirements);
+          return output(prep);
+        }
+        case 'validate': {
+          const reg = loadConfigurationRegistry(targetRoot);
+          const reqId = payload.requirementId;
+          const req = reg.requirements.find((r) => r.id === reqId || r.name === reqId);
+          if (!req) throw new Error(`Requirement not found: ${reqId}`);
+          const result = validateConfigurationRequirement(targetRoot, req);
+          req.status = result.status;
+          saveConfigurationRegistry(reg, targetRoot);
+          const gate = evaluateConfigurationReadiness({
+            rootDir: targetRoot,
+            requirements: reg.requirements,
+            activeContractId: payload.contractId || null,
+            activeRunId: payload.runId || null,
+          });
+          saveConfigurationGateState(gate, targetRoot);
+          return output({ requirement: req, validation: result, gate });
+        }
+        case 'decision': {
+          const result = recordConfigurationDecision({
+            rootDir: targetRoot,
+            requirementId: payload.requirementId,
+            decision: payload.decision,
+            confirmed: payload.confirmed !== false,
+            contractId: payload.contractId || null,
+            sourceFingerprint: payload.sourceFingerprint || null,
+            authority: payload.authority || 'product-owner',
+          });
+          const reg = loadConfigurationRegistry(targetRoot);
+          const gate = evaluateConfigurationReadiness({
+            rootDir: targetRoot,
+            requirements: reg.requirements,
+            activeContractId: payload.contractId || null,
+            activeRunId: payload.runId || null,
+          });
+          saveConfigurationGateState(gate, targetRoot);
+          generateConfigurationSetupGuide(targetRoot, reg.requirements);
+          return output({ result, gate });
+        }
+        default: throw new Error(`Unsupported configuration-readiness action: ${action}`);
+      }
+    }
     default: throw new Error(`Unsupported orchestration operation: ${operation}`);
   }
 }
