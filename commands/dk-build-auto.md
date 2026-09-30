@@ -1,56 +1,26 @@
 ---
 name: dk-build-auto
 description: >-
-  Process the validated approved task plan automatically through contract-driven implementation, verification, bounded correction, review, and acceptance.
+  Process the validated PLAN sequentially through contract-driven implementation, verification, bounded correction, review, and acceptance.
 ---
 
 # /dk-build-auto
 
-## Purpose
-
-Processes the approved PLAN sequentially while preserving the same v0.9 control plane as `/dk-build`. Automation may remove repetitive handoffs, but it may not weaken evidence, safety, review, or human approval gates.
-
 ## Workflow
 
 For each task:
-1. Select the next approved task from the deterministically validated PLAN.
-2. Resolve/create its Development Contract and run manifest.
-3. Rehydrate authoritative sources and choose the host execution strategy. Use native isolated sub-agents when available; otherwise use sequential fresh-context execution.
-4. Implement in a fresh implementation context. Implementation output is non-authoritative evidence.
-5. Preflight consequential commands through execution safety before execution.
-6. Independently verify every acceptance criterion and required control.
-7. Run the risk/impact-selected structured reviews.
-8. Ask the runtime acceptance engine for `ACCEPTED`, `PENDING`, or `BLOCKED`.
-9. On a correctable implementation failure, use the correction engine. Continue automatically only when the decision is `CORRECT`; persist the failure signature and exact correction scope.
-10. Reverify after every correction. Stop correction on repeat failure, maximum attempts, high-risk/security/architecture/design ambiguity, source staleness, scope expansion, or a consequential human gate.
-11. Continue to the next task only after acceptance is `ACCEPTED`.
 
-## Auto-Pause Conditions
-
-Pause and surface the precise gate when:
-- verification is PARTIAL, UNVERIFIED, or blocked by stale sources;
-- correction engine returns `PAUSE`;
-- a required reviewer/control manifest is incomplete or failed;
-- architecture drift is unauthorized or needs a decision;
-- Design Authority or required visual evidence is unresolved;
-- a destructive/remote action requires approval;
-- the host cannot provide mandatory independent verification capability;
-- the Product Owner must approve a consequential decision.
-
-## Skills Activated
-
-- `subagent-driven-implementation`
-- `incremental-implementation`
-- `test-driven-development`
-- `existing-code-first`
-- `native-platform-first`
-- `dependency-restraint`
-- `minimal-diff`
-- `task-readiness-check`
-- `dependency-ordering`
-- `verification-before-completion`
-- `regression-testing`
+1. Resolve/create Development Contract + run from the validated PLAN.
+2. Reuse valid repository orientation; build a compact fresh role context. If `tokenProfile.overBudget`, repack/narrow selectors before execution.
+3. For UI work ensure/reuse Live UI Preview and fulfil `OPEN_OR_REUSE`; `WAITING_FOR_RUNNABLE_UI` is valid before scaffold.
+4. Implement only contract scope; implementation evidence is non-authoritative.
+5. Preflight consequential commands through execution safety.
+6. Independently verify all required criteria/controls; preview does not replace browser-runtime verification.
+7. Run required/risk-selected reviewers and deterministic acceptance.
+8. Automatically correct only when correction engine returns `CORRECT`; persist attempt/failure signature and reverify.
+9. Pause on repeated/exhausted failure, stale authority, incomplete verification/control coverage, architecture/design/security ambiguity, scope expansion, unavailable mandatory capability, or human approval.
+10. Continue only after current task acceptance is `ACCEPTED`.
 
 ## Output
 
-Cumulative progress by contract/run, current correction attempt, verification/control coverage, outstanding gates, accepted tasks, and the exact reason for any pause.
+Compact cumulative contract/run progress, verification/review/acceptance state, correction attempt, blockers, preview state, and next task/action.
