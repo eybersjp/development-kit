@@ -29,6 +29,9 @@ test('Package Consumer: npm pack produces valid tarball with all runtime assets 
   assert.ok(filenames.some((f) => f.includes('runtime/development-modes/integration.mjs')), 'Must include Development Modes integration runtime');
   assert.ok(filenames.some((f) => f.includes('runtime/development-modes/config-store.mjs')), 'Must include Development Modes config store');
   assert.ok(filenames.some((f) => f.includes('schemas/development-mode-config.schema.json')), 'Must include Development Modes schema');
+  assert.ok(filenames.some((f) => f.includes('runtime/orchestration/idea-workflow.mjs')), 'Must include IDEA authority workflow');
+  assert.ok(filenames.some((f) => f.includes('runtime/orchestration/idea-discovery.mjs')), 'Must include IDEA discovery authority model');
+  assert.ok(filenames.some((f) => f.includes('runtime/orchestration/idea-consumptions.mjs')), 'Must include IDEA replay-protection receipts');
 });
 
 test('Package Consumer: install-antigravity installs cleanly and idempotently', () => {
