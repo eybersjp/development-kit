@@ -23,6 +23,8 @@ desktop.ini
 
 # Development Kit runtime state
 .development-kit/workspace-id
+.development-kit/development-mode.lock
+.development-kit/development-mode.*.tmp
 .development-kit/autopilot/
 .development-kit/contracts/
 .development-kit/runs/
