@@ -37,9 +37,9 @@ Required completion:
 5. Implement Increment 005: migrations, cross-mode compatibility and real host acceptance.
 6. Preserve mandatory reliability/safety controls regardless of selected methodology.
 
-### Legacy IDEA authority hardening audit — Issue #51
+### IDEA authority hardening — Issue #51
 
-PR #35 is a historical v0.9.1 field-hardening branch. It must not be merged directly. Its interaction-fingerprint, replay-protection, discovery-journaling, provenance and Product Owner authority behaviors must be compared against current v0.11.1; missing still-required protections should be ported as bounded current changes.
+The supersession audit of PR #35 is complete. Current v0.11.1 retains persistent/fingerprinted Product Owner decisions and fail-closed numbered decision menus, but several older protections are missing or weaker: runtime IDEA workflow persistence, strict requirement-origin transitions, exact pending-interaction fingerprints, append-only replay protection, crash-safe discovery journaling and Idea Brief approval binding to discovery revision. These protections must be ported as bounded current-generation changes; PR #35 itself must not be merged directly.
 
 ## Repository Maintenance State
 
