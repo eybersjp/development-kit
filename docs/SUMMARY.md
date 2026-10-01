@@ -43,6 +43,7 @@
 * [Command Workflow Recipes](02-user-guide/command-workflow-recipes.md)
 * [Working with Existing Projects](02-user-guide/working-with-existing-projects.md)
 * [Development Modes](02-user-guide/development-modes.md)
+* [IDEA Authority Workflow](02-user-guide/idea-authority-workflow.md)
 * [Starting New Projects](02-user-guide/starting-new-projects.md)
 * [Recovering from Failed Workflows](02-user-guide/recovering-from-failed-workflows.md)
 * [Troubleshooting](02-user-guide/troubleshooting.md)
@@ -231,6 +232,7 @@
 * [DK Live UI Preview & Visual Verification Specification (v0.10.1)](04-architecture/dk-live-ui-preview-visual-verification-specification.md)
 * [DK Token & Context Efficiency Hardening Specification (v0.10.1)](04-architecture/dk-token-context-efficiency-hardening-specification.md)
 * [DKF Development Modes — v0.11.1 Integration Specification](04-architecture/dkf-development-modes-v0.11.1-integration.md)
+* [DKF IDEA Authority Hardening — v0.11.1+](04-architecture/dkf-idea-authority-hardening-v0.11.1.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)

@@ -55,16 +55,24 @@ test('Suggestion generation and state lifecycle', () => {
     suggestion: s,
     action: 'ACCEPT',
     decisionId: 'DEC-001',
+    decisionAuthority: 'Product Owner',
   });
   assert.equal(accepted.state, SUGGESTION_STATES.ACCEPTED);
   assert.equal(accepted.promotedScope, SCOPE_CLASSIFICATIONS.MUST_HAVE);
   assert.equal(accepted.decisionProvenance.decisionAuthority, 'Product Owner');
+
+  assert.throws(() => promoteSuggestion({
+    suggestion: s,
+    action: 'ACCEPT',
+    decisionId: 'DEC-NO-AUTH',
+  }), /Explicit decisionAuthority/);
 
   // DEFER
   const deferred = promoteSuggestion({
     suggestion: s,
     action: 'DEFER',
     decisionId: 'DEC-002',
+    decisionAuthority: 'Product Owner',
   });
   assert.equal(deferred.state, SUGGESTION_STATES.DEFERRED);
   assert.equal(deferred.promotedScope, null);
@@ -74,6 +82,7 @@ test('Suggestion generation and state lifecycle', () => {
     suggestion: s,
     action: 'REJECT',
     decisionId: 'DEC-003',
+    decisionAuthority: 'Product Owner',
     reason: 'Not aligned with strategic focus.',
   });
   assert.equal(rejected.state, SUGGESTION_STATES.REJECTED);
@@ -204,6 +213,7 @@ test('Canonical reconciliation on accepted and deferred suggestions', () => {
       suggestion: s,
       action: 'ACCEPT',
       decisionId: 'DEC-001',
+      decisionAuthority: 'Product Owner',
       artifactPath: briefPath,
       rootDir: tmp,
     });

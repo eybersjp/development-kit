@@ -95,6 +95,13 @@ export function validateIdeaSuggestion(suggestion) {
     throw new SuggestionError('ACCEPTED suggestion must have a promotedScope');
   }
 
+  if (suggestion.state !== SUGGESTION_STATES.PENDING) {
+    if (!suggestion.decisionProvenance || suggestion.decisionProvenance.decisionAuthority !== 'Product Owner'
+      || typeof suggestion.decisionProvenance.decisionId !== 'string' || !suggestion.decisionProvenance.decisionId.trim()) {
+      throw new SuggestionError('Resolved suggestion requires explicit Product Owner decision provenance');
+    }
+  }
+
   return true;
 }
 
@@ -139,11 +146,17 @@ export function promoteSuggestion({
   action,
   targetScope = null,
   decisionId,
-  decisionAuthority = 'Product Owner',
+  decisionAuthority = null,
   reason = null,
   selectedOption = null,
 }) {
   validateIdeaSuggestion(suggestion);
+  if (decisionAuthority !== 'Product Owner') {
+    throw new SuggestionError("Explicit decisionAuthority = 'Product Owner' is required for suggestion promotion");
+  }
+  if (typeof decisionId !== 'string' || !decisionId.trim()) {
+    throw new SuggestionError('Explicit decisionId is required for suggestion promotion');
+  }
   const now = new Date().toISOString();
 
   let nextState;

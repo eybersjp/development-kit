@@ -23,6 +23,17 @@ import {
   validateConfigurationRequirement,
   recordConfigurationDecision,
   saveConfigurationGateState,
+  recordRequirementCandidate,
+  recordOpenQuestion,
+  loadDiscoveryState,
+  loadIdeaDesignState,
+  inspectIdeaBrief,
+  loadIdeaWorkflow,
+  ensurePendingIdeaInteraction,
+  consumePendingIdeaInteraction,
+  completeIdeaCustomInstruction,
+  refreshStaleIdeaInteraction,
+  persistCanonicalIdeaBrief,
 } from '../runtime/orchestration/index.mjs';
 import { reconcileCanonicalArtifact } from '../runtime/orchestration/reconciliation.mjs';
 
@@ -79,6 +90,41 @@ function main() {
     case 'reconcile': return output(reconcileCanonicalArtifact({ ...payload, rootDir }));
     case 'plan-validate': return output(validatePlanModel(payload));
     case 'run-status': return output(loadCurrentRunState(payload.contractId, payload.runId, rootDir));
+    case 'idea-state': {
+      const workflow = loadIdeaWorkflow(rootDir);
+      return output({
+        workflow,
+        discovery: loadDiscoveryState(rootDir),
+        design: loadIdeaDesignState(rootDir),
+        artifact: inspectIdeaBrief(rootDir),
+      });
+    }
+    case 'idea-next':
+      return output(ensurePendingIdeaInteraction(rootDir));
+    case 'idea-record-candidate': {
+      const workflow = loadIdeaWorkflow(rootDir);
+      if (workflow.pendingInteraction) throw new Error('Cannot mutate IDEA discovery while a persisted interaction is pending');
+      return output(recordRequirementCandidate(rootDir, payload));
+    }
+    case 'idea-record-question': {
+      const workflow = loadIdeaWorkflow(rootDir);
+      if (workflow.pendingInteraction) throw new Error('Cannot mutate IDEA discovery while a persisted interaction is pending');
+      return output(recordOpenQuestion(rootDir, payload));
+    }
+    case 'idea-consume':
+      return output(consumePendingIdeaInteraction(rootDir, payload));
+    case 'idea-custom-complete':
+      return output(completeIdeaCustomInstruction(rootDir, payload));
+    case 'idea-refresh-stale':
+      return output(refreshStaleIdeaInteraction(rootDir, payload));
+    case 'idea-persist-brief': {
+      const workflow = loadIdeaWorkflow(rootDir);
+      if (workflow.pendingInteraction || workflow.currentPhase !== 'BRIEF_DRAFT') {
+        throw new Error('Idea Brief may only be persisted from BRIEF_DRAFT with no pending interaction');
+      }
+      const record = persistCanonicalIdeaBrief(rootDir, payload);
+      return output({ record, workflow: ensurePendingIdeaInteraction(rootDir) });
+    }
     case 'configuration-readiness': {
       const targetRoot = payload.rootDir || rootDir;
       const action = options.action || payload.action || 'status';
