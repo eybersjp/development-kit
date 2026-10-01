@@ -14,10 +14,11 @@ Shows concise Development Kit progress without hiding unresolved control-plane s
 
 1. Inspect project-local `.development-kit/` state. If absent, report `Uninitialized` and explain that a lifecycle command will bootstrap the project.
 2. Read project Git status and source-control readiness (Git availability, repository detected/initialized/relationship, and `.gitignore` status).
-3. Read the current Autopilot state when present.
-4. If `state.orchestration` exists, report its compact references and use the run manifest/evidence files under `.development-kit/runs/` for detail rather than treating agent summaries as truth.
-5. Check whether the active Development Contract is stale before reporting it as executable.
-6. Report only persisted/computed gate states.
+3. Read Development Mode state and report selected mode, base methodology when applicable, revision and validity. Invalid mode state is a blocker.
+4. Read the current Autopilot state when present.
+5. If `state.orchestration` exists, report its compact references and use the run manifest/evidence files under `.development-kit/runs/` for detail rather than treating agent summaries as truth.
+6. Check whether the active Development Contract is stale before reporting it as executable and show the contract-bound mode snapshot when present.
+7. Report only persisted/computed gate states.
 
 ## Output
 
@@ -32,6 +33,13 @@ Source-control readiness:
 - Repository: detected (<relationship>) / none
 - Repository root: <path>
 - .gitignore: reconciled (created / updated / up-to-date)
+
+Development Mode:
+- Mode: rapid / balanced / spec-driven / doc-driven / maintenance-evolution
+- Base methodology: <mode or n/a>
+- Revision: <n>
+- State: configured / absent / invalid
+- Repository audit required: yes / no
 
 Contract-driven orchestration, when active:
 - Contract: <activeContractId>
