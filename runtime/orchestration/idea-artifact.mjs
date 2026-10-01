@@ -88,7 +88,7 @@ function validateArtifactState(state) {
     for (const field of ['artifactFingerprint', 'discoveryFingerprint', 'designFingerprint', 'sourceFingerprint']) {
       if (!/^sha256:[a-f0-9]{64}$/.test(state.record[field] || '')) fail(`Invalid ${field}`, 'DK_IDEA_ARTIFACT_STATE_CORRUPT');
     }
-    if (!Number.isSafeInteger(state.record.discoveryRevision) || state.record.discoveryRevision < 0) fail('Invalid discoveryRevision', 'DK_IDEA_ARTIFACT_STATE_CORRUPT');
+    if (!Number.isSafeInteger(state.record.discoveryRevision) || state.record.discoveryRevision < 0) fail('Invalid discoveryRevision', 'DK_IDEA_ARTIFACT_STATE_CORRUPT');\n    if (!Number.isSafeInteger(state.record.designRevision) || state.record.designRevision < 0) fail('Invalid designRevision', 'DK_IDEA_ARTIFACT_STATE_CORRUPT');
   }
   for (const approval of state.approvals) {
     if (approval.authority !== 'PRODUCT_OWNER') fail('Idea Brief approval lacks Product Owner authority', 'DK_IDEA_ARTIFACT_STATE_CORRUPT');
@@ -207,7 +207,8 @@ export function persistCanonicalIdeaBrief(rootDir = process.cwd(), { content } =
   if (!validation.valid) fail('Idea Brief structure/content is invalid', 'DK_IDEA_BRIEF_INVALID', validation.issues);
 
   const current = loadIdeaArtifactState(rootDir);
-  const artifactFingerprint = shaText(content);
+  const finalContent = content.endsWith('\n') ? content : `${content}\n`;
+  const artifactFingerprint = shaText(finalContent);
   const revision = current.record ? current.record.revision + 1 : 1;
   const record = {
     canonicalPath: CANONICAL_IDEA_BRIEF_PATH,
@@ -222,7 +223,7 @@ export function persistCanonicalIdeaBrief(rootDir = process.cwd(), { content } =
   };
 
   // File first, then metadata. Missing metadata never grants approval; it only forces re-persistence.
-  atomicWrite(getCanonicalIdeaBriefPath(rootDir), content.endsWith('\n') ? content : `${content}\n`);
+  atomicWrite(getCanonicalIdeaBriefPath(rootDir), finalContent);
   const state = {
     schemaVersion: IDEA_ARTIFACT_SCHEMA_VERSION,
     revision: current.revision + 1,
