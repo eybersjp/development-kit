@@ -137,7 +137,7 @@ The Authority Graph can block acceptance when requirements are unverified, crite
 
 ## What DKF provides today
 
-| Capability | Current v0.11.1 behavior |
+| Capability | Published v0.11.1 behavior |
 |---|---|
 | **Automated Guided Workflow** | `/dk-autopilot` coordinates the lifecycle and persists progress between sessions. |
 | **Numbered Decision Interface** | Deterministic bounded Product Owner choices and structured suggestion promotion. |
@@ -183,9 +183,14 @@ The long-term architecture focuses on:
 
 Read the full [DKF Strategic Direction](STRATEGY.md).
 
-### Active unreleased work
+### Post-v0.11.1 mainline additions
 
-Development Modes is being reconciled from its original pre-v0.11 branches onto the current v0.11.1 architecture. It remains **unreleased** until all five increments, independent verification, cross-mode compatibility checks, and Product Owner host acceptance are complete. Track the work in [Issue #50](https://github.com/eybersjp/development-kit/issues/50).
+The published release remains **v0.11.1**. Current `main` also contains two fully integrated, release-gated additions that are **not yet part of a published package release**:
+
+- **Development Modes** — Rapid, Balanced, Specification-Driven, Documentation-Driven, and Maintenance & Evolution; persisted methodology policy is revisioned and immutably bound into new Development Contracts without weakening mandatory DKF controls.
+- **IDEA Authority Hardening** — explicit requirement provenance, Product Owner-bound transitions, one persisted fingerprinted interaction at a time, crash-safe discovery journaling, replay-proof consumption receipts, Design Authority binding, and Idea Brief approval bound to exact discovery/design/artifact fingerprints.
+
+Both additions passed the repository's full Ubuntu and Windows release-validation matrix before merge. Their presence on `main` does not imply npm/GitHub release publication until the next versioned release is explicitly created.
 
 ---
 
