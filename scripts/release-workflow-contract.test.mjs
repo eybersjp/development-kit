@@ -31,7 +31,7 @@ test('maintainer release workflow is retry-safe for existing tags and public art
 });
 
 test('post-publish npm verification tolerates bounded registry propagation delay', () => {
-  assert.match(releaseWorkflow, /for attempt in \{1\.\.12\}/, 'npm verification must retry for a bounded number of attempts');
-  assert.match(releaseWorkflow, /sleep 5/, 'npm verification retries must allow registry propagation time');
-  assert.match(releaseWorkflow, /npm verification failed after 12 attempts/, 'npm verification must still fail closed after the bounded retry window');
+  assert.match(releaseWorkflow, /for attempt in \{1\.\.24\}/, 'npm verification must retry for a bounded number of attempts');
+  assert.match(releaseWorkflow, /sleep 10/, 'npm verification retries must allow registry propagation time');
+  assert.match(releaseWorkflow, /npm verification failed after 24 attempts/, 'npm verification must still fail closed after the bounded retry window');
 });
