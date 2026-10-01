@@ -448,8 +448,15 @@ export function consumePendingIdeaInteraction(rootDir = process.cwd(), {
     fail('The exact IDEA interaction has already been consumed', 'DK_INTERACTION_ALREADY_CONSUMED');
   }
 
+  const activeMenu = loadActiveDecisionMenu(rootDir);
+  const selectedOption = activeMenu?.options?.find((option) => option.number === Number(selectedNumber));
+  if (selectedOption?.actionType === 'CUSTOM' && (typeof customText !== 'string' || !customText.trim())) {
+    fail('Custom response selection requires customText', 'DK_IDEA_CUSTOM_TEXT_REQUIRED');
+  }
+
   const resolution = resolveDecisionInput({
     input: selectedNumber,
+    activeMenu,
     rootDir,
     expectedStage: 'UNDERSTAND',
     currentFingerprint: workflow.pendingInteraction.sourceFingerprint,
@@ -460,7 +467,6 @@ export function consumePendingIdeaInteraction(rootDir = process.cwd(), {
   const payload = resolution.payload ?? {};
 
   if (actionType === 'CUSTOM') {
-    if (typeof customText !== 'string' || !customText.trim()) fail('Custom response selection requires customText', 'DK_IDEA_CUSTOM_TEXT_REQUIRED');
     appendIdeaConsumption(rootDir, {
       interactionType: workflow.pendingInteraction.type,
       interactionId: workflow.pendingInteraction.id,
