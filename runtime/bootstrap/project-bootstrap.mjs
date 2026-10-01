@@ -1,17 +1,8 @@
 /**
  * Development Kit — Project Bootstrapper & Local State Initializer
  *
- * Ensures idempotent establishment of the required project-local runtime state
- * under `.development-kit/` before lifecycle commands record or report state.
- *
- * Established layout:
- * - `.development-kit/project.json` (Project identity & framework version)
- * - `.development-kit/workspace-id` (Local workspace identity)
- * - `.development-kit/settings.json` (Project settings root)
- * - `.development-kit/autopilot/state/` (Autopilot revision state store)
- * - `.development-kit/intelligence/memory/records/` (Local memory store)
- * - `.development-kit/intelligence/memory/manifest.json`
- * - `.development-kit/intelligence/memory/index.json`
+ * Ensures idempotent establishment of required project-local runtime state under
+ * `.development-kit/`, including the repository-owned Development Mode selection.
  */
 
 import fs from 'node:fs';
@@ -20,6 +11,14 @@ import { getProjectIdentity } from '../autopilot/project-identity.mjs';
 import { LocalMemoryProvider } from '../intelligence/local-memory-provider.mjs';
 import { resolveEffectiveSettings, getProjectSettingsPath, DEFAULT_SETTINGS } from '../intelligence/settings.mjs';
 import { bootstrapGit, inspectGitState } from './git-bootstrap.mjs';
+import {
+  getDefaultModeConfiguration,
+  resolveDevelopmentModeConfiguration,
+} from '../development-modes/policy-contract.mjs';
+import {
+  initializeDevelopmentMode,
+  inspectDevelopmentMode,
+} from '../development-modes/config-store.mjs';
 
 export function getProjectBootstrapStatus(rootDir = process.cwd()) {
   const dkDir = path.join(rootDir, '.development-kit');
@@ -29,63 +28,107 @@ export function getProjectBootstrapStatus(rootDir = process.cwd()) {
     return {
       initialized: false,
       dkDirExists: false,
-      git: gitState
+      modeConfigurationStatus: 'absent',
+      modeRevision: null,
+      git: gitState,
     };
   }
 
   const projectFile = path.join(dkDir, 'project.json');
   const workspaceFile = path.join(dkDir, 'workspace-id');
   const memoryManifest = path.join(dkDir, 'intelligence', 'memory', 'manifest.json');
-
   const initialized = fs.existsSync(projectFile) && fs.existsSync(workspaceFile);
+
+  let modeConfigurationStatus = 'absent';
+  let modeRevision = null;
+  let modeError = null;
+  try {
+    const modeState = inspectDevelopmentMode(rootDir);
+    modeConfigurationStatus = modeState.status;
+    modeRevision = modeState.revision ?? null;
+  } catch (error) {
+    modeConfigurationStatus = 'invalid';
+    modeError = error.message;
+  }
+
   return {
     initialized,
     dkDirExists: true,
     hasProjectJson: fs.existsSync(projectFile),
     hasWorkspaceId: fs.existsSync(workspaceFile),
     hasMemoryManifest: fs.existsSync(memoryManifest),
-    git: gitState
+    modeConfigurationStatus,
+    modeRevision,
+    ...(modeError ? { modeError } : {}),
+    git: gitState,
   };
 }
 
 export async function bootstrapProject(rootDir = process.cwd(), options = {}) {
   try {
+    // Validate explicit mode input before creating or mutating project state.
+    if (options.modeConfig !== undefined) {
+      resolveDevelopmentModeConfiguration(options.modeConfig);
+    }
+
+    const previousStatus = getProjectBootstrapStatus(rootDir);
+    if (previousStatus.modeConfigurationStatus === 'invalid') {
+      throw new Error(`Existing Development Modes configuration is invalid: ${previousStatus.modeError}`);
+    }
+
+    const existingMode = inspectDevelopmentMode(rootDir);
+    const requestedMode = options.modeConfig ?? existingMode.selection ?? getDefaultModeConfiguration();
+    const modeSource = options.modeConfig
+      ? 'explicit'
+      : previousStatus.initialized
+        ? 'legacy-migration'
+        : 'default';
+
     const dkDir = path.join(rootDir, '.development-kit');
     if (!fs.existsSync(dkDir)) {
       fs.mkdirSync(dkDir, { recursive: true });
     }
 
-    // 1. Establish project & workspace identity (.development-kit/project.json & workspace-id)
+    // 1. Establish project & workspace identity.
     const identity = getProjectIdentity(rootDir);
 
-    // 2. Establish project settings if not existing (.development-kit/settings.json)
+    // 2. Establish project settings if absent.
     const settingsPath = getProjectSettingsPath(rootDir);
     if (!fs.existsSync(settingsPath)) {
       const initialSettings = {
         controlCenter: {
           autoOpen: DEFAULT_SETTINGS.controlCenter.autoOpen,
           port: DEFAULT_SETTINGS.controlCenter.port,
-          host: DEFAULT_SETTINGS.controlCenter.host
+          host: DEFAULT_SETTINGS.controlCenter.host,
         },
         intelligence: {
           defaultProvider: DEFAULT_SETTINGS.intelligence.defaultProvider,
-          contextBudgetTokens: DEFAULT_SETTINGS.intelligence.contextBudgetTokens
-        }
+          contextBudgetTokens: DEFAULT_SETTINGS.intelligence.contextBudgetTokens,
+        },
       };
       fs.writeFileSync(settingsPath, JSON.stringify(initialSettings, null, 2), 'utf8');
     }
 
-    // 3. Establish autopilot state directory (.development-kit/autopilot/state/)
+    // 3. Persist repository-owned methodology. Existing selections are preserved.
+    const developmentMode = initializeDevelopmentMode(rootDir, requestedMode, {
+      source: modeSource,
+      actor: options.modeConfig ? 'developer-bootstrap' : 'dk-bootstrap',
+      reason: previousStatus.initialized
+        ? 'Existing DKF project methodology recorded'
+        : 'Initial project methodology recorded',
+    });
+
+    // 4. Establish Autopilot state directory.
     const autopilotStateDir = path.join(dkDir, 'autopilot', 'state');
     if (!fs.existsSync(autopilotStateDir)) {
       fs.mkdirSync(autopilotStateDir, { recursive: true });
     }
 
-    // 4. Establish memory provider storage & index (.development-kit/intelligence/memory/)
+    // 5. Establish memory provider storage & index.
     const memoryProvider = new LocalMemoryProvider({ rootDir });
     await memoryProvider.activate();
 
-    // 5. Bootstrap Git & reconcile .gitignore
+    // 6. Bootstrap Git and reconcile .gitignore using the current v0.11 behavior.
     const git = bootstrapGit(rootDir, options);
 
     const effectiveSettings = resolveEffectiveSettings(rootDir);
@@ -96,14 +139,15 @@ export async function bootstrapProject(rootDir = process.cwd(), options = {}) {
       rootDir,
       identity,
       git,
-      settings: effectiveSettings
+      settings: effectiveSettings,
+      developmentMode,
     };
   } catch (err) {
     return {
       success: false,
       initialized: false,
       error: err.message,
-      code: 'ERROR_BOOTSTRAP_FAILED'
+      code: err.code ?? 'ERROR_BOOTSTRAP_FAILED',
     };
   }
 }
@@ -141,6 +185,11 @@ export function assertProjectBootstrapped(rootDir = process.cwd(), { requireMuta
     throw new BootstrapError('project.json missing mandatory projectId or frameworkVersion', 'DK_BOOTSTRAP_CORRUPT');
   }
 
+  const modeState = inspectDevelopmentMode(rootDir);
+  if (modeState.status !== 'configured') {
+    throw new BootstrapError('Project Development Mode is not configured', 'DK_MODE_BOOTSTRAP_MISSING');
+  }
+
   if (requireMutatingState) {
     const contractsDir = path.join(dkDir, 'contracts');
     const runsDir = path.join(dkDir, 'runs');
@@ -152,5 +201,10 @@ export function assertProjectBootstrapped(rootDir = process.cwd(), { requireMuta
     bootstrapped: true,
     projectId: projectData.projectId,
     frameworkVersion: projectData.frameworkVersion,
+    developmentMode: {
+      revision: modeState.revision,
+      mode: modeState.resolved.mode,
+      baseMethodology: modeState.resolved.baseMethodology,
+    },
   };
 }
