@@ -78,6 +78,18 @@ Consider:
 artifact_level: small | standard | comprehensive
 ```
 
+### 3A. Apply Development Mode
+
+Read the persisted Development Mode and its resolved policy before final selection. The risk/complexity-derived artifact level is a floor; a mode may increase required formality but never remove required safety, evidence, Design Authority, accessibility, data-integrity, or acceptance controls.
+
+- **Rapid**: preserve the risk-derived minimum and keep documents concise.
+- **Balanced**: use the normal adaptive artifact selection.
+- **Specification-Driven**: behavioural changes require at least a Standard artifact set and an explicit feature specification.
+- **Documentation-Driven**: behavioural Standard work becomes Comprehensive; keep canonical documentation continuously current.
+- **Maintenance & Evolution**: apply the inherited methodology and require repository audit/impact analysis before implementation.
+
+Use the deterministic mode guidance from `runtime/development-modes/integration.mjs`; do not infer or silently change the project methodology.
+
 ### 4. Select Required Artifacts
 Based on the level, select only the required artifacts. Do not add extras.
 
