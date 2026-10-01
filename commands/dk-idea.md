@@ -17,6 +17,21 @@ Takes a rough idea and refines it into a concrete, well-defined concept. Runs th
 
 Whenever Development Kit requires a bounded Product Owner decision, prefer a numbered decision interface instead of requiring the user to type or repeat an instruction.
 
+## Runtime Authority Contract
+
+IDEA discovery is runtime-governed. Conversation text is not authoritative state.
+
+1. Inspect with `node scripts/orchestration.mjs --operation=idea-state`.
+2. Record surfaced requirement candidates with explicit provenance using `--operation=idea-record-candidate`; record interview questions with their numbered options using `--operation=idea-record-question`.
+3. Call `--operation=idea-next`. The runtime persists exactly one pending interaction and its numbered decision menu **before** it is shown to the Product Owner.
+4. Present that persisted prompt/options verbatim in substance. Do not invent a second question, combine questions, or replace the pending interaction from memory.
+5. Consume a numbered reply only through `--operation=idea-consume` with `authority: "PRODUCT_OWNER"` and the exact `expectedInteractionFingerprint` returned by `idea-next`.
+6. Custom responses must be persisted through the same interaction with `customText`; apply any resulting explicit discovery delta, then complete the custom-review checkpoint.
+7. Persist the final canonical Idea Brief only from `BRIEF_DRAFT`. Approval is valid only for the exact artifact + discovery + design fingerprints currently bound by the runtime.
+
+Fail closed on stale/mismatched fingerprints, replay, corrupt journal/state, implicit authority, direct artifact tampering, or unresolved material discovery.
+
+
 ## Workflow
 
 ### 1. Understand
