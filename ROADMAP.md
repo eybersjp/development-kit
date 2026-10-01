@@ -10,7 +10,7 @@ This roadmap is directional. It distinguishes current capability from planned wo
 
 ---
 
-## Current baseline — v0.11.1
+## Current baseline — v0.11.2
 
 The current release provides the reliability foundation:
 
@@ -29,42 +29,13 @@ The current release provides the reliability foundation:
 - Secrets & Configuration Readiness Gate;
 - Live UI Preview for UI/design work;
 - Token/context efficiency hardening with scoped authoritative-source delivery, role token profiles, compact runtime prompts, and CI budgets;
+- Development Modes (Rapid, Balanced, Specification-Driven, Documentation-Driven, Maintenance & Evolution);
+- IDEA Authority Hardening with requirement provenance, crash-safe journal recovery, and replay-protection receipts;
 - structured idea-suggestion promotion;
 - adversarial regression testing;
 - cross-platform agent integrations.
 
 The remaining roadmap is about making this reliability model **adaptive, portable, enforceable, scalable, and externally provable**.
-
----
-
-## Integrated post-v0.11.1 mainline work
-
-The published baseline remains **v0.11.1**, while current `main` contains the following release-gated additions awaiting a future versioned release:
-
-### Development Modes
-
-- five developer-facing methodologies with Balanced as the default;
-- revisioned project-owned mode state and explicit mode-change history;
-- deterministic policy resolution and recommendation;
-- mode-aware specification, artifact and planning behavior;
-- immutable Development Contract mode snapshots;
-- Maintenance & Evolution repository-audit obligations;
-- preservation of all mandatory reliability, evidence, safety and Product Owner controls.
-
-Development Modes was integrated through PR #53 after the full Ubuntu/Windows release-validation matrix passed.
-
-### IDEA Authority Hardening
-
-- explicit USER_STATED / USER_CONFIRMED / AI_PROPOSED / RESEARCH_DERIVED / ASSUMED provenance;
-- Product Owner-bound legal transitions and scope decisions;
-- one persisted, fingerprinted numbered interaction at a time;
-- journal-first discovery persistence and restart recovery;
-- hash-chained replay-protection receipts;
-- Product Owner-bound Design Authority disposition;
-- canonical Idea Brief approval tied to exact artifact/discovery/design fingerprints;
-- direct-edit, stale-source, replay and corruption fail-closed behavior.
-
-IDEA Authority Hardening was integrated through PR #54 after the full Ubuntu/Windows release-validation matrix passed.
 
 ---
 

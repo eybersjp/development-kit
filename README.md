@@ -38,11 +38,13 @@ DKF is designed around that problem.
 
 It provides an agent-independent engineering runtime that binds work to explicit contracts, preserves provenance, isolates verification, computes control coverage, detects drift and stale authority, and derives acceptance from evidence.
 
-The current release line is **v0.11.1**.
+The current release line is **v0.11.2**.
 
 v0.11 introduces the **Secrets & Configuration Readiness Gate**, a non-bypassable runtime control-plane gate that detects when project development depends on external configuration or secrets requiring Product Owner action (API keys, database credentials, public environment variables, tenant IDs, OAuth secrets, generated application secrets, or provider consoles).
 
 v0.11.1 adds **Live UI Preview & Visual Verification** and **Token & Context Efficiency Hardening**.
+
+v0.11.2 integrates **Development Modes** (Rapid, Balanced, Specification-Driven, Documentation-Driven, Maintenance & Evolution) and **IDEA Authority Hardening** (provenance tracking, fingerprinted interactions, replay protection, and source-bound Idea Brief approvals).
 
 > **Completion is a computed state, not an agent assertion.**
 
@@ -50,9 +52,15 @@ DKF is not a project-management dashboard and is not intended to replace enginee
 
 ---
 
-## Current release: v0.11.1
+## Current release: v0.11.2
 
-The current released baseline is **v0.11.1**.
+The current released baseline is **v0.11.2**.
+
+### v0.11.2 — Development Modes & IDEA Authority Hardening
+
+v0.11.2 ships the integrated methodology and requirements authority controls:
+- **Development Modes**: Five developer methodologies with revisioned project configuration (`.development-kit/development-mode.json`), mode-aware artifact and planning rules, and immutable contract mode snapshots.
+- **IDEA Authority Hardening**: Bounded one-question-at-a-time interactions, cryptographic interaction fingerprints, replay-protection receipts, crash-safe journal persistence, Product Owner-bound Design Authority disposition, and canonical Idea Brief approval locked to exact artifact/design/discovery fingerprints.
 
 ### v0.11.1 — Live UI Preview & Token Efficiency
 
@@ -183,14 +191,13 @@ The long-term architecture focuses on:
 
 Read the full [DKF Strategic Direction](STRATEGY.md).
 
-### Post-v0.11.1 mainline additions
+### v0.11.2 release highlights
 
-The published release remains **v0.11.1**. Current `main` also contains two fully integrated, release-gated additions that are **not yet part of a published package release**:
+The published release is **v0.11.2**, consolidating:
 
 - **Development Modes** — Rapid, Balanced, Specification-Driven, Documentation-Driven, and Maintenance & Evolution; persisted methodology policy is revisioned and immutably bound into new Development Contracts without weakening mandatory DKF controls.
 - **IDEA Authority Hardening** — explicit requirement provenance, Product Owner-bound transitions, one persisted fingerprinted interaction at a time, crash-safe discovery journaling, replay-proof consumption receipts, Design Authority binding, and Idea Brief approval bound to exact discovery/design/artifact fingerprints.
-
-Both additions passed the repository's full Ubuntu and Windows release-validation matrix before merge. Their presence on `main` does not imply npm/GitHub release publication until the next versioned release is explicitly created.
+- **Workflow Modernization** — GitHub Actions workflows updated to current actions (`checkout@v7`, `setup-node@v7`, `configure-pages@v6`, `upload-pages-artifact@v5`, `deploy-pages@v5`), removing deprecated Node 20 runtime warnings.
 
 ---
 

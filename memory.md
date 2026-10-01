@@ -2,14 +2,14 @@
 
 ## Published Baseline
 
-- **Current published release:** v0.11.1 (30 September 2026).
-- **Package version on `main`:** 0.11.1 until the next explicit versioned release.
+- **Current published release candidate:** v0.11.2 (1 October 2026).
+- **Package version:** 0.11.2.
 - **Core lifecycle:** `UNDERSTAND → DEFINE → DESIGN → PLAN → IMPLEMENT → VERIFY → REVIEW → SIMPLIFY → COMPLETE`.
 - **Public command surface:** 16 workflow commands.
 - **Engineering skills:** 48.
 - **Primary position:** DKF is the reliability control plane for agentic software development — **AI can write it. DKF proves it.**
 
-## Published v0.11.1 Reliability Controls
+## v0.11.2 Reliability Controls
 
 - Development Contracts with authoritative-source fingerprints.
 - Independent verification and deterministic `BLOCKED / PENDING / ACCEPTED` acceptance.
