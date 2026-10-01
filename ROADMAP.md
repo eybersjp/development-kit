@@ -37,18 +37,34 @@ The remaining roadmap is about making this reliability model **adaptive, portabl
 
 ---
 
-## Active unreleased work — Development Modes
+## Integrated post-v0.11.1 mainline work
 
-Development Modes is a current implementation stream, not a shipped v0.11.1 capability. The original Increment 001 and 002 branches predate v0.11.0/v0.11.1 and are being treated as historical implementation evidence while the feature is reconciled onto current `main`.
+The published baseline remains **v0.11.1**, while current `main` contains the following release-gated additions awaiting a future versioned release:
 
-Required completion scope:
-- reconcile and independently verify policy architecture and persisted mode configuration;
-- make lifecycle, artifact selection, planning/contracts and Autopilot consume the selected mode without weakening mandatory controls;
-- add mode-aware documentation behavior;
-- verify migrations, cross-mode compatibility and real host behavior;
-- obtain Product Owner acceptance before any release claim.
+### Development Modes
 
-Track this work in [Issue #50](https://github.com/eybersjp/development-kit/issues/50).
+- five developer-facing methodologies with Balanced as the default;
+- revisioned project-owned mode state and explicit mode-change history;
+- deterministic policy resolution and recommendation;
+- mode-aware specification, artifact and planning behavior;
+- immutable Development Contract mode snapshots;
+- Maintenance & Evolution repository-audit obligations;
+- preservation of all mandatory reliability, evidence, safety and Product Owner controls.
+
+Development Modes was integrated through PR #53 after the full Ubuntu/Windows release-validation matrix passed.
+
+### IDEA Authority Hardening
+
+- explicit USER_STATED / USER_CONFIRMED / AI_PROPOSED / RESEARCH_DERIVED / ASSUMED provenance;
+- Product Owner-bound legal transitions and scope decisions;
+- one persisted, fingerprinted numbered interaction at a time;
+- journal-first discovery persistence and restart recovery;
+- hash-chained replay-protection receipts;
+- Product Owner-bound Design Authority disposition;
+- canonical Idea Brief approval tied to exact artifact/discovery/design fingerprints;
+- direct-edit, stale-source, replay and corruption fail-closed behavior.
+
+IDEA Authority Hardening was integrated through PR #54 after the full Ubuntu/Windows release-validation matrix passed.
 
 ---
 
