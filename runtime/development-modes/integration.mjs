@@ -27,6 +27,12 @@ function fingerprintPayload(value) {
   return `sha256:${createHash('sha256').update(JSON.stringify(canonicalize(value))).digest('hex')}`;
 }
 
+function deepFreeze(value) {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value)) deepFreeze(child);
+  return Object.freeze(value);
+}
+
 function cloneResolved(resolved) {
   return {
     mode: resolved.mode,
@@ -69,7 +75,7 @@ export function createDevelopmentModeSnapshot({
   const normalizedSelection = structuredClone(selection);
   const resolved = cloneResolved(resolveDevelopmentModeConfiguration(normalizedSelection));
   const payload = snapshotPayload({ revision, selection: normalizedSelection, resolved, source });
-  return Object.freeze({
+  return deepFreeze({
     ...payload,
     fingerprint: fingerprintPayload(payload),
   });
@@ -162,7 +168,7 @@ export function getDevelopmentModeGuidance(snapshot) {
   validateDevelopmentModeSnapshot(snapshot);
   const { resolved } = snapshot;
   const p = resolved.effectivePolicies;
-  return Object.freeze({
+  return deepFreeze({
     mode: resolved.mode,
     baseMethodology: resolved.baseMethodology,
     revision: snapshot.revision,
