@@ -266,8 +266,10 @@ test('IDEA-AUTH-005 discovery state recovers from journal after interrupted/miss
   assert.equal(recovered.requirements[0].statement, 'Recoverable requirement');
 
   fs.writeFileSync(getDiscoveryPath(root), '{corrupt');
-  const recoveredAgain = loadDiscoveryState(root);
-  assert.equal(recoveredAgain.fingerprint, before.fingerprint);
+  assert.throws(
+    () => loadDiscoveryState(root),
+    (error) => error.code === 'DK_IDEA_DISCOVERY_CORRUPT',
+  );
 });
 
 test('IDEA-AUTH-006 design disposition can only be created through explicit Product Owner authority', async (t) => {
@@ -405,4 +407,61 @@ test('IDEA-AUTH-011 custom answer is persisted as a consumed Product Owner inter
   assert.equal(after.status, 'CUSTOM_INPUT_REVIEW');
   assert.equal(after.customInstruction, 'Mostly on remote solar sites.');
   assert.equal(loadIdeaConsumptions(root).length, 1);
+});
+
+
+test('IDEA-AUTH-012 corrupt workflow, receipt and discovery journal chains fail closed', async (t) => {
+  const root = tempProject(t);
+  await bootstrap(root);
+  recordRequirementCandidate(root, {
+    id: 'IDEA-REQ-001',
+    statement: 'Integrity-protected requirement',
+    origin: 'USER_STATED',
+  });
+  const pending = ensurePendingIdeaInteraction(root);
+  consume(root, pending, 1);
+
+  const receiptPath = path.join(root, '.development-kit', 'idea', 'consumptions.json');
+  const receipts = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+  receipts[0].action = 'TAMPERED';
+  fs.writeFileSync(receiptPath, JSON.stringify(receipts, null, 2));
+  assert.throws(
+    () => loadIdeaConsumptions(root),
+    (error) => error.code === 'DK_IDEA_RECEIPT_INTEGRITY_MISMATCH',
+  );
+
+  // Restore the receipt so remaining corruption checks isolate their own state.
+  receipts[0].action = 'CONFIRM_REQUIREMENT';
+  // Rebuild by using the untouched receipt from a fresh project state is safer than forging its hash.
+  fs.rmSync(receiptPath);
+  const root2 = fs.mkdtempSync(path.join(os.tmpdir(), 'dk-idea-corrupt-'));
+  t.after(() => fs.rmSync(root2, { recursive: true, force: true }));
+  await bootstrap(root2);
+  recordRequirementCandidate(root2, {
+    id: 'IDEA-REQ-001',
+    statement: 'Integrity-protected requirement',
+    origin: 'USER_STATED',
+  });
+  const pending2 = ensurePendingIdeaInteraction(root2);
+
+  const workflowPath = path.join(root2, '.development-kit', 'idea', 'workflow.json');
+  const workflowRaw = JSON.parse(fs.readFileSync(workflowPath, 'utf8'));
+  workflowRaw.pendingInteraction.prompt = 'Tampered prompt';
+  fs.writeFileSync(workflowPath, JSON.stringify(workflowRaw, null, 2));
+  assert.throws(
+    () => loadIdeaWorkflow(root2),
+    (error) => error.code === 'DK_INTERACTION_FINGERPRINT_MISMATCH',
+  );
+
+  // Journal chain tampering fails even if discovery.json itself is otherwise valid.
+  const journalPath = path.join(root2, '.development-kit', 'idea', 'discovery-journal.json');
+  const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
+  journal.entries[0].eventType = 'TAMPERED';
+  fs.writeFileSync(journalPath, JSON.stringify(journal, null, 2));
+  assert.throws(
+    () => loadDiscoveryState(root2),
+    (error) => ['DK_IDEA_JOURNAL_CHAIN_BROKEN', 'DK_IDEA_JOURNAL_CORRUPT'].includes(error.code),
+  );
+
+  assert.ok(pending2.pendingInteraction.fingerprint);
 });
