@@ -303,7 +303,9 @@
 * [Release Notes (v0.8.0)](08-maintenance-release/release-notes-v0.8.0.md)
 * [Release Notes (v0.9.0)](08-maintenance-release/release-notes-v0.9.0.md)
 * [Release Notes (v0.10.0)](08-maintenance-release/release-notes-v0.10.0.md)
-* [Release Notes (v0.10.1)](08-maintenance-release/release-notes-v0.10.1.md)
+* [Release Notes (v0.10.1 superseded candidate)](08-maintenance-release/release-notes-v0.10.1.md)
+* [Release Notes (v0.11.0)](08-maintenance-release/release-notes-v0.11.0.md)
+* [Release Notes (v0.11.1)](08-maintenance-release/release-notes-v0.11.1.md)
 
 ## 09. Contributing
 * [Contribution Overview](09-contributing/contribution-overview.md)
