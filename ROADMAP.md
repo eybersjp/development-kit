@@ -10,7 +10,7 @@ This roadmap is directional. It distinguishes current capability from planned wo
 
 ---
 
-## Current baseline — v0.10.1
+## Current baseline — v0.11.1
 
 The current release provides the reliability foundation:
 
@@ -26,6 +26,7 @@ The current release provides the reliability foundation:
 - DK Intelligence and Memory;
 - DK Control Center;
 - Numbered Decision Interface;
+- Secrets & Configuration Readiness Gate;
 - Live UI Preview for UI/design work;
 - Token/context efficiency hardening with scoped authoritative-source delivery, role token profiles, compact runtime prompts, and CI budgets;
 - structured idea-suggestion promotion;
@@ -36,7 +37,22 @@ The remaining roadmap is about making this reliability model **adaptive, portabl
 
 ---
 
-## v0.11 — Adaptive Reliability
+## Active unreleased work — Development Modes
+
+Development Modes is a current implementation stream, not a shipped v0.11.1 capability. The original Increment 001 and 002 branches predate v0.11.0/v0.11.1 and are being treated as historical implementation evidence while the feature is reconciled onto current `main`.
+
+Required completion scope:
+- reconcile and independently verify policy architecture and persisted mode configuration;
+- make lifecycle, artifact selection, planning/contracts and Autopilot consume the selected mode without weakening mandatory controls;
+- add mode-aware documentation behavior;
+- verify migrations, cross-mode compatibility and real host behavior;
+- obtain Product Owner acceptance before any release claim.
+
+Track this work in [Issue #50](https://github.com/eybersjp/development-kit/issues/50).
+
+---
+
+## v0.12 — Adaptive Reliability
 
 ### Objective
 
@@ -63,7 +79,7 @@ Replace the universal fixed lifecycle with a **policy-driven Lifecycle Compiler*
 
 ---
 
-## v0.12 — DKF Proof
+## v0.13 — DKF Proof
 
 ### Objective
 
@@ -87,7 +103,7 @@ A completed change should be able to produce an evidence bundle that explains wh
 
 ---
 
-## v0.13 — Repository Enforcement
+## v0.14 — Repository Enforcement
 
 ### Objective
 
@@ -112,7 +128,7 @@ becomes eligible to act as a protected merge requirement.
 
 ---
 
-## v0.14 — DKF Reliability Benchmark
+## v0.15 — DKF Reliability Benchmark
 
 ### Objective
 
@@ -150,7 +166,7 @@ The benchmark must distinguish **code produced** from **work proven acceptable**
 
 ---
 
-## v0.15 — Isolated Execution
+## v0.16 — Isolated Execution
 
 ### Objective
 
@@ -169,7 +185,7 @@ Execution safety and execution isolation remain separate concerns and must both 
 
 ---
 
-## v0.16 — Safe Parallelism
+## v0.17 — Safe Parallelism
 
 ### Objective
 
@@ -190,7 +206,7 @@ Parallelism must be a **computed safe property**, not a blanket speed setting.
 
 ---
 
-## v0.17 — Multi-Repository Change Contracts
+## v0.18 — Multi-Repository Change Contracts
 
 ### Objective
 
@@ -222,7 +238,7 @@ The overall change remains incomplete while any required repository contract is 
 
 ---
 
-## v0.18 — Evidence Intelligence
+## v0.19 — Evidence Intelligence
 
 ### Objective
 
@@ -248,7 +264,7 @@ DKF should also reduce correlated reasoning failure by supporting evidence from 
 
 ---
 
-## v0.19 — Control Center Flight Recorder
+## v0.20 — Control Center Flight Recorder
 
 ### Objective
 
