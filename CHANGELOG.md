@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- **Development Modes**: Five project-owned development methodologies (Rapid, Balanced, Specification-Driven, Documentation-Driven, Maintenance & Evolution) with revisioned persistence, deterministic policy resolution, mode-aware artifact/planning behavior and immutable Development Contract mode snapshots.
+- **IDEA Authority Runtime**: Explicit requirement provenance, persisted one-question-at-a-time numbered interactions, exact interaction fingerprints, crash-safe discovery journaling, replay-protection receipts, Product Owner-bound Design Authority disposition and source-bound Idea Brief approval.
+
+### Changed
+- Development Contract schema advances to v1.2.0 for current mode-snapshot binding while retaining validation compatibility for v1.0/v1.1 contracts.
+- Suggestion promotion now requires explicit Product Owner decision authority instead of silently defaulting authority.
+- GitHub Actions use current major action versions identified by repository dependency automation, removing deprecated Node 20 action-runtime warnings.
+
+### Security
+- IDEA authority fails closed on stale interaction sources, fingerprint mismatch, replay, corrupted journal/receipt/workflow chains, implicit approval authority and direct Idea Brief tampering.
+
 ## [0.11.1] - 2026-09-30
 
 ### Added
