@@ -12,14 +12,15 @@ Produces the approved implementation PLAN. Human-readable planning remains requi
 
 ## Workflow
 
-1. Read the approved specification, architecture, Design Authority where applicable, and current explicit user decisions.
-2. Spawn the `task-planner-agent` and decompose work into bounded tasks with stable IDs.
-3. For every task define objective, requirements, exclusions, acceptance criteria, verification, `dependsOn`, and owned persistence/migration/resources where applicable.
-4. Order by hard dependency and risk. Do not invent a dependency diagram independently of the task data.
-5. Build the PLAN validation payload containing `tasks`, `declaredTaskCount`, `declaredDependencyEdges`, `requiredResources`, and `requiredAcceptanceCriteria`.
-6. Run `node scripts/orchestration.mjs --operation=plan-validate --input-file=<payload>`.
-7. If validation reports any issue, correct the canonical PLAN and validate again. Never claim PLAN consistency from prose alone.
-8. Present the validated PLAN for the normal Product Owner approval gate.
+1. Read the approved specification, architecture, Design Authority where applicable, current explicit user decisions, and the persisted Development Mode snapshot.
+2. Apply mode guidance to planning/test detail: Rapid stays concise, Balanced uses the normal plan, Spec-Driven strengthens specification/contract traceability, Doc-Driven uses comprehensive planning/document maintenance, and Maintenance & Evolution requires repository audit/impact evidence. No mode may remove deterministic PLAN validation or required controls.
+3. Spawn the `task-planner-agent` and decompose work into bounded tasks with stable IDs.
+4. For every task define objective, requirements, exclusions, acceptance criteria, verification, `dependsOn`, and owned persistence/migration/resources where applicable.
+5. Order by hard dependency and risk. Do not invent a dependency diagram independently of the task data.
+6. Build the PLAN validation payload containing `tasks`, `declaredTaskCount`, `declaredDependencyEdges`, `requiredResources`, and `requiredAcceptanceCriteria`.
+7. Run `node scripts/orchestration.mjs --operation=plan-validate --input-file=<payload>`.
+8. If validation reports any issue, correct the canonical PLAN and validate again. Never claim PLAN consistency from prose alone.
+9. Present the validated PLAN for the normal Product Owner approval gate.
 
 ## Deterministic PLAN Gates
 
