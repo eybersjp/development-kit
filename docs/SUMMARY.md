@@ -310,6 +310,7 @@
 * [Release Notes (v0.10.1 superseded candidate)](08-maintenance-release/release-notes-v0.10.1.md)
 * [Release Notes (v0.11.0)](08-maintenance-release/release-notes-v0.11.0.md)
 * [Release Notes (v0.11.1)](08-maintenance-release/release-notes-v0.11.1.md)
+* [Release Notes (v0.11.2)](08-maintenance-release/release-notes-v0.11.2.md)
 
 ## 09. Contributing
 * [Contribution Overview](09-contributing/contribution-overview.md)

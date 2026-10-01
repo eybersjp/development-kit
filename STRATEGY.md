@@ -14,9 +14,9 @@ That is the category DKF is designed to own.
 
 ---
 
-## 1. Current baseline: v0.11.1
+## 1. Current baseline: v0.11.2
 
-The current released baseline is **v0.11.1**.
+The current released baseline is **v0.11.2**.
 
 DKF already includes the foundations of the reliability-control-plane model:
 
@@ -35,9 +35,11 @@ DKF already includes the foundations of the reliability-control-plane model:
 - a non-bypassable Secrets & Configuration Readiness Gate that prevents invented credentials/configuration and keeps secret values outside AI context;
 - Live UI Preview for continuous rendered frontend visibility;
 - token/context efficiency through scoped authority, compact role prompts, measurable context budgets, and structured reference-first handoffs;
+- **Development Modes** with project-owned methodology policies and immutable contract mode snapshots;
+- **IDEA Authority Hardening** with requirement provenance, crash-safe journal recovery, and replay-protection receipts;
 - adversarial regression coverage based on real development failures.
 
-These are implemented capabilities in the published v0.11.1 release line. Current `main` additionally contains release-gated Development Modes and IDEA Authority Hardening; they are integrated source capabilities but must not be presented as published v0.11.1/npm functionality until a subsequent versioned release is created. The roadmap below describes later evolution and likewise must not be interpreted as already-published functionality.
+These are implemented capabilities in the published v0.11.2 release line. The roadmap below describes later evolution and must not be interpreted as already-published functionality.
 
 ---
 

@@ -1,12 +1,12 @@
 # Development Kit Framework Documentation
 
-Welcome to the official documentation for **Development Kit Framework v0.11.0** (`development-kit@0.11.0`).
+Welcome to the official documentation for **Development Kit Framework v0.11.2** (`development-kit@0.11.2`).
 
 DKF is evolving into **the reliability control plane for agentic software development**.
 
 > **AI can write it. DKF proves it.**
 
-The current v0.11.1 release brings together the Secrets & Configuration Readiness Gate (v0.11.0), Live UI Preview visual verification, and Token & Context Efficiency hardening. It already provides Development Contracts, independent verification, deterministic acceptance, execution-safety controls, DKF Design Authority, DK Intelligence, DK Control Center, and the Numbered Decision Interface. The future direction is published separately so planned capabilities are never confused with implemented behavior.
+The current v0.11.2 release brings together Development Modes and IDEA Authority Hardening on top of the Live UI Preview visual verification, Token & Context Efficiency hardening, and the Secrets & Configuration Readiness Gate. It provides Development Contracts, independent verification, deterministic acceptance, execution-safety controls, DKF Design Authority, DK Intelligence, DK Control Center, and the Numbered Decision Interface. The future direction is published separately so planned capabilities are never confused with implemented behavior.
 
 ## Strategic documents
 
@@ -16,7 +16,7 @@ The current v0.11.1 release brings together the Secrets & Configuration Readines
 
 ## Current release highlights
 
-| Package Version | 0.11.1 |
+| Package Version | 0.11.2 |
 | Lifecycle Stages | 9 (UNDERSTAND through COMPLETE) |
 | Workflow Commands | 16 |
 | Specialist Agents | 18 |

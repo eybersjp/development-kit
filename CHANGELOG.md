@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-10-01
+
 ### Added
 - **Development Modes**: Five project-owned development methodologies (Rapid, Balanced, Specification-Driven, Documentation-Driven, Maintenance & Evolution) with revisioned persistence, deterministic policy resolution, mode-aware artifact/planning behavior and immutable Development Contract mode snapshots.
 - **IDEA Authority Runtime**: Explicit requirement provenance, persisted one-question-at-a-time numbered interactions, exact interaction fingerprints, crash-safe discovery journaling, replay-protection receipts, Product Owner-bound Design Authority disposition and source-bound Idea Brief approval.
