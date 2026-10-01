@@ -37,7 +37,7 @@ DKF already includes the foundations of the reliability-control-plane model:
 - token/context efficiency through scoped authority, compact role prompts, measurable context budgets, and structured reference-first handoffs;
 - adversarial regression coverage based on real development failures.
 
-These are implemented capabilities in the current release line. Development Modes is active unreleased work tracked in Issue #50; it must not be presented as shipped until its integration and acceptance gates pass. The roadmap below describes later evolution and must not be interpreted as functionality already present in v0.11.1.
+These are implemented capabilities in the published v0.11.1 release line. Current `main` additionally contains release-gated Development Modes and IDEA Authority Hardening; they are integrated source capabilities but must not be presented as published v0.11.1/npm functionality until a subsequent versioned release is created. The roadmap below describes later evolution and likewise must not be interpreted as already-published functionality.
 
 ---
 
