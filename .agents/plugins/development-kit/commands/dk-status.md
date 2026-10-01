@@ -61,6 +61,14 @@ Secrets & Configuration Readiness Gate:
 - Product Owner action required: yes / no
 - Setup guide: .development-kit/SECRETS_SETUP.md
 
+IDEA authority when active:
+- Phase: <phase>
+- Workflow revision: <n>
+- Discovery revision/fingerprint: <revision> / <fingerprint>
+- Pending interaction: <type/id/fingerprint or none>
+- Idea Brief: absent / current / stale / tampered
+- Idea Brief approval: NONE / CURRENT / STALE
+
 Pending reviews/controls/approvals: <list>
 Blocked items: <exact reasons>
 Design Authority when applicable: <state/version/last verification>
