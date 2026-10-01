@@ -1,4 +1,6 @@
-# Release Notes v0.10.1
+# Release Notes v0.10.1 — Superseded Release Candidate
+
+> **Status:** v0.10.1 was not the final published release for this work. The Live UI Preview and Token & Context Efficiency changes were reconciled onto v0.11.0 and released as **v0.11.1 on 30 September 2026**. This document is retained as historical release-candidate evidence.
 
 ## Live UI Preview & Visual Verification
 

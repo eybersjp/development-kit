@@ -1,55 +1,56 @@
 # Development Kit Project Memory
 
-## Active Architecture & Subsystems
+## Current Released Baseline
 
-- **Core Lifecycle**: 9 gated stages (`UNDERSTAND` → `DEFINE` → `DESIGN` → `PLAN` → `IMPLEMENT` → `VERIFY` → `REVIEW` → `SIMPLIFY` → `COMPLETE`).
-- **Autopilot Runtime (`runtime/autopilot/`)**: Deterministic state machine, cryptographic tokens, lease management, non-bypassable policy engine.
-- **Secrets & Configuration Readiness Gate (`runtime/orchestration/configuration-readiness.mjs`)**:
-  - Non-bypassable runtime control-plane gate: `DETECT → REGISTER → PREPARE → EXPLAIN → PAUSE → PRODUCT OWNER DECISION → VALIDATE → RESUME`.
-  - Zero-credential exposure invariant: DKF knows a secret is valid without AI model receiving its value.
-  - Fail-closed acceptance and release: Unresolved configuration blocks acceptance; missing release requirements block `/dk-ship`.
-  - Deferred dependencies force affected criteria to `UNVERIFIED`.
-  - Git tracking protection: Halts immediately if secret target is tracked by Git.
-  - Targets safe preparation with `.env.local` line numbers and `.development-kit/SECRETS_SETUP.md` generation.
-- **Next-Step Guidance Subsystem (`runtime/next-step/`)**:
-  - `command-registry.mjs`: Canonical registry for all 14 `/dk-*` commands with safety metadata.
-  - `resolver.mjs`: Context-aware `NextStepResolver` enforcing 8 recommendation rules.
-  - `formatter.mjs`: Standard Markdown response formatting (`## Suggested Next Step` / `## Suggested Next Steps`).
-  - `scripts/next-step.mjs`: CLI utility for resolving next steps.
-  - `skills/next-step-guidance/`: First-class skill guiding conductors and sub-agents.
-- **Platform Adapters**: Claude, Cursor, VS Code, Cline, Windsurf.
-- **External Research & Trust Boundaries**: Read-only defaults, provenance preservation, untrusted data isolation.
+- **Current release:** v0.11.1 (released 30 September 2026).
+- **Package version on `main`:** 0.11.1.
+- **Core lifecycle:** `UNDERSTAND → DEFINE → DESIGN → PLAN → IMPLEMENT → VERIFY → REVIEW → SIMPLIFY → COMPLETE`.
+- **Public command surface:** 16 workflow commands.
+- **Engineering skills:** 48.
+- **Primary product position:** DKF is the reliability control plane for agentic software development — **AI can write it. DKF proves it.**
 
-## Verified Commands (14)
+## Shipped Reliability Controls
 
-1. `/dk-autopilot` — Full lifecycle in Automated Guided Workflow mode
-2. `/dk-idea` — Idea discovery and requirements interview (`UNDERSTAND`)
-3. `/dk-research` — Source-backed external evidence gathering
-4. `/dk-spec` — Minimum specification artifact creation (`DEFINE`)
-5. `/dk-design` — Technical and visual design (`DESIGN`)
-6. `/dk-tasks` — Task decomposition with dependency ordering (`PLAN`)
-7. `/dk-build` — Single-task TDD implementation loop (`IMPLEMENT`)
-8. `/dk-build-auto` — Automated batch plan implementation (`IMPLEMENT`)
-9. `/dk-test` — Verification and runtime test suite (`VERIFY`)
-10. `/dk-review` — Two-stage specification and code review (`REVIEW`)
-11. `/dk-simplify` — Ponytail simplicity ladder refactoring (`SIMPLIFY`)
-12. `/dk-debug` — Root-cause diagnosis and remediation (`RECOVERY`)
-13. `/dk-ship` — Final verification, diff review, and release prep (`COMPLETE`)
-14. `/dk-status` — State, task, and lifecycle inspection (`INFORMATIONAL`)
+- Development Contracts with authoritative-source fingerprints.
+- Independent verification and deterministic `BLOCKED / PENDING / ACCEPTED` acceptance.
+- Required-control/reviewer coverage, architecture-drift detection and source-staleness protection.
+- Execution-safety and blast-radius controls with preserved human approval gates.
+- Bounded correction and canonical artifact reconciliation.
+- DKF Design Authority and `design.md` governance.
+- DK Intelligence & Memory and DK Control Center.
+- Numbered Decision Interface and structured suggestion promotion.
+- **Secrets & Configuration Readiness Gate** (v0.11.0): fail-closed configuration handling, zero-credential AI-context exposure, Git tracking protection and release blocking for unresolved release-critical configuration.
+- **Live UI Preview & Visual Verification** (v0.11.1): UI-context preview arming, declared dev-server start/reuse, provider-neutral browser opening, ownership-safe shutdown and VERIFY-stage browser evidence.
+- **Token & Context Efficiency Hardening** (v0.11.1): section-aware source materialization, token profiles, compact role contexts and CI token budgets.
 
-## Key Architecture Invariants
+## Current Open Engineering Work
 
-1. **Guidance is Not Execution**: Next-Step Guidance suggests commands; it does not automatically execute them.
-2. **Failure Overrides Progression**: Failures, test regressions, or active blockers halt forward progression and route to remediation.
-3. **Safety Gates Authoritative**: Consequential actions (e.g. `/dk-ship`) require all human approvals to be satisfied before recommendation.
-4. **Valid Commands Only**: Unregistered or fabricated commands are strictly filtered out by the canonical registry.
-5. **No Intermediate Automation Spam**: Batch/automated workflows suppress intermediate next-step outputs until control returns to the user.
+### Development Modes — Issue #50
 
-## 2026-09-29 Production Readiness Audit (unreleased)
+The original implementation is preserved in historical draft PRs #42 and #43, but those branches predate v0.11.0/v0.11.1 and must not be merged directly.
 
-- `main` and the published stable baseline remain v0.10.0; PR #41 targets v0.10.1 and is draft. No release/tag/npm publication is authorized from a green CI result alone.
-- Audited the Live UI Preview Windows system-browser launcher. The original `cmd.exe /c start` URL path exposed application route/query metacharacters to a command interpreter. On PR #41, regression coverage now requires a direct `rundll32.exe url.dll,FileProtocolHandler` argument-vector invocation; source changed accordingly (commits `bceea90` and `7c37fe2`).
-- Preview startup timeout audit: a live but unready child previously retained process ownership. Added regression coverage and ownership-safe cleanup in PR #41 (commits `933e59d`, `1fdc494`, `ca9bb73`); the correction is not accepted until current-head Ubuntu/Windows CI and real consumer validation pass.
-- Product Owner acceptance still requires actual local Energy Capital dev-server startup, browser open/reuse, and HMR after an edit. CI fixture tests and source/consumer mapping cannot substitute for this observation.
-- Development Modes PR #42 (policy) and stacked PR #43 (initialization/persistence) remain draft and separately validated; increments 003–005 and merge-base integration remain outstanding. Do not silently include incomplete modes work in the v0.10.1 preview release.
-- Re-run Ubuntu/Windows `npm run release:validate` at the latest PR head after any change and again on the final integrated release candidate. Verify npm publication and clean installed-package behavior after authorized release.
+Required completion:
+1. Reconcile and independently verify Increment 001 policy architecture.
+2. Reconcile and independently verify Increment 002 initialization/persistence.
+3. Implement Increment 003: selected mode is consumed by lifecycle, artifact selection, planning/contracts and Autopilot.
+4. Implement Increment 004: mode-aware documentation/artifact behavior.
+5. Implement Increment 005: migrations, cross-mode compatibility and real host acceptance.
+6. Preserve mandatory reliability/safety controls regardless of selected methodology.
+
+### IDEA authority hardening — Issue #51
+
+The supersession audit of PR #35 is complete. Current v0.11.1 retains persistent/fingerprinted Product Owner decisions and fail-closed numbered decision menus, but several older protections are missing or weaker: runtime IDEA workflow persistence, strict requirement-origin transitions, exact pending-interaction fingerprints, append-only replay protection, crash-safe discovery journaling and Idea Brief approval binding to discovery revision. These protections must be ported as bounded current-generation changes; PR #35 itself must not be merged directly.
+
+## Repository Maintenance State
+
+- PR #41 Live UI Preview & Token Efficiency is merged and shipped as v0.11.1.
+- Production-readiness Issue #44 is superseded by the v0.11.1 release plus current Issues #50 and #51.
+- Old release-era draft PRs are archival evidence, not current release candidates.
+- Canonical README, strategy, roadmap, release notes and this memory file must identify v0.11.1 as the current released baseline.
+- Future roadmap version numbers start at **v0.12** because v0.11.0 and v0.11.1 are already released.
+
+## Release Discipline
+
+- Green automated tests alone do not authorize release.
+- Do not claim a capability is shipped until its integration, independent verification, required reviews and Product Owner gates pass.
+- After any release-impacting change, run the full release-validation/package-consumer gates on the final merge base and verify the published distribution.
