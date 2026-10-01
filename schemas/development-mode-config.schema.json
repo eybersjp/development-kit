@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/eybersjp/development-kit/blob/main/schemas/development-mode-config.schema.json",
+  "title": "DKF development mode selection — schema v1",
+  "description": "Discretionary methodology policy input; mandatory controls are not configurable. The runtime resolver also checks that projectOverrides only strengthen custom/profile policy values.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "mode"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "rapid",
+        "balanced",
+        "spec-driven",
+        "doc-driven",
+        "maintenance-evolution"
+      ]
+    },
+    "baseMethodology": {
+      "type": "string",
+      "enum": [
+        "rapid",
+        "balanced",
+        "spec-driven",
+        "doc-driven"
+      ]
+    },
+    "customPolicies": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "planningDepth": {
+          "type": "string",
+          "enum": [
+            "minimal",
+            "standard",
+            "comprehensive"
+          ]
+        },
+        "documentationDepth": {
+          "type": "string",
+          "enum": [
+            "concise",
+            "standard",
+            "comprehensive"
+          ]
+        },
+        "architectureDepth": {
+          "type": "string",
+          "enum": [
+            "lightweight",
+            "core",
+            "comprehensive"
+          ]
+        },
+        "featureSpecifications": {
+          "type": "string",
+          "enum": [
+            "contextual",
+            "standard",
+            "mandatory"
+          ]
+        },
+        "testingDepth": {
+          "type": "string",
+          "enum": [
+            "essential",
+            "standard",
+            "contract",
+            "comprehensive"
+          ]
+        },
+        "documentationMaintenance": {
+          "type": "string",
+          "enum": [
+            "progressive",
+            "incremental",
+            "traceable",
+            "continuous"
+          ]
+        },
+        "governance": {
+          "type": "string",
+          "enum": [
+            "lightweight",
+            "standard",
+            "strict"
+          ]
+        },
+        "ownerAcceptance": {
+          "type": "string",
+          "enum": [
+            "baseline",
+            "per-increment"
+          ]
+        },
+        "contextPacking": {
+          "type": "string",
+          "enum": [
+            "lean",
+            "balanced",
+            "full"
+          ]
+        }
+      }
+    },
+    "projectOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "planningDepth": {
+          "type": "string",
+          "enum": [
+            "minimal",
+            "standard",
+            "comprehensive"
+          ]
+        },
+        "documentationDepth": {
+          "type": "string",
+          "enum": [
+            "concise",
+            "standard",
+            "comprehensive"
+          ]
+        },
+        "architectureDepth": {
+          "type": "string",
+          "enum": [
+            "lightweight",
+            "core",
+            "comprehensive"
+          ]
+        },
+        "featureSpecifications": {
+          "type": "string",
+          "enum": [
+            "contextual",
+            "standard",
+            "mandatory"
+          ]
+        },
+        "testingDepth": {
+          "type": "string",
+          "enum": [
+            "essential",
+            "standard",
+            "contract",
+            "comprehensive"
+          ]
+        },
+        "documentationMaintenance": {
+          "type": "string",
+          "enum": [
+            "progressive",
+            "incremental",
+            "traceable",
+            "continuous"
+          ]
+        },
+        "governance": {
+          "type": "string",
+          "enum": [
+            "lightweight",
+            "standard",
+            "strict"
+          ]
+        },
+        "ownerAcceptance": {
+          "type": "string",
+          "enum": [
+            "baseline",
+            "per-increment"
+          ]
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "maintenance-evolution"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {},
+      "else": {
+        "not": {
+          "required": [
+            "baseMethodology"
+          ]
+        }
+      }
+    }
+  ]
+}

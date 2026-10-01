@@ -1,9 +1,13 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  captureDevelopmentModeSnapshot,
+  validateDevelopmentModeSnapshot,
+} from '../development-modes/integration.mjs';
 
-export const DEVELOPMENT_CONTRACT_SCHEMA_VERSION = '1.1.0';
-export const SUPPORTED_DEVELOPMENT_CONTRACT_SCHEMA_VERSIONS = Object.freeze(['1.0.0', '1.1.0']);
+export const DEVELOPMENT_CONTRACT_SCHEMA_VERSION = '1.2.0';
+export const SUPPORTED_DEVELOPMENT_CONTRACT_SCHEMA_VERSIONS = Object.freeze(['1.0.0', '1.1.0', '1.2.0']);
 export const DEFAULT_CORRECTION_ATTEMPTS = 3;
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -30,6 +34,7 @@ const CONTRACT_KEYS = new Set([
   'correctionPolicy',
   'approvalPolicy',
   'configurationDependencies',
+  'developmentMode',
   'sourceFingerprint',
 ]);
 
@@ -331,6 +336,7 @@ export function createDevelopmentContract({
   task,
   authoritativeSources,
   contractId,
+  developmentMode = null,
   createdAt = new Date().toISOString(),
 } = {}) {
   if (!isPlainObject(task)) throw new ContractValidationError('task must be an object');
@@ -384,6 +390,9 @@ export function createDevelopmentContract({
       maxAttempts: task.correctionPolicy?.maxAttempts ?? DEFAULT_CORRECTION_ATTEMPTS,
     },
     approvalPolicy: isPlainObject(task.approvalPolicy) ? structuredClone(task.approvalPolicy) : {},
+    developmentMode: developmentMode
+      ? structuredClone(developmentMode)
+      : captureDevelopmentModeSnapshot(rootDir),
     sourceFingerprint: computeSourceFingerprint(sources),
   };
 
@@ -516,6 +525,17 @@ export function validateDevelopmentContract(contract) {
 
   if (!isPlainObject(contract.approvalPolicy)) errors.push('approvalPolicy must be an object');
 
+  if (contract.schemaVersion === '1.2.0' && contract.developmentMode === undefined) {
+    errors.push('developmentMode is required for schemaVersion 1.2.0');
+  }
+  if (contract.developmentMode !== undefined) {
+    try {
+      validateDevelopmentModeSnapshot(contract.developmentMode);
+    } catch (error) {
+      errors.push(`Invalid developmentMode snapshot: ${error.message}`);
+    }
+  }
+
   if (contract.configurationDependencies !== undefined) {
     if (!Array.isArray(contract.configurationDependencies)) {
       errors.push('configurationDependencies must be an array');
@@ -591,6 +611,19 @@ export function renderDevelopmentContractMarkdown(contract) {
     '## Acceptance Criteria',
     '',
     ...contract.acceptanceCriteria.map((criterion) => `- **${criterion.id}** — ${criterion.statement}`),
+    '',
+    '## Development Mode',
+    '',
+    ...(contract.developmentMode
+      ? [
+          `- Mode: **${contract.developmentMode.resolved.mode}**`,
+          `- Revision: **${contract.developmentMode.revision}**`,
+          `- Snapshot: \`${contract.developmentMode.fingerprint}\``,
+          ...(contract.developmentMode.resolved.baseMethodology
+            ? [`- Base methodology: **${contract.developmentMode.resolved.baseMethodology}**`]
+            : []),
+        ]
+      : ['- Legacy contract without a mode snapshot']),
     '',
     '## Execution Safety',
     '',

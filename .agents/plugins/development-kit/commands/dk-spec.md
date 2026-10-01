@@ -14,7 +14,7 @@ Creates the minimum required specification artifacts for the approved concept or
 ## Workflow
 
 ### 1. Determine Artifact Level
-Spawn the **artifact-selector-agent** to assess scale and determine the minimum artifact set.
+Read the persisted Development Mode and resolved guidance, then spawn the **artifact-selector-agent** to assess scale and determine the minimum artifact set. Apply the mode as a formality overlay: it may increase required specification/documentation depth but may not reduce the risk-derived minimum or any mandatory DKF control.
 
 ### 2. Create Required Artifacts
 Spawn the **specification-agent** to create the specification artifacts based on the determined artifact level:

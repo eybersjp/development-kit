@@ -29,7 +29,11 @@
   ],
   "properties": {
     "schemaVersion": {
-      "enum": ["1.0.0", "1.1.0"]
+      "enum": [
+        "1.0.0",
+        "1.1.0",
+        "1.2.0"
+      ]
     },
     "contractId": {
       "$ref": "#/$defs/identifier"
@@ -54,10 +58,17 @@
     "scope": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["in", "out"],
+      "required": [
+        "in",
+        "out"
+      ],
       "properties": {
-        "in": { "$ref": "#/$defs/stringArray" },
-        "out": { "$ref": "#/$defs/stringArray" }
+        "in": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "out": {
+          "$ref": "#/$defs/stringArray"
+        }
       }
     },
     "authoritativeSources": {
@@ -66,63 +77,150 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["path", "kind", "authority", "sections", "fingerprint"],
+        "required": [
+          "path",
+          "kind",
+          "authority",
+          "sections",
+          "fingerprint"
+        ],
         "properties": {
-          "path": { "type": "string", "minLength": 1 },
-          "kind": { "type": "string", "minLength": 1 },
-          "authority": { "enum": ["required", "supporting"] },
-          "sections": { "$ref": "#/$defs/stringArray" },
-          "fingerprint": { "$ref": "#/$defs/sha256" }
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "authority": {
+            "enum": [
+              "required",
+              "supporting"
+            ]
+          },
+          "sections": {
+            "$ref": "#/$defs/stringArray"
+          },
+          "fingerprint": {
+            "$ref": "#/$defs/sha256"
+          }
         }
       }
     },
-    "requirements": { "$ref": "#/$defs/constraintArray" },
+    "requirements": {
+      "$ref": "#/$defs/constraintArray"
+    },
     "acceptanceCriteria": {
       "type": "array",
       "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "statement", "source", "verificationType", "requiredEvidence"],
+        "required": [
+          "id",
+          "statement",
+          "source",
+          "verificationType",
+          "requiredEvidence"
+        ],
         "properties": {
-          "id": { "$ref": "#/$defs/identifier" },
-          "statement": { "type": "string", "minLength": 1 },
-          "source": { "type": ["string", "null"] },
-          "verificationType": { "$ref": "#/$defs/stringArray" },
-          "requiredEvidence": { "type": "boolean" }
+          "id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verificationType": {
+            "$ref": "#/$defs/stringArray"
+          },
+          "requiredEvidence": {
+            "type": "boolean"
+          }
         }
       }
     },
-    "architectureConstraints": { "$ref": "#/$defs/constraintArray" },
-    "designConstraints": { "$ref": "#/$defs/constraintArray" },
-    "securityConstraints": { "$ref": "#/$defs/constraintArray" },
+    "architectureConstraints": {
+      "$ref": "#/$defs/constraintArray"
+    },
+    "designConstraints": {
+      "$ref": "#/$defs/constraintArray"
+    },
+    "securityConstraints": {
+      "$ref": "#/$defs/constraintArray"
+    },
     "executionSafety": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["resourceScope", "destructiveOperations", "remoteMutation"],
+      "required": [
+        "resourceScope",
+        "destructiveOperations",
+        "remoteMutation"
+      ],
       "properties": {
-        "resourceScope": { "enum": ["project-only", "declared-resources"] },
-        "destructiveOperations": { "enum": ["forbidden", "explicit-approval"] },
-        "remoteMutation": { "enum": ["forbidden", "explicit-contract", "allowed"] }
+        "resourceScope": {
+          "enum": [
+            "project-only",
+            "declared-resources"
+          ]
+        },
+        "destructiveOperations": {
+          "enum": [
+            "forbidden",
+            "explicit-approval"
+          ]
+        },
+        "remoteMutation": {
+          "enum": [
+            "forbidden",
+            "explicit-contract",
+            "allowed"
+          ]
+        }
       }
     },
     "risk": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["level", "reasons"],
+      "required": [
+        "level",
+        "reasons"
+      ],
       "properties": {
-        "level": { "type": "integer", "minimum": 0, "maximum": 4 },
-        "reasons": { "$ref": "#/$defs/stringArray" }
+        "level": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "reasons": {
+          "$ref": "#/$defs/stringArray"
+        }
       }
     },
-    "requiredVerification": { "$ref": "#/$defs/stringArray" },
-    "requiredReviewers": { "$ref": "#/$defs/stringArray" },
+    "requiredVerification": {
+      "$ref": "#/$defs/stringArray"
+    },
+    "requiredReviewers": {
+      "$ref": "#/$defs/stringArray"
+    },
     "correctionPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["maxAttempts"],
+      "required": [
+        "maxAttempts"
+      ],
       "properties": {
-        "maxAttempts": { "type": "integer", "minimum": 0 }
+        "maxAttempts": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "approvalPolicy": {
@@ -132,17 +230,386 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "name", "kind", "requiredBy"],
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "requiredBy"
+        ],
         "properties": {
-          "id": { "$ref": "#/$defs/identifier" },
-          "name": { "type": "string", "minLength": 1 },
-          "kind": { "enum": ["secret", "public_config", "identifier", "generated_secret", "manual_setup"] },
-          "provider": { "type": "string" },
-          "requiredBy": { "enum": ["implementation", "runtime-verification", "release"] }
+          "id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "enum": [
+              "secret",
+              "public_config",
+              "identifier",
+              "generated_secret",
+              "manual_setup"
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "requiredBy": {
+            "enum": [
+              "implementation",
+              "runtime-verification",
+              "release"
+            ]
+          }
         }
       }
     },
-    "sourceFingerprint": { "$ref": "#/$defs/sha256" }
+    "sourceFingerprint": {
+      "$ref": "#/$defs/sha256"
+    },
+    "developmentMode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "revision",
+        "selection",
+        "resolved",
+        "source",
+        "fingerprint"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source": {
+          "enum": [
+            "persisted",
+            "backward-compatible-default"
+          ]
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "selection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schemaVersion",
+            "mode"
+          ],
+          "properties": {
+            "schemaVersion": {
+              "const": 1
+            },
+            "mode": {
+              "enum": [
+                "rapid",
+                "balanced",
+                "spec-driven",
+                "doc-driven",
+                "maintenance-evolution"
+              ]
+            },
+            "baseMethodology": {
+              "enum": [
+                "rapid",
+                "balanced",
+                "spec-driven",
+                "doc-driven"
+              ]
+            },
+            "customPolicies": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "planningDepth": {
+                  "enum": [
+                    "minimal",
+                    "standard",
+                    "comprehensive"
+                  ]
+                },
+                "documentationDepth": {
+                  "enum": [
+                    "concise",
+                    "standard",
+                    "comprehensive"
+                  ]
+                },
+                "architectureDepth": {
+                  "enum": [
+                    "lightweight",
+                    "core",
+                    "comprehensive"
+                  ]
+                },
+                "featureSpecifications": {
+                  "enum": [
+                    "contextual",
+                    "standard",
+                    "mandatory"
+                  ]
+                },
+                "testingDepth": {
+                  "enum": [
+                    "essential",
+                    "standard",
+                    "contract",
+                    "comprehensive"
+                  ]
+                },
+                "documentationMaintenance": {
+                  "enum": [
+                    "progressive",
+                    "incremental",
+                    "traceable",
+                    "continuous"
+                  ]
+                },
+                "governance": {
+                  "enum": [
+                    "lightweight",
+                    "standard",
+                    "strict"
+                  ]
+                },
+                "ownerAcceptance": {
+                  "enum": [
+                    "baseline",
+                    "per-increment"
+                  ]
+                },
+                "contextPacking": {
+                  "enum": [
+                    "lean",
+                    "balanced",
+                    "full"
+                  ]
+                }
+              }
+            },
+            "projectOverrides": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "planningDepth": {
+                  "enum": [
+                    "minimal",
+                    "standard",
+                    "comprehensive"
+                  ]
+                },
+                "documentationDepth": {
+                  "enum": [
+                    "concise",
+                    "standard",
+                    "comprehensive"
+                  ]
+                },
+                "architectureDepth": {
+                  "enum": [
+                    "lightweight",
+                    "core",
+                    "comprehensive"
+                  ]
+                },
+                "featureSpecifications": {
+                  "enum": [
+                    "contextual",
+                    "standard",
+                    "mandatory"
+                  ]
+                },
+                "testingDepth": {
+                  "enum": [
+                    "essential",
+                    "standard",
+                    "contract",
+                    "comprehensive"
+                  ]
+                },
+                "documentationMaintenance": {
+                  "enum": [
+                    "progressive",
+                    "incremental",
+                    "traceable",
+                    "continuous"
+                  ]
+                },
+                "governance": {
+                  "enum": [
+                    "lightweight",
+                    "standard",
+                    "strict"
+                  ]
+                },
+                "ownerAcceptance": {
+                  "enum": [
+                    "baseline",
+                    "per-increment"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "resolved": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "baseMethodology",
+            "existingProjectAuditRequired",
+            "effectivePolicies",
+            "policySources",
+            "mandatoryControls"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "rapid",
+                "balanced",
+                "spec-driven",
+                "doc-driven",
+                "maintenance-evolution"
+              ]
+            },
+            "baseMethodology": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "enum": [
+                    "rapid",
+                    "balanced",
+                    "spec-driven",
+                    "doc-driven"
+                  ]
+                }
+              ]
+            },
+            "existingProjectAuditRequired": {
+              "type": "boolean"
+            },
+            "effectivePolicies": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "planningDepth",
+                "documentationDepth",
+                "architectureDepth",
+                "featureSpecifications",
+                "testingDepth",
+                "documentationMaintenance",
+                "governance",
+                "ownerAcceptance",
+                "contextPacking"
+              ],
+              "properties": {
+                "planningDepth": {
+                  "enum": [
+                    "minimal",
+                    "standard",
+                    "comprehensive"
+                  ]
+                },
+                "documentationDepth": {
+                  "enum": [
+                    "concise",
+                    "standard",
+                    "comprehensive"
+                  ]
+                },
+                "architectureDepth": {
+                  "enum": [
+                    "lightweight",
+                    "core",
+                    "comprehensive"
+                  ]
+                },
+                "featureSpecifications": {
+                  "enum": [
+                    "contextual",
+                    "standard",
+                    "mandatory"
+                  ]
+                },
+                "testingDepth": {
+                  "enum": [
+                    "essential",
+                    "standard",
+                    "contract",
+                    "comprehensive"
+                  ]
+                },
+                "documentationMaintenance": {
+                  "enum": [
+                    "progressive",
+                    "incremental",
+                    "traceable",
+                    "continuous"
+                  ]
+                },
+                "governance": {
+                  "enum": [
+                    "lightweight",
+                    "standard",
+                    "strict"
+                  ]
+                },
+                "ownerAcceptance": {
+                  "enum": [
+                    "baseline",
+                    "per-increment"
+                  ]
+                },
+                "contextPacking": {
+                  "enum": [
+                    "lean",
+                    "balanced",
+                    "full"
+                  ]
+                }
+              }
+            },
+            "policySources": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              },
+              "required": [
+                "planningDepth",
+                "documentationDepth",
+                "architectureDepth",
+                "featureSpecifications",
+                "testingDepth",
+                "documentationMaintenance",
+                "governance",
+                "ownerAcceptance",
+                "contextPacking"
+              ]
+            },
+            "mandatoryControls": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    }
   },
   "$defs": {
     "identifier": {
@@ -155,17 +622,44 @@
     },
     "stringArray": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 },
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
       "uniqueItems": true
     },
     "constraintArray": {
       "type": "array",
       "items": {
         "anyOf": [
-          { "type": "string", "minLength": 1 },
-          { "type": "object" }
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "object"
+          }
         ]
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schemaVersion": {
+            "const": "1.2.0"
+          }
+        },
+        "required": [
+          "schemaVersion"
+        ]
+      },
+      "then": {
+        "required": [
+          "developmentMode"
+        ]
+      }
+    }
+  ]
 }

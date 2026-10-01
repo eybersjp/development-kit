@@ -42,6 +42,7 @@
 * [Choosing the Correct Command](02-user-guide/choosing-the-correct-command.md)
 * [Command Workflow Recipes](02-user-guide/command-workflow-recipes.md)
 * [Working with Existing Projects](02-user-guide/working-with-existing-projects.md)
+* [Development Modes](02-user-guide/development-modes.md)
 * [Starting New Projects](02-user-guide/starting-new-projects.md)
 * [Recovering from Failed Workflows](02-user-guide/recovering-from-failed-workflows.md)
 * [Troubleshooting](02-user-guide/troubleshooting.md)
@@ -229,6 +230,7 @@
 * [DK Reliability Control-Plane Amendment (v0.9)](04-architecture/dk-reliability-control-plane-amendment.md)
 * [DK Live UI Preview & Visual Verification Specification (v0.10.1)](04-architecture/dk-live-ui-preview-visual-verification-specification.md)
 * [DK Token & Context Efficiency Hardening Specification (v0.10.1)](04-architecture/dk-token-context-efficiency-hardening-specification.md)
+* [DKF Development Modes — v0.11.1 Integration Specification](04-architecture/dkf-development-modes-v0.11.1-integration.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)

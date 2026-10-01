@@ -125,7 +125,7 @@ test('CFG-INT-01: Plan validator verifies configurationDependencies against avai
   assert.ok(invalidResult.issues.some(i => i.code === 'UNKNOWN_CONFIGURATION_DEPENDENCY'));
 });
 
-test('CFG-INT-02: Contract creation supports schemaVersion 1.1.0 with configurationDependencies', (t) => {
+test('CFG-INT-02: Current Contract schema supports configurationDependencies and legacy 1.1 remains readable', (t) => {
   const root = makeTempProject(t);
   const task = baseTask({
     configurationDependencies: [
@@ -147,14 +147,18 @@ test('CFG-INT-02: Contract creation supports schemaVersion 1.1.0 with configurat
       { path: 'docs/spec.md', kind: 'specification', authority: 'required' },
       { path: 'docs/architecture.md', kind: 'architecture', authority: 'required' },
     ],
-    schemaVersion: '1.1.0',
     createdAt: '2026-09-01T12:00:00.000Z',
   });
 
-  assert.equal(contract.schemaVersion, '1.1.0');
+  assert.equal(contract.schemaVersion, '1.2.0');
   assert.equal(contract.configurationDependencies.length, 1);
   assert.equal(contract.configurationDependencies[0].name, 'STRIPE_SECRET_KEY');
   assert.equal(validateDevelopmentContract(contract), true);
+
+  const legacy = structuredClone(contract);
+  legacy.schemaVersion = '1.1.0';
+  delete legacy.developmentMode;
+  assert.equal(validateDevelopmentContract(legacy), true);
 });
 
 test('CFG-INT-03: Acceptance engine blocks acceptance when configuration action is required or invalid', (t) => {

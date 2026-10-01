@@ -17,13 +17,14 @@ Break the approved solution into small, independently verifiable tasks ordered b
 
 ## Process
 
-1. Read approved specification, architecture and Design Authority where applicable.
-2. Decompose by logical responsibility and independently testable outcomes.
-3. Order hard dependencies and risk-first work.
-4. Produce the human-readable PLAN and machine-readable task model.
-5. Validate task count, IDs, dependencies/cycles, dependency edges, ownership and criterion coverage through `node scripts/orchestration.mjs --operation=plan-validate`.
-6. Correct every computed issue before Product Owner approval.
-7. For later PLAN feedback, use canonical amendment/reconciliation rather than replaying a stale stage draft.
+1. Read approved specification, architecture, Design Authority where applicable, and the bound Development Mode guidance.
+2. Scale planning, documentation and verification detail according to the mode without reducing required criteria, controls or evidence. Maintenance & Evolution additionally requires repository-audit/impact evidence.
+3. Decompose by logical responsibility and independently testable outcomes.
+4. Order hard dependencies and risk-first work.
+5. Produce the human-readable PLAN and machine-readable task model.
+6. Validate task count, IDs, dependencies/cycles, dependency edges, ownership and criterion coverage through `node scripts/orchestration.mjs --operation=plan-validate`.
+7. Correct every computed issue before Product Owner approval.
+8. For later PLAN feedback, use canonical amendment/reconciliation rather than replaying a stale stage draft.
 
 ## Key Rules
 
