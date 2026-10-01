@@ -16,7 +16,7 @@ export function promoteSuggestionToArtifact({
   action, // 'ACCEPT' | 'DEFER' | 'REJECT'
   targetScope = null,
   decisionId,
-  decisionAuthority = 'Product Owner',
+  decisionAuthority = null,
   reason = null,
   selectedOption = null,
   rootDir = process.cwd(),
