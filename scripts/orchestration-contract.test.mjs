@@ -83,6 +83,10 @@ test('ORCH-001 creates a validated contract with stable evidence boundary and ex
   assert.equal(contract.executionSafety.destructiveOperations, 'explicit-approval');
   assert.equal(contract.executionSafety.remoteMutation, 'explicit-contract');
   assert.equal(contract.acceptanceCriteria.length, 2);
+  assert.equal(contract.schemaVersion, '1.2.0');
+  assert.equal(contract.developmentMode.resolved.mode, 'balanced');
+  assert.equal(contract.developmentMode.source, 'backward-compatible-default');
+  assert.match(contract.developmentMode.fingerprint, /^sha256:[a-f0-9]{64}$/);
   for (const criterion of contract.acceptanceCriteria) {
     assert.match(criterion.id, /^AC-[A-F0-9]{12}$/);
     assert.equal(criterion.requiredEvidence, true);
@@ -264,5 +268,7 @@ test('development-contract JSON schema is packaged as valid JSON and contains sa
   assert.equal(schema.title, 'Development Kit Development Contract');
   assert.ok(schema.required.includes('executionSafety'));
   assert.ok(schema.required.includes('sourceFingerprint'));
+  assert.ok(schema.properties.schemaVersion.enum.includes('1.2.0'));
+  assert.ok(schema.properties.developmentMode);
   assert.equal(schema.properties.status.const, 'approved');
 });
