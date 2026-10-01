@@ -251,11 +251,6 @@ export function loadDiscoveryState(rootDir = process.cwd()) {
     state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
     validateDiscoveryState(state);
   } catch (error) {
-    if (journal.entries.length > 0) {
-      const recovered = structuredClone(journal.entries.at(-1).state);
-      writeState(rootDir, recovered);
-      return recovered;
-    }
     if (error instanceof IdeaDiscoveryError) throw error;
     fail(`Unable to load discovery state: ${error.message}`, 'DK_IDEA_DISCOVERY_CORRUPT');
   }
