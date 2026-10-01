@@ -137,7 +137,7 @@ The Authority Graph can block acceptance when requirements are unverified, crite
 
 ## What DKF provides today
 
-| Capability | Current v0.10 behavior |
+| Capability | Current v0.11.1 behavior |
 |---|---|
 | **Automated Guided Workflow** | `/dk-autopilot` coordinates the lifecycle and persists progress between sessions. |
 | **Numbered Decision Interface** | Deterministic bounded Product Owner choices and structured suggestion promotion. |
@@ -183,28 +183,32 @@ The long-term architecture focuses on:
 
 Read the full [DKF Strategic Direction](STRATEGY.md).
 
+### Active unreleased work
+
+Development Modes is being reconciled from its original pre-v0.11 branches onto the current v0.11.1 architecture. It remains **unreleased** until all five increments, independent verification, cross-mode compatibility checks, and Product Owner host acceptance are complete. Track the work in [Issue #50](https://github.com/eybersjp/development-kit/issues/50).
+
 ---
 
 ## Roadmap to v1.0
 
 <div align="center">
-<img src="assets/dkf-roadmap.svg" alt="DKF roadmap from v0.10 to v1.0" width="100%">
+<img src="assets/dkf-roadmap.svg" alt="DKF roadmap from v0.11.1 to v1.0" width="100%">
 </div>
 
 | Release | Direction |
 |---|---|
-| **v0.11** | Adaptive Reliability: Change Classification, Policy Engine, Lifecycle Compiler |
-| **v0.12** | DKF Proof: Acceptance Certificates and evidence bundles |
-| **v0.13** | Repository Enforcement: GitHub CI and PR acceptance gates |
-| **v0.14** | Public DKF Reliability Benchmark |
-| **v0.15** | Isolated Execution and execution-provider contract |
-| **v0.16** | Safe Parallelism using dependency and overlap analysis |
-| **v0.17** | Multi-Repository Change Contracts and aggregate acceptance |
-| **v0.18** | Evidence Intelligence and verifier diversity |
-| **v0.19** | Control Center Flight Recorder |
+| **v0.12** | Adaptive Reliability: Change Classification, Policy Engine, Lifecycle Compiler |
+| **v0.13** | DKF Proof: Acceptance Certificates and evidence bundles |
+| **v0.14** | Repository Enforcement: GitHub CI and PR acceptance gates |
+| **v0.15** | Public DKF Reliability Benchmark |
+| **v0.16** | Isolated Execution and execution-provider contract |
+| **v0.17** | Safe Parallelism using dependency and overlap analysis |
+| **v0.18** | Multi-Repository Change Contracts and aggregate acceptance |
+| **v0.19** | Evidence Intelligence and verifier diversity |
+| **v0.20** | Control Center Flight Recorder |
 | **v1.0** | Proven Reliability Release |
 
-These are **planned capabilities**, not claims about the current v0.10 release.
+These are **planned capabilities**, not claims about the current v0.11.1 release.
 
 See [ROADMAP.md](ROADMAP.md) for scope and release thresholds.
 
@@ -212,7 +216,7 @@ See [ROADMAP.md](ROADMAP.md) for scope and release thresholds.
 
 ## Automated guided workflow
 
-The current v0.10 lifecycle remains:
+The current v0.11.1 lifecycle remains:
 
 ```text
 UNDERSTAND -> DEFINE -> DESIGN -> PLAN -> IMPLEMENT
@@ -227,7 +231,7 @@ Start with:
 
 DKF selects the next lifecycle action, routes the appropriate command, agent, and skills, records progress, and stops when it needs a material decision, missing evidence, or approval.
 
-The fixed universal lifecycle remains the **current v0.10 behavior**. The planned v0.11 Adaptive Reliability release will evolve this into a policy-driven compiled lifecycle while preserving deterministic mandatory controls.
+The fixed universal lifecycle remains the **current v0.11.1 behavior**. Adaptive Reliability is planned for v0.12 and will evolve this into a policy-driven compiled lifecycle while preserving deterministic mandatory controls.
 
 Manual commands remain available at every stage.
 
