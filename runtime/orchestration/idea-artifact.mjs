@@ -88,7 +88,8 @@ function validateArtifactState(state) {
     for (const field of ['artifactFingerprint', 'discoveryFingerprint', 'designFingerprint', 'sourceFingerprint']) {
       if (!/^sha256:[a-f0-9]{64}$/.test(state.record[field] || '')) fail(`Invalid ${field}`, 'DK_IDEA_ARTIFACT_STATE_CORRUPT');
     }
-    if (!Number.isSafeInteger(state.record.discoveryRevision) || state.record.discoveryRevision < 0) fail('Invalid discoveryRevision', 'DK_IDEA_ARTIFACT_STATE_CORRUPT');\n    if (!Number.isSafeInteger(state.record.designRevision) || state.record.designRevision < 0) fail('Invalid designRevision', 'DK_IDEA_ARTIFACT_STATE_CORRUPT');
+    if (!Number.isSafeInteger(state.record.discoveryRevision) || state.record.discoveryRevision < 0) fail('Invalid discoveryRevision', 'DK_IDEA_ARTIFACT_STATE_CORRUPT');
+    if (!Number.isSafeInteger(state.record.designRevision) || state.record.designRevision < 0) fail('Invalid designRevision', 'DK_IDEA_ARTIFACT_STATE_CORRUPT');
   }
   for (const approval of state.approvals) {
     if (approval.authority !== 'PRODUCT_OWNER') fail('Idea Brief approval lacks Product Owner authority', 'DK_IDEA_ARTIFACT_STATE_CORRUPT');
