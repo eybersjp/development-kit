@@ -92,6 +92,9 @@ jobs:
       - name: Validate v0.12 Cost Observatory increment
         run: npm run cost-observatory:test
 
+      - name: Validate v0.12 Workspace Target Engine increment
+        run: npm run workspace-targets:test
+
       - name: Validate Design Authority governance
         run: npm run design-authority:validate
 
