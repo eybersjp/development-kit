@@ -30,5 +30,6 @@ desktop.ini
 .development-kit/runs/
 .development-kit/decisions/
 .development-kit/secrets/
+.development-kit/telemetry/
 freebuff-chat-*.md
 

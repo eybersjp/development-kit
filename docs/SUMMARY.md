@@ -191,6 +191,7 @@
 * [orchestration](03-reference/scripts/orchestration.md)
 * [phase01-scale-context-baseline](03-reference/scripts/phase01-scale-context-baseline.md)
 * [phase02-scale-context-plan-validate](03-reference/scripts/phase02-scale-context-plan-validate.md)
+* [phase03-cost-observatory-contract](03-reference/scripts/phase03-cost-observatory-contract.md)
 * [sync-plugin](03-reference/scripts/sync-plugin.md)
 * [ui-preview](03-reference/scripts/ui-preview.md)
 * [token-audit](03-reference/scripts/token-audit.md)
@@ -240,6 +241,8 @@
 * [DKF Scale, Context & Iteration — v0.12 Technical Design](04-architecture/dkf-scale-context-iteration-v0.12-technical-design.md)
 * [DKF Scale, Context & Iteration — v0.12 Implementation PLAN](04-architecture/dkf-scale-context-iteration-v0.12-implementation-plan.md)
 * [DKF Scale, Context & Iteration — Phase 2 Validation](04-architecture/dkf-scale-context-iteration-phase02-validation.md)
+* [DKF Cost Observatory — T01 Review](04-architecture/dkf-cost-observatory-t01-review.md)
+* [DKF Scale, Context & Iteration — Phase 3 T01 Validation](04-architecture/dkf-scale-context-iteration-phase03-t01-validation.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)
