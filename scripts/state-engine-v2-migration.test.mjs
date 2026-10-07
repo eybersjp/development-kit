@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+  appendEntityState,
   canonicalStateJson,
   countStateEngineFiles,
   getStateEnginePaths,
@@ -169,6 +170,36 @@ test('AC-015 unmigrated legacy Autopilot projects remain on legacy state until m
   assert.equal(fs.existsSync(path.join(rootDir, '.development-kit', 'state')), false);
 });
 
+test('AC-015 partial V2 import cannot cut over an existing legacy project before MIGRATION_COMPLETED', (t) => {
+  const rootDir = tempProject(t);
+  const legacy = writeLegacyAutopilot(rootDir, 2);
+
+  const partial = workflowState(2, legacy.workflowId);
+  partial.currentStage = 'REVIEW';
+  appendEntityState({
+    rootDir,
+    entityType: 'autopilot-workflow',
+    entityId: legacy.workflowId,
+    state: partial,
+    actorClass: 'legacy-migration',
+    timestamp: partial.updatedAt,
+  });
+
+  // A partially imported V2 entity exists, but there is no verified
+  // MIGRATION_COMPLETED event. The legacy store must therefore remain canonical.
+  const beforeCompletion = getCurrentState(rootDir);
+  assert.equal(beforeCompletion.currentStage, legacy.current.currentStage);
+  assert.notEqual(beforeCompletion.currentStage, partial.currentStage);
+
+  const nextLegacy = workflowState(3, legacy.workflowId);
+  saveStateRevision(nextLegacy, rootDir);
+  assert.equal(
+    fs.existsSync(path.join(legacy.stateDir, 'revision-000003.json')),
+    true,
+  );
+  assert.equal(getCurrentState(rootDir).stateRevision, 3);
+});
+
 test('AC-015 legacy migration is idempotent, semantically equivalent, and retains recoverable legacy state', (t) => {
   const rootDir = tempProject(t);
   const legacy = writeLegacyAutopilot(rootDir, 26);
@@ -257,6 +288,36 @@ test('AC-015 corrupted legacy input fails closed before State Engine cutover', (
   );
   assert.equal(fs.existsSync(path.join(rootDir, '.development-kit', 'state')), false);
   assert.equal(fs.existsSync(path.join(legacy.stateDir, 'current.json')), true);
+});
+
+test('AC-015 partial orchestration import cannot override legacy current state before verified migration completion', (t) => {
+  const rootDir = tempProject(t);
+  const legacy = writeLegacyRun(rootDir);
+
+  const partial = structuredClone(legacy.current);
+  partial.state = 'BLOCKED';
+  partial.acceptanceState = 'BLOCKED';
+  appendEntityState({
+    rootDir,
+    entityType: 'orchestration-run',
+    entityId: partial.contractId + '/' + partial.runId,
+    state: partial,
+    refs: {
+      contractId: partial.contractId,
+      taskId: partial.taskId,
+      runId: partial.runId,
+    },
+    actorClass: 'legacy-migration',
+    timestamp: partial.updatedAt,
+  });
+
+  const current = loadCurrentRunState(
+    legacy.current.contractId,
+    legacy.current.runId,
+    rootDir,
+  );
+  assert.equal(current.state, 'ACCEPTED');
+  assert.equal(current.acceptanceState, 'ACCEPTED');
 });
 
 test('AC-015 orchestration migration preserves ACCEPTED meaning and switches current-state reads to V2', (t) => {
