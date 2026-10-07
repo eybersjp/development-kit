@@ -874,6 +874,18 @@ export function loadLatestEntityState(type, rootDir = process.cwd()) {
   return structuredClone(records[0].record.state);
 }
 
+export function hasCompletedStateMigration(rootDir = process.cwd(), sourceFingerprint = null) {
+  const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true });
+  const migrations = snapshot?.migrations ?? [];
+  if (sourceFingerprint === null || sourceFingerprint === undefined) {
+    return migrations.some((migration) => migration.semanticEquivalence === true);
+  }
+  return migrations.some((migration) => (
+    migration.semanticEquivalence === true
+    && migration.sourceFingerprint === sourceFingerprint
+  ));
+}
+
 export function queryStateIndex({
   rootDir = process.cwd(),
   contractId = null,
