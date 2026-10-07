@@ -10,6 +10,7 @@ import {
   checkContextCacheEntryStaleness,
   loadContextCacheEntry,
   resolveRepositoryContextCache,
+  validateContextCacheEntry,
 } from './context-cache.mjs';
 import {
   getAffectedTargetClosure,
@@ -151,8 +152,18 @@ function changedFileRefs(rootDir, changedFiles = []) {
     if (!fs.existsSync(absolute)) {
       return Object.freeze({ path: file, status: 'deleted-or-missing', fingerprint: null });
     }
-    if (!fs.statSync(absolute).isFile()) {
+    const stat = fs.lstatSync(absolute);
+    if (stat.isSymbolicLink()) {
+      throw new ExecutionCapsuleError(`Changed path may not be a symbolic link: ${file}`);
+    }
+    if (!stat.isFile()) {
       throw new ExecutionCapsuleError(`Changed path is not a file: ${file}`);
+    }
+    const rootReal = fs.realpathSync(root);
+    const fileReal = fs.realpathSync(absolute);
+    const realRelative = path.relative(rootReal, fileReal);
+    if (realRelative === '..' || realRelative.startsWith(`..${path.sep}`) || path.isAbsolute(realRelative)) {
+      throw new ExecutionCapsuleError(`Changed file resolves outside project root: ${file}`);
     }
     const content = fs.readFileSync(absolute);
     return Object.freeze({ path: file, status: 'present', fingerprint: `sha256:${createHash('sha256').update(content).digest('hex')}` });
@@ -321,6 +332,11 @@ export function createExecutionCapsule({
   timestamp(createdAt, 'createdAt');
 
   const entry = cacheResolution.entry;
+  try {
+    validateContextCacheEntry(entry);
+  } catch (error) {
+    throw new ExecutionCapsuleError(`cacheResolution entry is invalid: ${error.message}`);
+  }
   const targetDelta = resolveTargetDelta(contract, rootDir, changedFiles, entry);
   const upstream = normalizeUpstreamTasks(upstreamAcceptedTasks);
   const runtimeFacts = normalizeRuntimeFacts(verifiedRuntimeFacts);
@@ -379,11 +395,20 @@ export function prepareExecutionCapsule({
   requiredGateProfileIds = [],
   createdAt = new Date().toISOString(),
 } = {}) {
+  const changedRefs = changedFileRefs(rootDir, changedFiles);
+  const changedPresent = changedRefs
+    .filter((ref) => ref.status === 'present')
+    .map((ref) => ref.path);
+  const effectiveRelevantFiles = [...new Set([
+    ...stringArray(relevantFiles, 'relevantFiles').map((file) => normalizeRelativePath(file, 'relevant file')),
+    ...changedPresent,
+  ])].sort();
+
   const cacheResolution = resolveRepositoryContextCache({
     contract,
     rootDir,
     targetIds,
-    relevantFiles,
+    relevantFiles: effectiveRelevantFiles,
     relevantTests,
     gateProfileRevision,
     createdAt,
@@ -464,7 +489,7 @@ export function checkExecutionCapsuleStaleness({
     changes.push({ code: 'CAPSULE_CACHE_ENTRY_MISSING' });
   } else {
     try {
-      const entry = loadContextCacheEntry(cacheAbsolute);
+      const entry = loadContextCacheEntry(cacheAbsolute, rootDir);
       if (entry.entryFingerprint !== capsule.repositoryContext.entryFingerprint) {
         changes.push({
           code: 'CAPSULE_CACHE_ENTRY_CHANGED',
