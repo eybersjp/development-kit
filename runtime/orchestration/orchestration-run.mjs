@@ -8,6 +8,7 @@ import { getRunDirectory } from './evidence-store.mjs';
 import {
   appendEntityState,
   canonicalStateJson,
+  hasCompletedStateMigration,
   isStateEngineV2Active,
   loadEntityState,
 } from './state-engine-v2.mjs';
@@ -81,7 +82,7 @@ function v2RunState(contractId, runId, rootDir) {
 
 function shouldUseV2RunState(contractId, runId, rootDir) {
   if (!legacyRunStateExists(contractId, runId, rootDir)) return true;
-  return v2RunState(contractId, runId, rootDir) !== null;
+  return hasCompletedStateMigration(rootDir) && v2RunState(contractId, runId, rootDir) !== null;
 }
 
 export function createOrchestrationRun({
