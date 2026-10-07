@@ -168,6 +168,73 @@ test('AC-012 canonical history detects mutation and reordering', (t) => {
   assert.throws(() => loadCanonicalEvents(rootDir), /First state event sequence|sequence/i);
 });
 
+test('AC-012 canonical tail truncation fails closed when the materialized snapshot witnesses later history', (t) => {
+  const rootDir = tempProject(t);
+  appendEntityState({
+    rootDir,
+    entityType: 'generic-state',
+    entityId: 'tail-witness',
+    state: { stateRevision: 1, value: 1 },
+    actorClass: 'test',
+    timestamp: '2026-10-07T18:21:00.000Z',
+  });
+  appendEntityState({
+    rootDir,
+    entityType: 'generic-state',
+    entityId: 'tail-witness',
+    state: { stateRevision: 2, value: 2 },
+    actorClass: 'test',
+    timestamp: '2026-10-07T18:21:01.000Z',
+  });
+
+  const paths = getStateEnginePaths(rootDir);
+  const lines = fs.readFileSync(paths.events, 'utf8').trim().split(/\r?\n/);
+  assert.equal(lines.length, 2);
+
+  // Simulate loss/removal of the canonical tail while retaining the previously
+  // materialized snapshot as an integrity witness.
+  fs.writeFileSync(paths.events, lines[0] + '\n', 'utf8');
+
+  assert.throws(
+    () => loadStateSnapshot(rootDir, { rebuildIfNeeded: true }),
+    /history appears truncated/i,
+  );
+});
+
+test('State Engine rejects a state-root symlink or junction that resolves outside the project', (t) => {
+  const rootDir = tempProject(t, 'dk-state-realpath-');
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'dk-state-outside-'));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+
+  const dkDir = path.join(rootDir, '.development-kit');
+  fs.mkdirSync(dkDir, { recursive: true });
+  const statePath = path.join(dkDir, 'state');
+
+  try {
+    fs.symlinkSync(outside, statePath, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+      t.skip('Host does not permit directory symlink/junction creation');
+      return;
+    }
+    throw error;
+  }
+
+  assert.throws(
+    () => appendEntityState({
+      rootDir,
+      entityType: 'generic-state',
+      entityId: 'escape-attempt',
+      state: { stateRevision: 1, value: true },
+      actorClass: 'test',
+      timestamp: '2026-10-07T18:22:00.000Z',
+    }),
+    /resolves outside project root/,
+  );
+
+  assert.equal(fs.readdirSync(outside).length, 0);
+});
+
 test('AC-013 materialized snapshot deletion/corruption rebuilds from canonical history', (t) => {
   const rootDir = tempProject(t);
   const state = workflowState(1);
