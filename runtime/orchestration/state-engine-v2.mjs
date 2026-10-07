@@ -231,9 +231,21 @@ export function ensureStateEngineLayout(rootDir = process.cwd()) {
 
 export function isStateEngineV2Active(rootDir = process.cwd()) {
   const paths = statePaths(rootDir);
-  if (!fs.existsSync(paths.schema) || !fs.existsSync(paths.events)) return false;
+  if (!fs.existsSync(paths.stateRoot)) return false;
+
+  const schemaExists = fs.existsSync(paths.schema);
+  const eventsExist = fs.existsSync(paths.events);
+  if (!schemaExists && !eventsExist) return false;
+  if (!schemaExists || !eventsExist) {
+    throw new StateEngineError('State Engine V2 layout is incomplete');
+  }
+
   const expectedSchema = stablePretty(schemaDocument());
-  return fs.readFileSync(paths.schema, 'utf8') === expectedSchema;
+  const actualSchema = fs.readFileSync(paths.schema, 'utf8');
+  if (actualSchema !== expectedSchema) {
+    throw new StateEngineError('State Engine schema.json does not match the runtime schema contract');
+  }
+  return true;
 }
 
 function emptySnapshot() {
