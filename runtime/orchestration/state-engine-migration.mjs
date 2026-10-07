@@ -214,6 +214,13 @@ function autopilotHistory(rootDir) {
     throw new StateMigrationError('Legacy Autopilot current revision file is missing');
   }
 
+  for (let revision = 1; revision <= pointer.currentRevision; revision += 1) {
+    const expected = `revision-${String(revision).padStart(6, '0')}.json`;
+    if (!revisionFiles.includes(expected)) {
+      throw new StateMigrationError(`Legacy Autopilot revision chain is missing ${expected}`);
+    }
+  }
+
   const states = [];
   for (const name of revisionFiles) {
     const number = Number(name.match(/(\d{6})/)[1]);
@@ -226,6 +233,9 @@ function autopilotHistory(rootDir) {
     }
     if (state.stateRevision !== number) {
       throw new StateMigrationError(`Legacy Autopilot revision filename/stateRevision mismatch: ${name}`);
+    }
+    if (state.workflowId !== pointer.workflowId) {
+      throw new StateMigrationError(`Legacy Autopilot workflow identity changes within revision chain: ${name}`);
     }
     states.push(state);
   }
@@ -291,6 +301,12 @@ function orchestrationHistories(rootDir) {
           if (pointer.revisionPath !== `state-revisions/${expectedName}` || !names.includes(expectedName)) {
             throw new StateMigrationError('Legacy orchestration current pointer path is inconsistent');
           }
+          for (let revision = 1; revision <= pointer.stateRevision; revision += 1) {
+            const expected = `${String(revision).padStart(8, '0')}.json`;
+            if (!names.includes(expected)) {
+              throw new StateMigrationError(`Legacy orchestration revision chain is missing ${expected}`);
+            }
+          }
 
           for (const name of names) {
             const number = Number(name.replace('.json', ''));
@@ -308,6 +324,9 @@ function orchestrationHistories(rootDir) {
               throw new StateMigrationError('Legacy orchestration revision identity does not match manifest');
             }
             states.push(state);
+          }
+          if (canonicalStateJson(states[0]) !== canonicalStateJson(manifest)) {
+            throw new StateMigrationError('Legacy orchestration revision 1 differs from immutable manifest');
           }
         }
       }
