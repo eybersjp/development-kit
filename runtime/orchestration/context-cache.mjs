@@ -329,9 +329,10 @@ export function captureRepositoryContextInputs({
   });
 }
 
-function entryPayload(entry) {
+function entryFingerprintPayload(entry) {
   const {
     entryFingerprint,
+    createdAt,
     ...payload
   } = entry;
   return payload;
@@ -351,7 +352,7 @@ export function validateContextCacheEntry(entry) {
   if (!plainObject(entry.selector)) throw new ContextCacheError('selector must be an object');
   if (!plainObject(entry.inputs)) throw new ContextCacheError('inputs must be an object');
   if (!Array.isArray(entry.targetFacts)) throw new ContextCacheError('targetFacts must be an array');
-  if (entry.entryFingerprint !== fingerprintObject(entryPayload(entry))) {
+  if (entry.entryFingerprint !== fingerprintObject(entryFingerprintPayload(entry))) {
     throw new ContextCacheError('Context cache entry fingerprint does not match content');
   }
   return true;
@@ -388,7 +389,7 @@ export function createContextCacheEntry({
 
   const entry = {
     ...payload,
-    entryFingerprint: fingerprintObject(payload),
+    entryFingerprint: fingerprintObject(entryFingerprintPayload(payload)),
   };
   validateContextCacheEntry(entry);
   return Object.freeze(entry);
