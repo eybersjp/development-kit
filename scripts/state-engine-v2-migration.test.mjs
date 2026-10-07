@@ -310,6 +310,50 @@ test('AC-015 bundled legacy backup can restore the complete legacy state chain',
   )), true);
 });
 
+test('AC-015 missing Autopilot revision fails closed before migration cutover', (t) => {
+  const rootDir = tempProject(t);
+  const legacy = writeLegacyAutopilot(rootDir, 4);
+  fs.rmSync(path.join(legacy.stateDir, 'revision-000002.json'));
+
+  assert.throws(
+    () => migrateLegacyStateToV2({ rootDir }),
+    /revision chain is missing revision-000002\.json/,
+  );
+  assert.equal(fs.existsSync(path.join(rootDir, '.development-kit', 'state')), false);
+});
+
+test('AC-015 missing orchestration revision and manifest mismatch fail closed', (t) => {
+  const rootDir = tempProject(t);
+  const legacy = writeLegacyRun(rootDir);
+  fs.rmSync(path.join(legacy.runDir, 'state-revisions', '00000002.json'));
+
+  assert.throws(
+    () => migrateLegacyStateToV2({ rootDir }),
+    /revision chain is missing 00000002\.json/,
+  );
+  assert.equal(fs.existsSync(path.join(rootDir, '.development-kit', 'state')), false);
+
+  // Restore revision 2 and then corrupt revision 1 relative to manifest.
+  const run2 = runState(2, 'VERIFYING', 'PENDING');
+  fs.writeFileSync(
+    path.join(legacy.runDir, 'state-revisions', '00000002.json'),
+    JSON.stringify(run2, null, 2) + '\n',
+    'utf8',
+  );
+  const run1 = runState(1, 'IMPLEMENTING', 'PENDING');
+  fs.writeFileSync(
+    path.join(legacy.runDir, 'state-revisions', '00000001.json'),
+    JSON.stringify(run1, null, 2) + '\n',
+    'utf8',
+  );
+
+  assert.throws(
+    () => migrateLegacyStateToV2({ rootDir }),
+    /revision 1 differs from immutable manifest/,
+  );
+  assert.equal(fs.existsSync(path.join(rootDir, '.development-kit', 'state')), false);
+});
+
 test('AC-015 corrupted legacy input fails closed before State Engine cutover', (t) => {
   const rootDir = tempProject(t);
   const legacy = writeLegacyAutopilot(rootDir, 3);
