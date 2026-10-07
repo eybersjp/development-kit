@@ -97,6 +97,26 @@ function resolveProjectPath(rootDir, relativePath, label = 'path') {
   return { normalized, resolved };
 }
 
+function assertRealPathInsideRoot(rootDir, candidatePath, label) {
+  const rootReal = fs.realpathSync(path.resolve(rootDir));
+  const candidateReal = fs.realpathSync(candidatePath);
+  const relative = path.relative(rootReal, candidateReal);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new ContextCacheError(`${label} resolves outside the project root`);
+  }
+  return candidateReal;
+}
+
+function assertCachePathInsideRoot(rootDir, cachePath) {
+  const cacheRoot = path.resolve(rootDir, CONTEXT_CACHE_ROOT);
+  const absolute = path.resolve(cachePath);
+  const relative = path.relative(cacheRoot, absolute);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new ContextCacheError('Context cache path escapes the cache root');
+  }
+  return absolute;
+}
+
 function normalizeFileList(paths = [], label = 'files') {
   if (!Array.isArray(paths)) throw new ContextCacheError(`${label} must be an array`);
   return [...new Set(paths.map((item) => normalizeRelativePath(item, `${label} entry`)))].sort();
@@ -184,6 +204,7 @@ function collectTargetStructure(rootDir, targetId, target, {
   if (!fs.existsSync(targetRoot) || !fs.statSync(targetRoot).isDirectory()) {
     throw new ContextCacheError(`Target path is not an existing directory: ${target.path}`);
   }
+  assertRealPathInsideRoot(rootDir, targetRoot, `target ${targetId} path`);
 
   const files = [];
   const directories = [];
@@ -227,9 +248,17 @@ function collectTargetStructure(rootDir, targetId, target, {
 function fingerprintFiles(rootDir, files, label) {
   return files.map((file) => {
     const { resolved } = resolveProjectPath(rootDir, file, label);
-    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+    if (!fs.existsSync(resolved)) {
       throw new ContextCacheError(`${label} is unavailable: ${file}`);
     }
+    const stat = fs.lstatSync(resolved);
+    if (stat.isSymbolicLink()) {
+      throw new ContextCacheError(`${label} may not be a symbolic link: ${file}`);
+    }
+    if (!stat.isFile()) {
+      throw new ContextCacheError(`${label} is unavailable: ${file}`);
+    }
+    assertRealPathInsideRoot(rootDir, resolved, label);
     return Object.freeze({
       path: file,
       fingerprint: computeFileFingerprint(rootDir, file),
@@ -400,11 +429,12 @@ export function getContextCachePath(rootDir, selector) {
   return cachePathFromSelector(rootDir, selector).cachePath;
 }
 
-export function loadContextCacheEntry(cachePath) {
-  if (!fs.existsSync(cachePath)) return null;
+export function loadContextCacheEntry(cachePath, rootDir = process.cwd()) {
+  const safePath = assertCachePathInsideRoot(rootDir, cachePath);
+  if (!fs.existsSync(safePath)) return null;
   let entry;
   try {
-    entry = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+    entry = JSON.parse(fs.readFileSync(safePath, 'utf8'));
   } catch (error) {
     throw new ContextCacheError(`Context cache entry is not valid JSON: ${error.message}`);
   }
@@ -412,10 +442,11 @@ export function loadContextCacheEntry(cachePath) {
   return entry;
 }
 
-export function persistContextCacheEntry(entry, cachePath) {
+export function persistContextCacheEntry(entry, cachePath, rootDir = process.cwd()) {
   validateContextCacheEntry(entry);
-  atomicWrite(cachePath, `${JSON.stringify(stable(entry), null, 2)}\n`);
-  return { cachePath };
+  const safePath = assertCachePathInsideRoot(rootDir, cachePath);
+  atomicWrite(safePath, `${JSON.stringify(stable(entry), null, 2)}\n`);
+  return { cachePath: safePath };
 }
 
 export function checkContextCacheEntryStaleness({
@@ -494,7 +525,7 @@ export function resolveRepositoryContextCache({
   let invalidationReason = null;
   if (fs.existsSync(cachePath)) {
     try {
-      existing = loadContextCacheEntry(cachePath);
+      existing = loadContextCacheEntry(cachePath, rootDir);
       if (existing.selectorFingerprint !== selectorFingerprint) {
         invalidationReason = 'SELECTOR_FINGERPRINT_CHANGED';
         existing = null;
@@ -530,7 +561,7 @@ export function resolveRepositoryContextCache({
     snapshot,
     createdAt,
   });
-  persistContextCacheEntry(entry, cachePath);
+  persistContextCacheEntry(entry, cachePath, rootDir);
 
   return Object.freeze({
     status: 'MISS',
