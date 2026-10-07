@@ -117,6 +117,16 @@ function statePaths(rootDir = process.cwd()) {
   });
 }
 
+function assertStateRootRealpathSafe(paths) {
+  const rootReal = fs.realpathSync(paths.root);
+  const stateReal = fs.realpathSync(paths.stateRoot);
+  const relative = path.relative(rootReal, stateReal);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new StateEngineError('State Engine root resolves outside project root');
+  }
+  return stateReal;
+}
+
 function atomicWrite(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.tmp-${process.pid}-${crypto.randomUUID()}`;
@@ -198,6 +208,7 @@ function schemaDocument() {
 export function ensureStateEngineLayout(rootDir = process.cwd()) {
   const paths = statePaths(rootDir);
   fs.mkdirSync(paths.stateRoot, { recursive: true });
+  assertStateRootRealpathSafe(paths);
 
   const expectedSchema = stablePretty(schemaDocument());
   if (fs.existsSync(paths.schema)) {
@@ -608,6 +619,32 @@ export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = t
     if (!rebuildIfNeeded) throw error;
     persistDerived(canonical, rootDir);
     return canonical;
+  }
+
+  if (current.lastEventSequence > canonical.lastEventSequence) {
+    throw new StateEngineError(
+      'Canonical state history appears truncated relative to the materialized snapshot',
+      {
+        snapshotSequence: current.lastEventSequence,
+        canonicalSequence: canonical.lastEventSequence,
+        snapshotHash: current.lastEventHash,
+        canonicalHash: canonical.lastEventHash,
+      },
+    );
+  }
+
+  if (
+    current.lastEventSequence === canonical.lastEventSequence
+    && current.lastEventHash !== canonical.lastEventHash
+  ) {
+    throw new StateEngineError(
+      'Canonical state history hash differs from the materialized snapshot integrity witness',
+      {
+        sequence: current.lastEventSequence,
+        snapshotHash: current.lastEventHash,
+        canonicalHash: canonical.lastEventHash,
+      },
+    );
   }
 
   if (stableJson(current) !== stableJson(canonical)) {
