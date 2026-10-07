@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://development-kit.dev/schemas/state-engine-snapshot.schema.json",
+  "title": "Development Kit State Engine V2 Snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "engineSchemaVersion",
+    "lastEventSequence",
+    "lastEventHash",
+    "entities",
+    "migrations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "2.0.0"
+    },
+    "engineSchemaVersion": {
+      "const": "2.0.0"
+    },
+    "lastEventSequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "lastEventHash": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "entities": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "required": [
+            "stateRevision",
+            "state",
+            "lastEventSequence",
+            "lastEventHash",
+            "refs"
+          ],
+          "properties": {
+            "stateRevision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "state": {},
+            "lastEventSequence": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "lastEventHash": {
+              "$ref": "#/$defs/sha256"
+            },
+            "refs": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "migrations": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
+  }
+}
