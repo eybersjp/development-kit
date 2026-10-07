@@ -172,7 +172,7 @@ function recoverLatestLegacyState(rootDir) {
 }
 
 export function recoverLatestValidState(rootDir = process.cwd()) {
-  if (isStateEngineV2Active(rootDir)) {
+  if (shouldUseV2(rootDir) && isStateEngineV2Active(rootDir)) {
     const current = migratedWorkflowState(rootDir);
     if (current) {
       rebuildStateSnapshot(rootDir);
