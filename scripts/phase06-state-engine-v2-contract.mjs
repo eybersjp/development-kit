@@ -20,6 +20,7 @@ const task = {
   scope: {
     in: [
       'runtime/orchestration/state-engine-v2.mjs',
+      'runtime/orchestration/state-engine-migration.mjs',
       'runtime/orchestration/orchestration-run.mjs',
       'runtime/orchestration/index.mjs',
       'runtime/autopilot/state-store.mjs',
