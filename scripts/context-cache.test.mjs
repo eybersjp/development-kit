@@ -6,6 +6,8 @@ import path from 'node:path';
 
 import {
   clearContextCache,
+  loadContextCacheEntry,
+  persistContextCacheEntry,
   resolveRepositoryContextCache,
   validateContextCacheEntry,
 } from '../runtime/orchestration/context-cache.mjs';
@@ -209,6 +211,48 @@ test('cache deletion degrades to a correct miss rather than becoming authority l
   const rebuilt = resolveRepositoryContextCache({ contract: c, rootDir });
   assert.equal(rebuilt.status, 'MISS');
   assert.equal(validateContextCacheEntry(rebuilt.entry), true);
+});
+
+test('cache load/write helpers reject paths outside the project context-cache root', (t) => {
+  const rootDir = tempProject(t);
+  const c = contract(rootDir);
+  const resolved = resolveRepositoryContextCache({ contract: c, rootDir });
+  const outside = path.join(rootDir, 'outside-cache.json');
+
+  assert.throws(
+    () => persistContextCacheEntry(resolved.entry, outside, rootDir),
+    /escapes the cache root/,
+  );
+  fs.writeFileSync(outside, JSON.stringify(resolved.entry), 'utf8');
+  assert.throws(
+    () => loadContextCacheEntry(outside, rootDir),
+    /escapes the cache root/,
+  );
+});
+
+test('persisted configuration-registry changes deterministically invalidate cached context', (t) => {
+  const rootDir = tempProject(t);
+  const c = contract(rootDir);
+  const first = resolveRepositoryContextCache({ contract: c, rootDir });
+  assert.equal(first.status, 'MISS');
+
+  const secretsDir = path.join(rootDir, '.development-kit', 'secrets');
+  fs.mkdirSync(secretsDir, { recursive: true });
+  fs.writeFileSync(path.join(secretsDir, 'requirements.json'), JSON.stringify({
+    schemaVersion: '1.0.0',
+    updatedAt: '2026-10-07T19:30:00.000Z',
+    requirements: [{
+      id: 'CFG-001',
+      name: 'PROJECT_IDENTIFIER',
+      kind: 'identifier',
+      status: 'VALID',
+    }],
+  }, null, 2), 'utf8');
+
+  const second = resolveRepositoryContextCache({ contract: c, rootDir });
+  assert.equal(second.status, 'MISS');
+  assert.equal(second.invalidationReason, 'INPUT_FINGERPRINT_CHANGED');
+  assert.notEqual(second.entry.inputFingerprint, first.entry.inputFingerprint);
 });
 
 test('legacy non-target-aware contracts remain supported through one project-root cache boundary', (t) => {
