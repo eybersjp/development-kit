@@ -189,6 +189,7 @@
 * [install-platform-adapters](03-reference/scripts/install-platform-adapters.md)
 * [next-step](03-reference/scripts/next-step.md)
 * [orchestration](03-reference/scripts/orchestration.md)
+* [phase01-scale-context-baseline](03-reference/scripts/phase01-scale-context-baseline.md)
 * [sync-plugin](03-reference/scripts/sync-plugin.md)
 * [ui-preview](03-reference/scripts/ui-preview.md)
 * [token-audit](03-reference/scripts/token-audit.md)
