@@ -145,3 +145,48 @@ Integrated through PR #54; Issue #51 is completed.
 - DKF remains general-purpose: no application-specific or industry-specific target semantics entered core.
 - v0.12.0 is still unreleased; package version remains 0.11.2; no merge, tag, publish, or release is authorised by T02 acceptance.
 - Next validated increment: **DKF120-T03 — Execution Capsules & Context Cache**. T03 must receive its own Development Contract before implementation and should use target binding where applicable.
+
+## Scale, Context & Iteration — Phase 5 / T03 (7 October 2026)
+
+- **DKF120-T03 — Execution Capsules & Context Cache is accepted for progression** on branch `feature/v0.12-execution-capsules-context-cache`.
+- T03 Development Contract: `INC-DKF120-T03`, schema 1.3.0, risk 3, stale=false.
+- Observed T03 source fingerprint: `sha256:db93ea4d721808aa351bfedffb17d5b65ad6defca34b8322089a18d742602baf`.
+- T03 is target-aware and binds `dkf-framework` as primary/affected/verification target against workspace registry fingerprint `sha256:b5c3d286ab2b1b65c68e9ac17fbb6f45698986449ffb2129fa4666eff60f9c3e`.
+- T03 acceptance criteria: `DKF-120-AC-008`, `009`, `010`, `011`, `035`.
+- Risk-3 derived gates: specification + tests; architecture-reviewer; code-reviewer; security-reviewer; security control domain; no human consequential-action approval.
+- New runtime primitives:
+  - `runtime/orchestration/context-cache.mjs`
+  - `runtime/orchestration/execution-capsule.mjs`
+  - Execution Capsule schema v1
+  - Context Cache Entry schema v1.
+- Canonical cache acceleration area: `.development-kit/cache/context/`. It is disposable, rebuildable acceleration state and is never canonical project/business/specification authority.
+- Execution Capsules are deterministic reference manifests. They carry contract/task/run/lifecycle references; authoritative source paths/selectors/fingerprints without copied source content; target binding; context-cache fingerprints; compact target facts; relevant file/test fingerprints; target/dependency delta; upstream accepted-task references; verified runtime facts with provenance; and future gate/profile references.
+- Runtime facts in capsules are explicitly `non-authoritative-observation`.
+- `buildContextPackage()` remains the authoritative role-context constructor. With a fresh capsule it still independently re-reads authoritative sources, checks whole-file fingerprints, and uses existing section-aware materialisation; repository reorientation may come from the validated capsule.
+- Capsule-aware isolation metadata distinguishes `authoritativeSourcesReRead=true`, `repositoryReRead=false`, `repositoryContextFromCapsule=true`, and `capsuleFreshnessVerified=true`.
+- Deterministic invalidation covers Development Contract/source drift, workspace authority drift, selected-target structural changes, relevant file/test content, persisted Configuration Readiness registry state, missing/changed/corrupt cache entries, and future gate-profile revision input.
+- Present changed files are automatically added to the relevant-file fingerprint set so a caller cannot accidentally omit changed content from invalidation.
+- Changes in an unrelated unselected target do not invalidate an unrelated target-scoped capsule when contract/workspace authority remains unchanged.
+- Cache deletion/corruption causes a safe miss/rebuild; an old capsule referencing missing/stale cache state is rejected rather than trusted.
+- Security hardening confines low-level cache reads/writes to `.development-kit/cache/context/`, rejects relevant/changed-file symlink reads, realpath-checks project boundaries, validates cache-entry integrity before capsule creation, and fails closed on stale/tampered cache state.
+- T03 correction history:
+  - `REV-T03-001`: absent Configuration Readiness state originally included a synthetic changing timestamp and caused perpetual false cache misses; fixed by fingerprinting only the persisted registry file when present, absence = stable null.
+  - `REV-T03-002`: cache semantic identity originally included `createdAt`; timestamp removed from semantic fingerprint while retained as audit metadata.
+  - `REV-T03-003`: present changed files are now automatically unioned into relevant invalidation inputs.
+  - `REV-T03-004`: cache I/O and repository-path security boundaries hardened.
+  - `REV-T03-005`: capsule creation now validates supplied cache-entry integrity directly.
+- Focused T03 suite on reviewed implementation head `765a64a577238d73169fc9ae91bb8697a76ded6d`: **19/19 PASS**.
+- Implementation CI: GitHub Actions run `37672806212`, Ubuntu PASS + Windows PASS, focused T03 gate PASS on both, exact `release:validate` PASS on both.
+- T03 focused two-target Cost Observatory evidence:
+  - logical context bytes: 9,591 -> 7,053 (**26.46% reduction**);
+  - estimated context tokens: 2,398 -> 1,764 (**26.44% reduction**);
+  - target-orientation scans: 2 -> 1 (**50.00% reduction**);
+  - current comparison used cache hit=1, miss=0.
+- These are focused T03 fixture measurements only. They do **not** claim the final v0.12 release objectives (>=40% repeated context reduction, >=60% redundant repository-read reduction, >=70% repeated full orientation reduction) are achieved; release-wide validation remains later work.
+- Canonical T03 evidence:
+  - `docs/04-architecture/dkf-execution-capsule-t03-review.md`
+  - `docs/04-architecture/dkf-scale-context-iteration-phase05-t03-validation.md`
+- Architecture/code/security/security-control review verdicts: PASS; unresolved Critical 0, Major 0, Minor 0.
+- DKF remains general-purpose and provider/host/domain neutral. No application-specific cache or capsule semantics entered core.
+- v0.12.0 remains unreleased; package version remains 0.11.2; T03 acceptance does not merge to `main`, tag, publish, or release.
+- Next validated increment: **DKF120-T04 — State Engine V2**. T04 requires its own Development Contract before production implementation.

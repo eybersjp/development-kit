@@ -95,6 +95,9 @@ jobs:
       - name: Validate v0.12 Workspace Target Engine increment
         run: npm run workspace-targets:test
 
+      - name: Validate v0.12 Execution Capsules & Context Cache increment
+        run: npm run execution-capsule:test
+
       - name: Validate Design Authority governance
         run: npm run design-authority:validate
 
