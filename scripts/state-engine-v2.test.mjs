@@ -235,6 +235,22 @@ test('State Engine rejects a state-root symlink or junction that resolves outsid
   assert.equal(fs.readdirSync(outside).length, 0);
 });
 
+test('tampered State Engine schema contract fails closed on read', (t) => {
+  const rootDir = tempProject(t);
+  const state = workflowState(1);
+  saveStateRevision(state, rootDir);
+  const paths = getStateEnginePaths(rootDir);
+
+  const schema = JSON.parse(fs.readFileSync(paths.schema, 'utf8'));
+  schema.authority.canonicalHistory = 'something-else.jsonl';
+  fs.writeFileSync(paths.schema, JSON.stringify(schema, null, 2) + '\n', 'utf8');
+
+  assert.throws(
+    () => getCurrentState(rootDir),
+    /schema\.json does not match the runtime schema contract/,
+  );
+});
+
 test('AC-013 materialized snapshot deletion/corruption rebuilds from canonical history', (t) => {
   const rootDir = tempProject(t);
   const state = workflowState(1);
