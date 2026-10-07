@@ -83,6 +83,9 @@ jobs:
           npm run token-efficiency:test
           npm run token:audit:check
 
+      - name: Run Scale/Context Phase 0-1 baseline
+        run: node scripts/phase01-scale-context-baseline.mjs
+
       - name: Validate Design Authority governance
         run: npm run design-authority:validate
 
