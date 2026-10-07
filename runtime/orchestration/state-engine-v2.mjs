@@ -106,7 +106,7 @@ function statePaths(rootDir = process.cwd()) {
   if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new StateEngineError('State Engine path escapes project root');
   }
-  return Object.freeze({
+  const paths = Object.freeze({
     root,
     stateRoot,
     events: path.join(stateRoot, STATE_EVENTS_FILE),
@@ -115,6 +115,8 @@ function statePaths(rootDir = process.cwd()) {
     schema: path.join(stateRoot, STATE_SCHEMA_FILE),
     lock: path.join(stateRoot, 'state.lock'),
   });
+  if (fs.existsSync(stateRoot)) assertStateRootRealpathSafe(paths);
+  return paths;
 }
 
 function assertStateRootRealpathSafe(paths) {
@@ -214,11 +216,7 @@ export function ensureStateEngineLayout(rootDir = process.cwd()) {
   if (fs.existsSync(paths.schema)) {
     const existing = fs.readFileSync(paths.schema, 'utf8');
     if (existing !== expectedSchema) {
-      let parsed;
-      try { parsed = JSON.parse(existing); } catch {}
-      if (parsed?.schemaVersion !== STATE_ENGINE_SCHEMA_VERSION) {
-        throw new StateEngineError('State Engine schema.json is incompatible with runtime schema');
-      }
+      throw new StateEngineError('State Engine schema.json does not match the runtime schema contract');
     }
   } else {
     atomicWrite(paths.schema, expectedSchema);
@@ -234,12 +232,8 @@ export function ensureStateEngineLayout(rootDir = process.cwd()) {
 export function isStateEngineV2Active(rootDir = process.cwd()) {
   const paths = statePaths(rootDir);
   if (!fs.existsSync(paths.schema) || !fs.existsSync(paths.events)) return false;
-  try {
-    const schema = JSON.parse(fs.readFileSync(paths.schema, 'utf8'));
-    return schema.schemaVersion === STATE_ENGINE_SCHEMA_VERSION;
-  } catch {
-    return false;
-  }
+  const expectedSchema = stablePretty(schemaDocument());
+  return fs.readFileSync(paths.schema, 'utf8') === expectedSchema;
 }
 
 function emptySnapshot() {
