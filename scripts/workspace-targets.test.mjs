@@ -27,6 +27,9 @@ import {
   createDevelopmentContract,
   renderDevelopmentContractMarkdown,
 } from '../runtime/orchestration/development-contract.mjs';
+import { createVerificationRecord } from '../runtime/orchestration/evidence-store.mjs';
+import { createReviewResult } from '../runtime/orchestration/review-result.mjs';
+import { decideAcceptance } from '../runtime/orchestration/acceptance-engine.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, '..');
@@ -201,6 +204,7 @@ test('AC-007 and AC-039 route by declared capability/configuration, never target
   assert.equal(beta.targetId, 'service:beta');
   assert.equal(beta.command, 'node beta-check.mjs');
   assert.equal(beta.cwd, path.join(rootDir, 'units', 'beta'));
+  assert.equal(beta.adapter.projectOwned, true);
 
   const alpha = resolveTargetCommand(registry, '@alpha', 'build', { rootDir });
   assert.equal(alpha.command, 'node alpha-build.mjs');
@@ -293,6 +297,54 @@ test('target registry changes make a target-aware Development Contract stale', (
   assert.equal(staleness.stale, true);
   assert.equal(staleness.workspaceTargets.stale, true);
   assert.ok(staleness.changes.some((change) => change.code === 'WORKSPACE_REGISTRY_CHANGED'));
+});
+
+test('workspace registry drift blocks deterministic acceptance for a target-aware contract', (t) => {
+  const rootDir = tempProject(t);
+  fs.mkdirSync(path.join(rootDir, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(rootDir, 'docs/spec.md'), '# Spec\\nREQ-TARGET\\n');
+  const saved = persistWorkspaceTargetRegistry(baseRegistry(rootDir), rootDir);
+
+  const contract = createDevelopmentContract({
+    rootDir,
+    task: contractTask({
+      primary: '@alpha',
+      affected: ['@alpha'],
+      verification: ['@alpha', 'shared/common'],
+    }),
+    authoritativeSources: [{ path: 'docs/spec.md', kind: 'specification', authority: 'required' }],
+    createdAt: '2026-10-07T18:32:00.000Z',
+  });
+
+  const verification = createVerificationRecord({
+    contract,
+    runId: 'run-target-stale',
+    role: 'spec-verifier',
+    sourceFingerprint: contract.sourceFingerprint,
+    createdAt: '2026-10-07T18:33:00.000Z',
+    criteria: [{
+      id: 'AC-TARGET',
+      status: 'PASS',
+      evidence: [{ type: 'test', id: 'target-binding-pass' }],
+    }],
+  });
+  const review = createReviewResult({
+    contract,
+    runId: 'run-target-stale',
+    role: 'code-reviewer',
+    sourceFingerprint: contract.sourceFingerprint,
+    createdAt: '2026-10-07T18:34:00.000Z',
+    findings: [],
+  });
+  assert.equal(decideAcceptance({ contract, verification, reviews: [review], rootDir }).state, 'ACCEPTED');
+
+  const changed = structuredClone(saved.registry);
+  changed.targets['@alpha'].path = 'units/beta';
+  persistWorkspaceTargetRegistry(changed, rootDir, { expectedFingerprint: saved.fingerprint });
+
+  const blocked = decideAcceptance({ contract, verification, reviews: [review], rootDir });
+  assert.equal(blocked.state, 'BLOCKED');
+  assert.ok(blocked.blockers.some((item) => item.code === 'STALE_CONTRACT'));
 });
 
 test('workspace target binding rejects unknown target references', (t) => {
