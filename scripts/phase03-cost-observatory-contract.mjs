@@ -8,6 +8,7 @@ import {
   ensureDevelopmentContract,
   validateDevelopmentContract,
 } from '../runtime/orchestration/development-contract.mjs';
+import { selectRequiredGates } from '../runtime/orchestration/gate-selector.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -83,12 +84,11 @@ const task = {
     'DKF core remains general-purpose and host/provider independent.',
     'Cost telemetry is observational and must not change deterministic acceptance semantics.',
     'Existing token/context hardening is extended rather than replaced.',
-  ],
-  designConstraints: [],
-  securityConstraints: [
-    'Cost records must not require secrets or provider credentials.',
+    'Cost records require numeric usage observations only and do not require provider credentials or secrets.',
     'Unavailable host/provider telemetry must never be fabricated.',
   ],
+  designConstraints: [],
+  securityConstraints: [],
   risk: {
     level: 2,
     reasons: ['Instrumentation crosses orchestration boundaries but must remain non-authoritative.'],
@@ -140,6 +140,13 @@ const result = ensureDevelopmentContract({
 });
 
 validateDevelopmentContract(result.contract);
+const gates = selectRequiredGates(result.contract);
+if (JSON.stringify(gates.reviewers) !== JSON.stringify(['code-reviewer'])) {
+  throw new Error(`Unexpected T01 reviewer gates: ${gates.reviewers.join(', ')}`);
+}
+if (gates.controlDomains.length > 0 || gates.humanApprovals.length > 0) {
+  throw new Error('T01 unexpectedly derived specialist control or human-approval gates');
+}
 const staleness = checkContractStaleness(result.contract, ROOT);
 if (staleness.stale) {
   throw new Error('DKF120-T01 Development Contract is stale immediately after creation');
@@ -154,6 +161,7 @@ process.stdout.write(`${JSON.stringify({
   acceptanceCriteria: result.contract.acceptanceCriteria.map((criterion) => criterion.id),
   requiredVerification: result.contract.requiredVerification,
   requiredReviewers: result.contract.requiredReviewers,
+  derivedGates: gates,
   riskLevel: result.contract.risk.level,
   stale: staleness.stale,
 }, null, 2)}\n`);
