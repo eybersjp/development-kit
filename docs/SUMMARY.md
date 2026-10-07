@@ -234,6 +234,7 @@
 * [DK Token & Context Efficiency Hardening Specification (v0.10.1)](04-architecture/dk-token-context-efficiency-hardening-specification.md)
 * [DKF Development Modes — v0.11.1 Integration Specification](04-architecture/dkf-development-modes-v0.11.1-integration.md)
 * [DKF IDEA Authority Hardening — v0.11.1+](04-architecture/dkf-idea-authority-hardening-v0.11.1.md)
+* [DKF Scale, Context & Iteration — Phase 0/1 Baseline](04-architecture/dkf-scale-context-iteration-phase01-baseline.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)
