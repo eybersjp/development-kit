@@ -206,7 +206,11 @@ test('Cost Observatory is observational and cannot alter deterministic acceptanc
   const after = decideAcceptance({ contract, verification, reviews: [review], rootDir });
 
   assert.equal(before.state, 'ACCEPTED');
-  assert.deepEqual(after, before);
+  assert.equal(after.state, 'ACCEPTED');
+  assert.deepEqual(
+    { ...after, createdAt: '<observed-at>' },
+    { ...before, createdAt: '<observed-at>' },
+  );
 });
 
 test('cost-record JSON schema is present and describes the runtime version', () => {
