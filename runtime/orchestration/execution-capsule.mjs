@@ -116,8 +116,10 @@ function normalizeRuntimeFacts(value = []) {
   return value.map((fact) => {
     if (!plainObject(fact)) throw new ExecutionCapsuleError('verifiedRuntimeFacts entries must be objects');
     if (!plainObject(fact.provenance)) throw new ExecutionCapsuleError('Runtime fact provenance is required');
+    const factId = optionalId(fact.id, 'runtime fact id');
+    if (factId === null) throw new ExecutionCapsuleError('Runtime fact id is required');
     const normalized = {
-      id: optionalId(fact.id, 'runtime fact id'),
+      id: factId,
       value: structuredClone(fact.value),
       observedAt: timestamp(fact.observedAt, 'runtime fact observedAt'),
       authority: 'non-authoritative-observation',
