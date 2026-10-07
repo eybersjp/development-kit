@@ -16,6 +16,7 @@ import { validateWorkflowState } from './validators.mjs';
 import { acquireTransactionLock, releaseTransactionLock } from './lock-manager.mjs';
 import {
   appendEntityState,
+  hasCompletedStateMigration,
   isStateEngineV2Active,
   loadLatestEntityState,
   rebuildStateSnapshot,
@@ -45,7 +46,7 @@ function migratedWorkflowState(rootDir) {
 
 function shouldUseV2(rootDir) {
   if (!legacyStateExists(rootDir)) return true;
-  return migratedWorkflowState(rootDir) !== null;
+  return hasCompletedStateMigration(rootDir) && migratedWorkflowState(rootDir) !== null;
 }
 
 function getLegacyCurrentState(rootDir) {
