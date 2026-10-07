@@ -7,9 +7,11 @@ import path from 'node:path';
 import {
   captureRepositoryContextInputs,
   clearContextCache,
+  resolveRepositoryContextCache,
 } from '../runtime/orchestration/context-cache.mjs';
 import {
   checkExecutionCapsuleStaleness,
+  createExecutionCapsule,
   prepareExecutionCapsule,
   validateExecutionCapsule,
 } from '../runtime/orchestration/execution-capsule.mjs';
@@ -283,6 +285,48 @@ test('missing disposable cache invalidates the old capsule, while a full cache m
   assert.equal(context.isolationMetadata.capsuleFreshnessVerified, true);
 });
 
+test('present changed files automatically join the capsule invalidation set', (t) => {
+  const { rootDir, contract } = tempProject(t);
+  const prepared = prepareExecutionCapsule(capsuleInput(contract, rootDir, {
+    relevantFiles: [],
+    changedFiles: ['units/alpha/index.mjs'],
+  }));
+
+  assert.deepEqual(
+    prepared.capsule.repositoryContext.relevantFiles.map((ref) => ref.path),
+    ['units/alpha/index.mjs'],
+  );
+
+  fs.writeFileSync(path.join(rootDir, 'units', 'alpha', 'index.mjs'), 'export const alpha = 55;\n', 'utf8');
+  const report = checkExecutionCapsuleStaleness({
+    capsule: prepared.capsule,
+    contract,
+    rootDir,
+  });
+  assert.equal(report.stale, true);
+  assert.ok(report.changes.some((change) => change.code === 'CAPSULE_CACHE_STALE'));
+});
+
+test('createExecutionCapsule rejects forged or internally inconsistent cache entries', (t) => {
+  const { rootDir, contract } = tempProject(t);
+  const resolution = resolveRepositoryContextCache({
+    contract,
+    rootDir,
+    targetIds: ['alpha'],
+    relevantFiles: ['units/alpha/index.mjs'],
+  });
+  const forged = structuredClone(resolution);
+  forged.entry.entryFingerprint = 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
+
+  assert.throws(() => createExecutionCapsule({
+    contract,
+    rootDir,
+    cacheResolution: forged,
+    changedFiles: [],
+    createdAt: '2026-10-07T19:18:00.000Z',
+  }), /cacheResolution entry is invalid/);
+});
+
 test('capsule stores authority references and provenance, not copied source history or authoritative summaries', (t) => {
   const { rootDir, contract } = tempProject(t);
   const prepared = prepareExecutionCapsule(capsuleInput(contract, rootDir));
@@ -368,6 +412,19 @@ test('AC-035 Cost Observatory reports measured target-orientation and context-vo
   });
 
   const comparison = compareCostRecords(baselineRecord, currentRecord);
+  process.stdout.write(`T03_COST_EVIDENCE ${JSON.stringify({
+    baselineContextBytes: baselineRecord.contextBytes,
+    currentContextBytes: currentRecord.contextBytes,
+    contextBytesReductionPercent: comparison.metrics.contextBytes.reductionPercent,
+    baselineEstimatedContextTokens: baselineRecord.estimatedContextTokens,
+    currentEstimatedContextTokens: currentRecord.estimatedContextTokens,
+    estimatedContextTokensReductionPercent: comparison.metrics.estimatedContextTokens.reductionPercent,
+    baselineRepositoryScans: baselineRecord.repositoryScans,
+    currentRepositoryScans: currentRecord.repositoryScans,
+    repositoryScansReductionPercent: comparison.metrics.repositoryScans.reductionPercent,
+    cacheHits: currentRecord.cacheHits,
+    cacheMisses: currentRecord.cacheMisses,
+  })}\n`);
   assert.equal(comparison.metrics.repositoryScans.reductionPercent, 50);
   assert.ok(comparison.metrics.contextBytes.reductionPercent > 0);
   assert.ok(comparison.metrics.estimatedContextTokens.reductionPercent > 0);
