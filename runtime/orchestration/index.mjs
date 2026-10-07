@@ -58,7 +58,7 @@ export function prepareTaskRun({
   return { contract, run };
 }
 
-export function createRoleContext({ contract, role, rootDir = process.cwd(), repositoryState, implementationReport, capabilities } = {}) {
+export function createRoleContext({ contract, role, rootDir = process.cwd(), repositoryState, implementationReport, capabilities, executionCapsule = null } = {}) {
   return buildContextPackage({
     contract,
     role,
@@ -66,6 +66,7 @@ export function createRoleContext({ contract, role, rootDir = process.cwd(), rep
     repositoryState,
     implementationReport,
     capabilities,
+    executionCapsule,
     contextIsolation: role === 'implementation-agent' || role === 'implementer' ? 'fresh' : 'rehydrated',
   });
 }
@@ -143,3 +144,13 @@ export * from './idea-workflow.mjs';
 export * from './decision-menu.mjs';
 export * from './suggestion-promotion.mjs';
 export * from './configuration-readiness.mjs';
+
+export * from './cost-observatory.mjs';
+
+export * from './workspace-targets.mjs';
+
+export * from './context-cache.mjs';
+export * from './execution-capsule.mjs';
+
+export * from './state-engine-v2.mjs';
+export * from './state-engine-migration.mjs';

@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://development-kit.dev/schemas/execution-capsule.schema.json",
+  "title": "Development Kit Execution Capsule",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "capsuleId",
+    "contractId",
+    "taskId",
+    "runId",
+    "lifecycleId",
+    "sourceFingerprint",
+    "developmentModeFingerprint",
+    "workspaceTargets",
+    "authoritativeSources",
+    "repositoryContext",
+    "targetDelta",
+    "upstreamAcceptedTasks",
+    "verifiedRuntimeFacts",
+    "requiredGateProfileIds",
+    "createdAt",
+    "capsuleFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "capsuleId": {
+      "type": "string",
+      "pattern": "^CAP-[a-f0-9]{20}$"
+    },
+    "contractId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "taskId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lifecycleId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sourceFingerprint": {
+      "$ref": "#/$defs/sha256"
+    },
+    "developmentModeFingerprint": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "workspaceTargets": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "authoritativeSources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "kind",
+          "authority",
+          "sections",
+          "fingerprint"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "authority": {
+            "enum": [
+              "required",
+              "supporting"
+            ]
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "fingerprint": {
+            "$ref": "#/$defs/sha256"
+          }
+        }
+      }
+    },
+    "repositoryContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cacheId",
+        "selectorFingerprint",
+        "inputFingerprint",
+        "entryFingerprint",
+        "cachePath",
+        "targets",
+        "relevantFiles",
+        "relevantTests"
+      ],
+      "properties": {
+        "cacheId": {
+          "$ref": "#/$defs/sha256"
+        },
+        "selectorFingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "inputFingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "entryFingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "cachePath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "relevantFiles": {
+          "$ref": "#/$defs/fileRefs"
+        },
+        "relevantTests": {
+          "$ref": "#/$defs/fileRefs"
+        }
+      }
+    },
+    "targetDelta": {
+      "type": "object"
+    },
+    "upstreamAcceptedTasks": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "verifiedRuntimeFacts": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "requiredGateProfileIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "capsuleFingerprint": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "fileRefs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "fingerprint"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fingerprint": {
+            "$ref": "#/$defs/sha256"
+          }
+        }
+      }
+    }
+  }
+}

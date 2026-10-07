@@ -1,0 +1,268 @@
+{
+  "schemaVersion": "1.0.0",
+  "planId": "DKF-V012-SCALE-CONTEXT-ITERATION",
+  "declaredTaskCount": 10,
+  "declaredDependencyEdges": [
+    "DKF120-T01->DKF120-T02",
+    "DKF120-T02->DKF120-T03",
+    "DKF120-T03->DKF120-T04",
+    "DKF120-T04->DKF120-T05",
+    "DKF120-T05->DKF120-T06",
+    "DKF120-T06->DKF120-T07",
+    "DKF120-T07->DKF120-T08",
+    "DKF120-T08->DKF120-T09",
+    "DKF120-T09->DKF120-T10"
+  ],
+  "requiredResources": [
+    "cost-observatory-runtime",
+    "cost-telemetry-schema",
+    "cost-baseline-comparison",
+    "workspace-target-registry",
+    "target-resolution",
+    "target-routing",
+    "execution-capsule",
+    "repository-context-cache",
+    "context-invalidation",
+    "canonical-event-ledger",
+    "state-snapshot",
+    "state-index",
+    "legacy-state-migration",
+    "lifecycle-instance-model",
+    "lifecycle-completion-semantics",
+    "state-namespaces",
+    "discovery-event-model",
+    "reentry-resolver",
+    "selective-invalidation",
+    "gate-profile-contract",
+    "gate-profile-resolver",
+    "verification-extension-contract",
+    "generic-verification-primitives",
+    "extension-fixtures",
+    "complexity-delta",
+    "simplicity-trigger-policy",
+    "control-center-integration",
+    "comparative-replay",
+    "release-docs-evidence"
+  ],
+  "requiredAcceptanceCriteria": [
+    "DKF-120-AC-001",
+    "DKF-120-AC-002",
+    "DKF-120-AC-003",
+    "DKF-120-AC-004",
+    "DKF-120-AC-005",
+    "DKF-120-AC-006",
+    "DKF-120-AC-007",
+    "DKF-120-AC-008",
+    "DKF-120-AC-009",
+    "DKF-120-AC-010",
+    "DKF-120-AC-011",
+    "DKF-120-AC-012",
+    "DKF-120-AC-013",
+    "DKF-120-AC-014",
+    "DKF-120-AC-015",
+    "DKF-120-AC-016",
+    "DKF-120-AC-017",
+    "DKF-120-AC-018",
+    "DKF-120-AC-019",
+    "DKF-120-AC-020",
+    "DKF-120-AC-021",
+    "DKF-120-AC-022",
+    "DKF-120-AC-023",
+    "DKF-120-AC-024",
+    "DKF-120-AC-025",
+    "DKF-120-AC-026",
+    "DKF-120-AC-027",
+    "DKF-120-AC-028",
+    "DKF-120-AC-029",
+    "DKF-120-AC-030",
+    "DKF-120-AC-031",
+    "DKF-120-AC-032",
+    "DKF-120-AC-033",
+    "DKF-120-AC-034",
+    "DKF-120-AC-035",
+    "DKF-120-AC-036",
+    "DKF-120-AC-037",
+    "DKF-120-AC-038",
+    "DKF-120-AC-039",
+    "DKF-120-AC-040"
+  ],
+  "tasks": [
+    {
+      "id": "DKF120-T01",
+      "dependsOn": [],
+      "owns": [
+        "cost-observatory-runtime",
+        "cost-telemetry-schema",
+        "cost-baseline-comparison"
+      ],
+      "acceptanceCriteria": [
+        "DKF-120-AC-001",
+        "DKF-120-AC-002",
+        "DKF-120-AC-003",
+        "DKF-120-AC-033"
+      ],
+      "configurationDependencies": []
+    },
+    {
+      "id": "DKF120-T02",
+      "dependsOn": [
+        "DKF120-T01"
+      ],
+      "owns": [
+        "workspace-target-registry",
+        "target-resolution",
+        "target-routing"
+      ],
+      "acceptanceCriteria": [
+        "DKF-120-AC-004",
+        "DKF-120-AC-005",
+        "DKF-120-AC-006",
+        "DKF-120-AC-007",
+        "DKF-120-AC-039"
+      ],
+      "configurationDependencies": []
+    },
+    {
+      "id": "DKF120-T03",
+      "dependsOn": [
+        "DKF120-T02"
+      ],
+      "owns": [
+        "execution-capsule",
+        "repository-context-cache",
+        "context-invalidation"
+      ],
+      "acceptanceCriteria": [
+        "DKF-120-AC-008",
+        "DKF-120-AC-009",
+        "DKF-120-AC-010",
+        "DKF-120-AC-011",
+        "DKF-120-AC-035"
+      ],
+      "configurationDependencies": []
+    },
+    {
+      "id": "DKF120-T04",
+      "dependsOn": [
+        "DKF120-T03"
+      ],
+      "owns": [
+        "canonical-event-ledger",
+        "state-snapshot",
+        "state-index",
+        "legacy-state-migration"
+      ],
+      "acceptanceCriteria": [
+        "DKF-120-AC-012",
+        "DKF-120-AC-013",
+        "DKF-120-AC-014",
+        "DKF-120-AC-015",
+        "DKF-120-AC-034"
+      ],
+      "configurationDependencies": []
+    },
+    {
+      "id": "DKF120-T05",
+      "dependsOn": [
+        "DKF120-T04"
+      ],
+      "owns": [
+        "lifecycle-instance-model",
+        "lifecycle-completion-semantics",
+        "state-namespaces"
+      ],
+      "acceptanceCriteria": [
+        "DKF-120-AC-016",
+        "DKF-120-AC-017",
+        "DKF-120-AC-018"
+      ],
+      "configurationDependencies": []
+    },
+    {
+      "id": "DKF120-T06",
+      "dependsOn": [
+        "DKF120-T05"
+      ],
+      "owns": [
+        "discovery-event-model",
+        "reentry-resolver",
+        "selective-invalidation"
+      ],
+      "acceptanceCriteria": [
+        "DKF-120-AC-019",
+        "DKF-120-AC-020",
+        "DKF-120-AC-021"
+      ],
+      "configurationDependencies": []
+    },
+    {
+      "id": "DKF120-T07",
+      "dependsOn": [
+        "DKF120-T06"
+      ],
+      "owns": [
+        "gate-profile-contract",
+        "gate-profile-resolver"
+      ],
+      "acceptanceCriteria": [
+        "DKF-120-AC-022",
+        "DKF-120-AC-023"
+      ],
+      "configurationDependencies": []
+    },
+    {
+      "id": "DKF120-T08",
+      "dependsOn": [
+        "DKF120-T07"
+      ],
+      "owns": [
+        "verification-extension-contract",
+        "generic-verification-primitives",
+        "extension-fixtures"
+      ],
+      "acceptanceCriteria": [
+        "DKF-120-AC-024",
+        "DKF-120-AC-025",
+        "DKF-120-AC-026",
+        "DKF-120-AC-027",
+        "DKF-120-AC-037",
+        "DKF-120-AC-038"
+      ],
+      "configurationDependencies": []
+    },
+    {
+      "id": "DKF120-T09",
+      "dependsOn": [
+        "DKF120-T08"
+      ],
+      "owns": [
+        "complexity-delta",
+        "simplicity-trigger-policy"
+      ],
+      "acceptanceCriteria": [
+        "DKF-120-AC-028",
+        "DKF-120-AC-029"
+      ],
+      "configurationDependencies": []
+    },
+    {
+      "id": "DKF120-T10",
+      "dependsOn": [
+        "DKF120-T09"
+      ],
+      "owns": [
+        "control-center-integration",
+        "comparative-replay",
+        "release-docs-evidence"
+      ],
+      "acceptanceCriteria": [
+        "DKF-120-AC-030",
+        "DKF-120-AC-031",
+        "DKF-120-AC-032",
+        "DKF-120-AC-036",
+        "DKF-120-AC-040"
+      ],
+      "configurationDependencies": []
+    }
+  ]
+}
