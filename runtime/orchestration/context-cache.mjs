@@ -7,7 +7,7 @@ import {
   computeFileFingerprint,
   validateDevelopmentContract,
 } from './development-contract.mjs';
-import { loadConfigurationRegistry } from './configuration-readiness.mjs';
+import { getRequirementsRegistryPath } from './configuration-readiness.mjs';
 import { loadWorkspaceTargetRegistry } from './workspace-targets.mjs';
 
 export const CONTEXT_CACHE_ENTRY_SCHEMA_VERSION = '1.0.0';
@@ -108,13 +108,12 @@ function normalizeRevision(value, label) {
 }
 
 function configurationFingerprint(rootDir) {
-  try {
-    const registry = loadConfigurationRegistry(rootDir);
-    if (!registry) return null;
-    return fingerprintObject(registry);
-  } catch {
-    return null;
+  const registryPath = getRequirementsRegistryPath(rootDir);
+  if (!fs.existsSync(registryPath)) return null;
+  if (!fs.statSync(registryPath).isFile()) {
+    throw new ContextCacheError('Configuration readiness registry path is not a file');
   }
+  return sha256(fs.readFileSync(registryPath));
 }
 
 function isPathInsideTarget(filePath, targetPath) {
@@ -126,7 +125,8 @@ function selectedTargetDefinitions(contract, rootDir, targetIds = null) {
   validateDevelopmentContract(contract);
 
   if (!contract.workspaceTargets) {
-    if (targetIds !== null && stringArray(targetIds, 'targetIds').length > 0) {
+    const requested = targetIds === null ? [] : stringArray(targetIds, 'targetIds');
+    if (requested.length > 0 && !(requested.length === 1 && requested[0] === '__project_root__')) {
       throw new ContextCacheError('Legacy contracts without workspace target binding may not select named targets');
     }
     return {
