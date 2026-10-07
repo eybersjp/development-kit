@@ -247,6 +247,8 @@
 * [DKF Scale, Context & Iteration — Phase 3 T01 Validation](04-architecture/dkf-scale-context-iteration-phase03-t01-validation.md)
 * [DKF Workspace Target Engine — T02 Review](04-architecture/dkf-workspace-target-engine-t02-review.md)
 * [DKF Scale, Context & Iteration — Phase 4 T02 Validation](04-architecture/dkf-scale-context-iteration-phase04-t02-validation.md)
+* [DKF Execution Capsules & Context Cache — T03 Review](04-architecture/dkf-execution-capsule-t03-review.md)
+* [DKF Scale, Context & Iteration — Phase 5 T03 Validation](04-architecture/dkf-scale-context-iteration-phase05-t03-validation.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)
