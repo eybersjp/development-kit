@@ -85,7 +85,15 @@ test('TEST B: First lifecycle interaction -> Require persistent lifecycle state 
   const saved = getCurrentState(rootDir);
   assert.ok(saved, 'State must be persisted to disk');
   assert.equal(saved.currentStage, 'UNDERSTAND');
-  assert.ok(existsSync(join(rootDir, '.development-kit', 'autopilot', 'state', 'current.json')));
+
+  const stateRoot = join(rootDir, '.development-kit', 'state');
+  assert.ok(existsSync(join(stateRoot, 'events.jsonl')), 'State Engine V2 canonical history must exist');
+  assert.ok(existsSync(join(stateRoot, 'snapshot.json')), 'State Engine V2 materialized snapshot must exist');
+  assert.equal(
+    existsSync(join(rootDir, '.development-kit', 'autopilot', 'state', 'current.json')),
+    false,
+    'Fresh projects must not create the legacy transition pointer',
+  );
 });
 
 test('TEST C: Store a decision naturally -> Destroy in-memory service -> Reinitialize -> Require recall succeeds', async (t) => {
