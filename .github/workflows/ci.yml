@@ -83,6 +83,18 @@ jobs:
           npm run token-efficiency:test
           npm run token:audit:check
 
+      - name: Run Scale/Context Phase 0-1 baseline
+        run: node scripts/phase01-scale-context-baseline.mjs
+
+      - name: Validate Scale/Context v0.12 Phase 2 PLAN
+        run: node scripts/phase02-scale-context-plan-validate.mjs
+
+      - name: Validate v0.12 Cost Observatory increment
+        run: npm run cost-observatory:test
+
+      - name: Validate v0.12 Workspace Target Engine increment
+        run: npm run workspace-targets:test
+
       - name: Validate Design Authority governance
         run: npm run design-authority:validate
 

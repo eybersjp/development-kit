@@ -143,3 +143,7 @@ export * from './idea-workflow.mjs';
 export * from './decision-menu.mjs';
 export * from './suggestion-promotion.mjs';
 export * from './configuration-readiness.mjs';
+
+export * from './cost-observatory.mjs';
+
+export * from './workspace-targets.mjs';

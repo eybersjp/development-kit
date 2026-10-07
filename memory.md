@@ -65,3 +65,83 @@ Integrated through PR #54; Issue #51 is completed.
 - Green automated tests alone do not authorize publication.
 - Do not claim post-v0.11.1 mainline functionality is published until version, tag, GitHub Release and package publication gates are explicitly completed.
 - After any release-impacting change, run the full release-validation/package-consumer gates on the final merge base and verify the published distribution.
+
+## Scale, Context & Iteration — Phase 0/1 Baseline (7 October 2026)
+
+- Phase 0/1 analysis is isolated on draft PR #59 / branch `analysis/scale-context-iteration-phase01`; no production runtime behaviour or package version has been changed.
+- Live repository baseline is **v0.11.2** at main commit `62badbf7d0abee3344b1f5db2b2fbc876cf004e2`. The earlier `v0.11.0` proposal collides with released history; repository SemVer policy supports **v0.12.0** as the recommended feature-release target.
+- Existing Token & Context Efficiency Hardening must be extended, not rebuilt. Current section-aware source delivery achieved 81.89% / 94.59% / 92.53% source-token reduction in representative single-package / multi-package / calculation-heavy fixtures.
+- Current state persistence still creates immutable per-transition micro-files. A 26-revision Autopilot fixture produced 26 revision files + 1 pointer file (17,537 bytes), before counting per-run orchestration revisions and other DKF state.
+- Current gate selection is risk/security/design aware but has no first-class engineering/numerical domain profile. The calculation-heavy fixture still resolved only specification + tests + code review.
+- Current runtime does not centrally measure provider tokens, repository file reads, repository orientation scans, host agent invocations, or host tool calls. These remain unavailable rather than estimated.
+- Cross-platform token-audit output differs because the chars/4 estimator counts checkout line endings; future Cost Observatory comparisons should normalize line endings while preserving historical regression compatibility.
+- Phase 0/1 baseline CI passed the full Ubuntu + Windows matrix in GitHub Actions run `37618731275`.
+- Canonical evidence: `docs/04-architecture/dkf-scale-context-iteration-phase01-baseline.md`.
+- Next lifecycle action: reconcile the approved Scale, Context & Iteration specification with the measured baseline, then enter DEFINE/DESIGN/PLAN. Do not begin production implementation before the validated PLAN.
+
+## Scale, Context & Iteration — Phase 2 (7 October 2026)
+
+- Phase 2 is complete on draft PR #59 / branch `analysis/scale-context-iteration-phase01`; no production runtime implementation or package-version change has been made.
+- Reconciled target release: **Development Kit v0.12.0 — Scale, Context & Iteration**.
+- General-purpose architecture is locked: DKF core provides generic mechanisms; project-specific/domain rules live in project configuration, adapters, fixtures, or verification extensions. No app- or industry-specific business logic belongs in DKF core.
+- Canonical terminology: **Verification Extension SDK** replaces the provisional “Domain Verification SDK”.
+- Workspace targets use arbitrary project-defined IDs; examples such as web/mobile/database/calculations are non-authoritative examples only. Routing is capability/configuration driven.
+- Phase 2 artifacts:
+  - `docs/04-architecture/dkf-scale-context-iteration-v0.12-specification.md`
+  - `docs/04-architecture/dkf-scale-context-iteration-v0.12-technical-design.md`
+  - `docs/04-architecture/dkf-scale-context-iteration-v0.12-implementation-plan.md`
+  - `docs/04-architecture/dkf-scale-context-iteration-v0.12-plan-model.json`
+  - `docs/04-architecture/dkf-scale-context-iteration-phase02-validation.md`
+- Deterministic PLAN result: `valid: true`, 10 tasks, 9 declared dependency edges, all required logical resources owned exactly once, all `DKF-120-AC-001` through `DKF-120-AC-040` criteria covered, `issues: []`.
+- PLAN validation passed on Ubuntu and Windows in GitHub Actions run `37659800053`, together with the existing release-validation matrix.
+- Approved execution order:
+  `T01 Cost Observatory -> T02 Workspace Target Engine -> T03 Execution Capsules & Context Cache -> T04 State Engine V2 -> T05 Lifecycle Instances -> T06 Discovery & Controlled Re-entry -> T07 Generic Gate Profiles -> T08 Verification Extension SDK -> T09 Complexity Delta Guard -> T10 Control Center + Comparative Release Validation`.
+- Next lifecycle action: create the Development Contract for **DKF120-T01 — Cost Observatory** from the Phase 0/1 baseline, v0.12 specification, technical design, and validated PLAN. Production implementation starts only under that contract.
+
+## Scale, Context & Iteration — Phase 3 / T01 (7 October 2026)
+
+- **DKF120-T01 — Cost Observatory is accepted for progression** on branch `feature/v0.12-cost-observatory`.
+- Development Contract: `INC-DKF120-T01`, schema 1.2.0, final observed source fingerprint `sha256:5a89b0c0dd841d09cfcbf465ffc36c4c0e768574282c4c94aa389d713231f661`, risk 2, stale=false.
+- T01 criteria: `DKF-120-AC-001`, `002`, `003`, `033`.
+- Final derived gates: specification + tests; code-reviewer; no specialist control domain; no human approval; no configuration-readiness dependency.
+- Implemented generic runtime: `runtime/orchestration/cost-observatory.mjs` + `schemas/cost-record.schema.json`.
+- Cost records use newline-normalised logical context measurement, optional provider token observations, null for unavailable host/provider metrics, explicit DKF-controlled counters, elapsed time, append-only `.development-kit/telemetry/cost-records.jsonl`, and baseline/current comparison.
+- No application-specific or industry-specific logic is present. T01 remains host/provider independent.
+- Focused Cost Observatory suite: 9/9 PASS on Ubuntu; T01 gate PASS on Windows.
+- Final full CI for validated T01 head `3b6164dc67a6ceb98ca43e971c2b4636a6c95aa3`: GitHub Actions run `37665136625`, Ubuntu PASS + Windows PASS, including exact `release:validate`.
+- Correction history is preserved:
+  - `REV-T01-001`: volatile acceptance timestamp test assertion corrected.
+  - `REV-T01-002`: no-credentials architectural boundary moved out of `securityConstraints` so derived gates match the approved PLAN; no actual security gate was bypassed.
+- Canonical evidence:
+  - `docs/04-architecture/dkf-cost-observatory-t01-review.md`
+  - `docs/04-architecture/dkf-scale-context-iteration-phase03-t01-validation.md`
+- v0.12.0 is still unreleased; package version remains 0.11.2 and no merge/publish/release is authorised by T01 acceptance.
+- Next validated increment: **DKF120-T02 — Workspace Target Engine**. Create a new Development Contract before implementation.
+
+## Scale, Context & Iteration — Phase 4 / T02 (7 October 2026)
+
+- **DKF120-T02 — Workspace Target Engine is accepted for progression** on branch `feature/v0.12-workspace-target-engine`.
+- T02 Development Contract: `INC-DKF120-T02`, schema 1.3.0, observed source fingerprint `sha256:80af00ee728b98a0055e9971272d8fc3d6f436c32a6a040109f4e5ffde27bbf2`, risk 2, stale=false.
+- T02 acceptance criteria: `DKF-120-AC-004`, `005`, `006`, `007`, `039`.
+- Final derived gates: specification + tests; code-reviewer; no specialist control domain; no human approval; no configuration-readiness dependency.
+- T02 bootstrap rule: the T02 contract itself is intentionally unbound to workspace targets because it creates the Workspace Target Engine. Target-aware contracts after T02 may bind targets normally.
+- New canonical project-local registry: `.development-kit/workspace.json`, Workspace Target Registry schema v1.
+- Workspace targets are fully project-defined: arbitrary safe IDs, relative paths, descriptive kind, dependencies, commands, capabilities, verification commands, and opaque adapter metadata.
+- DKF core routing is capability/configuration-driven. Target names and `kind` are never dispatch policy.
+- Engine provides direct dependencies, reverse dependants, dependency closure, affected closure, verification closure, command resolution, generic repository-boundary discovery, and single-root fallback.
+- Invalid paths, unknown target dependencies, and dependency cycles fail closed.
+- Development Contract schema advances to **1.3.0** with optional `workspaceTargets` binding: registry path/fingerprint + primary/affected/verification targets. Existing supported schema versions remain readable.
+- Workspace-registry fingerprint participates in normal contract staleness. Final integration proof confirms registry drift converts a previously `ACCEPTED` target-aware contract to `BLOCKED` through the existing `STALE_CONTRACT` path.
+- Focused Workspace Target Engine suite on implementation head `94a10a77d38bdeba57ee398cb533b2d1409afc5c`: 14/14 PASS.
+- Full implementation CI: GitHub Actions run `37668415974`, Ubuntu PASS + Windows PASS, including the T02 gate and exact `release:validate`.
+- Correction history preserved:
+  - `REV-T02-001`: orchestration regression test stopped pinning obsolete Development Contract schema 1.2.0.
+  - `REV-T02-002`: required reference documentation was added for the T02 contract-generator script.
+  - `REV-T02-003`: Configuration Readiness integration test stopped pinning obsolete schema 1.2.0.
+  - `REV-T02-004`: acceptance-path hardening added to prove workspace-registry drift blocks deterministic acceptance.
+- Canonical T02 evidence:
+  - `docs/04-architecture/dkf-workspace-target-engine-t02-review.md`
+  - `docs/04-architecture/dkf-scale-context-iteration-phase04-t02-validation.md`
+- DKF remains general-purpose: no application-specific or industry-specific target semantics entered core.
+- v0.12.0 is still unreleased; package version remains 0.11.2; no merge, tag, publish, or release is authorised by T02 acceptance.
+- Next validated increment: **DKF120-T03 — Execution Capsules & Context Cache**. T03 must receive its own Development Contract before implementation and should use target binding where applicable.
