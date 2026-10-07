@@ -190,6 +190,7 @@
 * [next-step](03-reference/scripts/next-step.md)
 * [orchestration](03-reference/scripts/orchestration.md)
 * [phase01-scale-context-baseline](03-reference/scripts/phase01-scale-context-baseline.md)
+* [phase02-scale-context-plan-validate](03-reference/scripts/phase02-scale-context-plan-validate.md)
 * [sync-plugin](03-reference/scripts/sync-plugin.md)
 * [ui-preview](03-reference/scripts/ui-preview.md)
 * [token-audit](03-reference/scripts/token-audit.md)
@@ -235,6 +236,9 @@
 * [DKF Development Modes — v0.11.1 Integration Specification](04-architecture/dkf-development-modes-v0.11.1-integration.md)
 * [DKF IDEA Authority Hardening — v0.11.1+](04-architecture/dkf-idea-authority-hardening-v0.11.1.md)
 * [DKF Scale, Context & Iteration — Phase 0/1 Baseline](04-architecture/dkf-scale-context-iteration-phase01-baseline.md)
+* [DKF Scale, Context & Iteration — v0.12 Specification](04-architecture/dkf-scale-context-iteration-v0.12-specification.md)
+* [DKF Scale, Context & Iteration — v0.12 Technical Design](04-architecture/dkf-scale-context-iteration-v0.12-technical-design.md)
+* [DKF Scale, Context & Iteration — v0.12 Implementation PLAN](04-architecture/dkf-scale-context-iteration-v0.12-implementation-plan.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)
