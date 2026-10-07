@@ -243,6 +243,39 @@ test('AC-015 legacy migration is idempotent, semantically equivalent, and retain
   assert.equal(loadCanonicalEvents(rootDir).length, eventsBefore);
 });
 
+test('AC-015 completed migration remains idempotent after legitimate V2 progress', (t) => {
+  const rootDir = tempProject(t);
+  const legacy = writeLegacyAutopilot(rootDir, 3);
+  const first = migrateLegacyStateToV2({
+    rootDir,
+    completedAt: '2026-10-07T18:31:30.000Z',
+  });
+  assert.equal(first.migrated, true);
+
+  const progressed = workflowState(4, legacy.workflowId);
+  progressed.currentStage = 'VERIFY';
+  appendEntityState({
+    rootDir,
+    entityType: 'autopilot-workflow',
+    entityId: legacy.workflowId,
+    state: progressed,
+    actorClass: 'autopilot',
+    timestamp: progressed.updatedAt,
+  });
+
+  const eventCountBefore = loadCanonicalEvents(rootDir).length;
+  const rerun = migrateLegacyStateToV2({
+    rootDir,
+    completedAt: '2026-10-07T18:31:40.000Z',
+  });
+
+  assert.equal(rerun.migrated, false);
+  assert.equal(rerun.idempotent, true);
+  assert.equal(loadCanonicalEvents(rootDir).length, eventCountBefore);
+  assert.equal(getCurrentState(rootDir).stateRevision, 4);
+  assert.equal(getCurrentState(rootDir).currentStage, 'VERIFY');
+});
+
 test('AC-015 bundled legacy backup can restore the complete legacy state chain', (t) => {
   const rootDir = tempProject(t);
   writeLegacyAutopilot(rootDir, 5);
