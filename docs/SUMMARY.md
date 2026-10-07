@@ -192,6 +192,7 @@
 * [phase01-scale-context-baseline](03-reference/scripts/phase01-scale-context-baseline.md)
 * [phase02-scale-context-plan-validate](03-reference/scripts/phase02-scale-context-plan-validate.md)
 * [phase03-cost-observatory-contract](03-reference/scripts/phase03-cost-observatory-contract.md)
+* [phase04-workspace-target-engine-contract](03-reference/scripts/phase04-workspace-target-engine-contract.md)
 * [sync-plugin](03-reference/scripts/sync-plugin.md)
 * [ui-preview](03-reference/scripts/ui-preview.md)
 * [token-audit](03-reference/scripts/token-audit.md)
