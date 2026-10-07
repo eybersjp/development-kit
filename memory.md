@@ -97,3 +97,23 @@ Integrated through PR #54; Issue #51 is completed.
 - Approved execution order:
   `T01 Cost Observatory -> T02 Workspace Target Engine -> T03 Execution Capsules & Context Cache -> T04 State Engine V2 -> T05 Lifecycle Instances -> T06 Discovery & Controlled Re-entry -> T07 Generic Gate Profiles -> T08 Verification Extension SDK -> T09 Complexity Delta Guard -> T10 Control Center + Comparative Release Validation`.
 - Next lifecycle action: create the Development Contract for **DKF120-T01 — Cost Observatory** from the Phase 0/1 baseline, v0.12 specification, technical design, and validated PLAN. Production implementation starts only under that contract.
+
+## Scale, Context & Iteration — Phase 3 / T01 (7 October 2026)
+
+- **DKF120-T01 — Cost Observatory is accepted for progression** on branch `feature/v0.12-cost-observatory`.
+- Development Contract: `INC-DKF120-T01`, schema 1.2.0, final observed source fingerprint `sha256:5a89b0c0dd841d09cfcbf465ffc36c4c0e768574282c4c94aa389d713231f661`, risk 2, stale=false.
+- T01 criteria: `DKF-120-AC-001`, `002`, `003`, `033`.
+- Final derived gates: specification + tests; code-reviewer; no specialist control domain; no human approval; no configuration-readiness dependency.
+- Implemented generic runtime: `runtime/orchestration/cost-observatory.mjs` + `schemas/cost-record.schema.json`.
+- Cost records use newline-normalised logical context measurement, optional provider token observations, null for unavailable host/provider metrics, explicit DKF-controlled counters, elapsed time, append-only `.development-kit/telemetry/cost-records.jsonl`, and baseline/current comparison.
+- No application-specific or industry-specific logic is present. T01 remains host/provider independent.
+- Focused Cost Observatory suite: 9/9 PASS on Ubuntu; T01 gate PASS on Windows.
+- Final full CI for validated T01 head `3b6164dc67a6ceb98ca43e971c2b4636a6c95aa3`: GitHub Actions run `37665136625`, Ubuntu PASS + Windows PASS, including exact `release:validate`.
+- Correction history is preserved:
+  - `REV-T01-001`: volatile acceptance timestamp test assertion corrected.
+  - `REV-T01-002`: no-credentials architectural boundary moved out of `securityConstraints` so derived gates match the approved PLAN; no actual security gate was bypassed.
+- Canonical evidence:
+  - `docs/04-architecture/dkf-cost-observatory-t01-review.md`
+  - `docs/04-architecture/dkf-scale-context-iteration-phase03-t01-validation.md`
+- v0.12.0 is still unreleased; package version remains 0.11.2 and no merge/publish/release is authorised by T01 acceptance.
+- Next validated increment: **DKF120-T02 — Workspace Target Engine**. Create a new Development Contract before implementation.
