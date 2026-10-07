@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "dkf-framework": {
+      "path": ".",
+      "kind": "development-framework",
+      "dependencies": [],
+      "commands": {
+        "test": "npm run release:validate",
+        "test:orchestration": "npm run orchestration-core:validate"
+      },
+      "capabilities": [
+        "dkf-control-plane",
+        "node-runtime",
+        "release-validation"
+      ],
+      "verification": [
+        "test",
+        "test:orchestration"
+      ],
+      "adapter": null
+    }
+  }
+}

@@ -5,9 +5,14 @@ import {
   captureDevelopmentModeSnapshot,
   validateDevelopmentModeSnapshot,
 } from '../development-modes/integration.mjs';
+import {
+  checkWorkspaceTargetBindingStaleness,
+  resolveWorkspaceTargetBinding,
+  validatePersistedWorkspaceTargetBinding,
+} from './workspace-targets.mjs';
 
-export const DEVELOPMENT_CONTRACT_SCHEMA_VERSION = '1.2.0';
-export const SUPPORTED_DEVELOPMENT_CONTRACT_SCHEMA_VERSIONS = Object.freeze(['1.0.0', '1.1.0', '1.2.0']);
+export const DEVELOPMENT_CONTRACT_SCHEMA_VERSION = '1.3.0';
+export const SUPPORTED_DEVELOPMENT_CONTRACT_SCHEMA_VERSIONS = Object.freeze(['1.0.0', '1.1.0', '1.2.0', '1.3.0']);
 export const DEFAULT_CORRECTION_ATTEMPTS = 3;
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -35,6 +40,7 @@ const CONTRACT_KEYS = new Set([
   'approvalPolicy',
   'configurationDependencies',
   'developmentMode',
+  'workspaceTargets',
   'sourceFingerprint',
 ]);
 
@@ -361,6 +367,11 @@ export function createDevelopmentContract({
     throw new ContractValidationError('risk.level must be an integer from 0 to 4');
   }
 
+  const workspaceTargetsInput = task.workspaceTargets ?? task.targetBinding ?? null;
+  const workspaceTargets = workspaceTargetsInput === null
+    ? null
+    : resolveWorkspaceTargetBinding(rootDir, workspaceTargetsInput);
+
   const contract = {
     schemaVersion: DEVELOPMENT_CONTRACT_SCHEMA_VERSION,
     contractId: resolvedContractId,
@@ -395,6 +406,10 @@ export function createDevelopmentContract({
       : captureDevelopmentModeSnapshot(rootDir),
     sourceFingerprint: computeSourceFingerprint(sources),
   };
+
+  if (workspaceTargets !== null) {
+    contract.workspaceTargets = structuredClone(workspaceTargets);
+  }
 
   if (Array.isArray(task.configurationDependencies)) {
     contract.configurationDependencies = structuredClone(task.configurationDependencies);
@@ -525,14 +540,22 @@ export function validateDevelopmentContract(contract) {
 
   if (!isPlainObject(contract.approvalPolicy)) errors.push('approvalPolicy must be an object');
 
-  if (contract.schemaVersion === '1.2.0' && contract.developmentMode === undefined) {
-    errors.push('developmentMode is required for schemaVersion 1.2.0');
+  if (['1.2.0', '1.3.0'].includes(contract.schemaVersion) && contract.developmentMode === undefined) {
+    errors.push(`developmentMode is required for schemaVersion ${contract.schemaVersion}`);
   }
   if (contract.developmentMode !== undefined) {
     try {
       validateDevelopmentModeSnapshot(contract.developmentMode);
     } catch (error) {
       errors.push(`Invalid developmentMode snapshot: ${error.message}`);
+    }
+  }
+
+  if (contract.workspaceTargets !== undefined) {
+    try {
+      validatePersistedWorkspaceTargetBinding(contract.workspaceTargets);
+    } catch (error) {
+      errors.push(`Invalid workspace target binding: ${error.message}`);
     }
   }
 
@@ -625,6 +648,18 @@ export function renderDevelopmentContractMarkdown(contract) {
         ]
       : ['- Legacy contract without a mode snapshot']),
     '',
+    ...(contract.workspaceTargets
+      ? [
+          '## Workspace Targets',
+          '',
+          `- Registry: \`${contract.workspaceTargets.registryPath}\``,
+          `- Registry fingerprint: \`${contract.workspaceTargets.registryFingerprint}\``,
+          `- Primary: **${contract.workspaceTargets.primary}**`,
+          `- Affected: ${contract.workspaceTargets.affected.join(', ') || 'none'}`,
+          `- Verification: ${contract.workspaceTargets.verification.join(', ') || 'none'}`,
+          '',
+        ]
+      : []),
     '## Execution Safety',
     '',
     `- Resource scope: **${contract.executionSafety.resourceScope}**`,
@@ -714,10 +749,24 @@ export function checkContractStaleness(contract, rootDir = process.cwd()) {
   });
 
   const currentSourceFingerprint = computeSourceFingerprint(currentSources);
+
+  let workspaceTargetState = null;
+  if (contract.workspaceTargets) {
+    workspaceTargetState = checkWorkspaceTargetBindingStaleness(contract.workspaceTargets, rootDir);
+    for (const change of workspaceTargetState.changes) {
+      changes.push({
+        path: contract.workspaceTargets.registryPath,
+        status: 'workspace-target-change',
+        ...change,
+      });
+    }
+  }
+
   return {
     stale: changes.length > 0 || currentSourceFingerprint !== contract.sourceFingerprint,
     expectedSourceFingerprint: contract.sourceFingerprint,
     currentSourceFingerprint,
+    workspaceTargets: workspaceTargetState,
     changes,
   };
 }
