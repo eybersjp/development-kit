@@ -428,10 +428,17 @@ export function migrateLegacyStateToV2({
 
   const existingCompletion = completedMigration(inspection.sourceFingerprint, rootDir);
   if (existingCompletion) {
-    const equivalence = verifySemanticEquivalence(inspection.histories, rootDir);
-    if (!equivalence.equivalent) {
-      throw new StateMigrationError('Previously completed migration no longer matches legacy current state', equivalence.mismatches);
+    verifyStateEngineIntegrity(rootDir);
+    const backupPath = path.join(getStateEnginePaths(rootDir).stateRoot, LEGACY_BACKUP_FILE);
+    if (!fs.existsSync(backupPath)) {
+      throw new StateMigrationError('Completed migration is missing its recoverable legacy backup');
     }
+    const backup = readJson(backupPath, 'Existing legacy backup');
+    validateBackupBundle(backup);
+    if (backup.sourceFingerprint !== inspection.sourceFingerprint) {
+      throw new StateMigrationError('Completed migration backup no longer matches the legacy source fingerprint');
+    }
+
     return Object.freeze({
       migrated: false,
       idempotent: true,
@@ -440,7 +447,7 @@ export function migrateLegacyStateToV2({
       legacyFileCount: inspection.legacyFileCount,
       entityCount: inspection.entityCount,
       semanticEquivalence: true,
-      backupPath: path.join(getStateEnginePaths(rootDir).stateRoot, LEGACY_BACKUP_FILE),
+      backupPath,
     });
   }
 
