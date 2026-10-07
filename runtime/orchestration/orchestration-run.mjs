@@ -5,6 +5,12 @@ import { validateDevelopmentContract } from './development-contract.mjs';
 import { selectRequiredGates } from './gate-selector.mjs';
 import { selectExecutionStrategy } from './host-capabilities.mjs';
 import { getRunDirectory } from './evidence-store.mjs';
+import {
+  appendEntityState,
+  canonicalStateJson,
+  isStateEngineV2Active,
+  loadEntityState,
+} from './state-engine-v2.mjs';
 
 const RUN_STATES = Object.freeze([
   'READY',
@@ -54,6 +60,28 @@ function persistImmutable(filePath, value, label) {
   }
   atomicWrite(filePath, content);
   return { created: true, path: filePath };
+}
+
+function runEntityId(contractId, runId) {
+  return `${contractId}/${runId}`;
+}
+
+function legacyRunStateExists(contractId, runId, rootDir) {
+  const runDir = getRunDirectory(rootDir, contractId, runId);
+  const revisionDir = path.join(runDir, 'state-revisions');
+  if (fs.existsSync(path.join(runDir, 'current-state.json'))) return true;
+  if (!fs.existsSync(revisionDir)) return false;
+  return fs.readdirSync(revisionDir).some((name) => /^\d{8}\.json$/.test(name));
+}
+
+function v2RunState(contractId, runId, rootDir) {
+  if (!isStateEngineV2Active(rootDir)) return null;
+  return loadEntityState('orchestration-run', runEntityId(contractId, runId), rootDir);
+}
+
+function shouldUseV2RunState(contractId, runId, rootDir) {
+  if (!legacyRunStateExists(contractId, runId, rootDir)) return true;
+  return v2RunState(contractId, runId, rootDir) !== null;
 }
 
 export function createOrchestrationRun({
@@ -154,19 +182,57 @@ export function persistRunManifest(run, rootDir = process.cwd()) {
 
 export function persistRunStateRevision(run, rootDir = process.cwd()) {
   validateOrchestrationRun(run);
-  const runDir = getRunDirectory(rootDir, run.contractId, run.runId);
-  const revisionName = `${String(run.stateRevision).padStart(8, '0')}.json`;
-  const revisionPath = path.join(runDir, 'state-revisions', revisionName);
-  const persisted = persistImmutable(revisionPath, run, 'orchestration run state revision');
-  const pointer = {
-    schemaVersion: '1.0.0',
-    contractId: run.contractId,
-    runId: run.runId,
-    stateRevision: run.stateRevision,
-    revisionPath: `state-revisions/${revisionName}`,
+
+  if (!shouldUseV2RunState(run.contractId, run.runId, rootDir)) {
+    const runDir = getRunDirectory(rootDir, run.contractId, run.runId);
+    const revisionName = `${String(run.stateRevision).padStart(8, '0')}.json`;
+    const revisionPath = path.join(runDir, 'state-revisions', revisionName);
+    const persisted = persistImmutable(revisionPath, run, 'orchestration run state revision');
+    const pointer = {
+      schemaVersion: '1.0.0',
+      contractId: run.contractId,
+      runId: run.runId,
+      stateRevision: run.stateRevision,
+      revisionPath: `state-revisions/${revisionName}`,
+    };
+    atomicWrite(path.join(runDir, 'current-state.json'), stableContent(pointer));
+    return { ...persisted, pointerPath: path.join(runDir, 'current-state.json'), stateEngine: 'legacy' };
+  }
+
+  const existing = v2RunState(run.contractId, run.runId, rootDir);
+  if (existing) {
+    if (run.stateRevision < existing.stateRevision) {
+      throw new OrchestrationRunError('Refusing orchestration run stateRevision regression');
+    }
+    if (run.stateRevision === existing.stateRevision) {
+      if (canonicalStateJson(run) === canonicalStateJson(existing)) {
+        return { created: false, stateEngine: 'v2', path: null, pointerPath: null };
+      }
+      throw new OrchestrationRunError('Refusing to overwrite orchestration run state revision');
+    }
+  }
+
+  const result = appendEntityState({
+    rootDir,
+    entityType: 'orchestration-run',
+    entityId: runEntityId(run.contractId, run.runId),
+    state: run,
+    refs: {
+      contractId: run.contractId,
+      taskId: run.taskId,
+      runId: run.runId,
+    },
+    actorClass: 'orchestration',
+    timestamp: run.updatedAt,
+  });
+
+  return {
+    created: result.changed,
+    stateEngine: 'v2',
+    path: null,
+    pointerPath: null,
+    eventId: result.event?.eventId ?? null,
   };
-  atomicWrite(path.join(runDir, 'current-state.json'), stableContent(pointer));
-  return { ...persisted, pointerPath: path.join(runDir, 'current-state.json') };
 }
 
 export function persistFinalRunState(run, rootDir = process.cwd()) {
@@ -185,6 +251,15 @@ export function loadRunManifest(contractId, runId, rootDir = process.cwd()) {
 }
 
 export function loadCurrentRunState(contractId, runId, rootDir = process.cwd()) {
+  const v2 = v2RunState(contractId, runId, rootDir);
+  if (v2) {
+    validateOrchestrationRun(v2);
+    if (v2.contractId !== contractId || v2.runId !== runId) {
+      throw new OrchestrationRunError('State Engine V2 run identity mismatch');
+    }
+    return v2;
+  }
+
   const runDir = getRunDirectory(rootDir, contractId, runId);
   const pointerPath = path.join(runDir, 'current-state.json');
   if (!fs.existsSync(pointerPath)) return loadRunManifest(contractId, runId, rootDir);
