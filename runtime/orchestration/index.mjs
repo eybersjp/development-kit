@@ -151,3 +151,6 @@ export * from './workspace-targets.mjs';
 
 export * from './context-cache.mjs';
 export * from './execution-capsule.mjs';
+
+export * from './state-engine-v2.mjs';
+export * from './state-engine-migration.mjs';

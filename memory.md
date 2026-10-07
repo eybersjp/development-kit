@@ -190,3 +190,57 @@ Integrated through PR #54; Issue #51 is completed.
 - DKF remains general-purpose and provider/host/domain neutral. No application-specific cache or capsule semantics entered core.
 - v0.12.0 remains unreleased; package version remains 0.11.2; T03 acceptance does not merge to `main`, tag, publish, or release.
 - Next validated increment: **DKF120-T04 — State Engine V2**. T04 requires its own Development Contract before production implementation.
+
+## Scale, Context & Iteration — Phase 6 / T04 (7 October 2026)
+
+- **DKF120-T04 — State Engine V2 is accepted for progression** on branch `feature/v0.12-state-engine-v2`.
+- T04 Development Contract: `INC-DKF120-T04`, schema 1.3.0, risk 3, stale=false.
+- Observed T04 source fingerprint: `sha256:f463f9a42340329c2fcf6969559edf48f014ca4159352e983d2cb0c86b2a4729`.
+- T04 target binding: `dkf-framework` primary/affected/verification against workspace registry fingerprint `sha256:b5c3d286ab2b1b65c68e9ac17fbb6f45698986449ffb2129fa4666eff60f9c3e`.
+- Acceptance criteria: `DKF-120-AC-012`, `013`, `014`, `015`, `034`.
+- Risk-3 derived gates: migration + specification + tests; architecture-reviewer; code-reviewer; security-reviewer; security control domain; no human consequential-action approval.
+- State Engine V2 canonical project-local layout:
+  - `.development-kit/state/events.jsonl` — canonical runtime history;
+  - `.development-kit/state/snapshot.json` — derived materialized state;
+  - `.development-kit/state/index.db` — disposable/rebuildable acceleration index;
+  - `.development-kit/state/schema.json` — exact State Engine schema/authority descriptor;
+  - `.development-kit/state/legacy-backup.json` — recoverable migration bundle when legacy state is migrated.
+- State Engine core is generic: entity type/ID, state revision, lifecycle/task/contract/run references, deterministic patch operations, and metadata events. No application/industry business semantics entered core.
+- `index.db` in T04 is a deterministic portable JSON-encoded index artifact, deliberately not a Node-22-only SQLite dependency; it is disposable and never canonical authority.
+- Canonical events use monotonic sequence, deterministic event IDs, actor class, generic refs, event payload, previous-event hash and SHA-256 event hash.
+- Initial entity state is stored once; later state changes are represented as deterministic set/delete path operations rather than one canonical snapshot file per transition.
+- Atomic state mutation uses temporary file + fsync + atomic rename under a short project-local State Engine lock. Derived snapshot/index recover from committed canonical events.
+- Fresh projects use State Engine V2 immediately for Autopilot and orchestration transition state.
+- Existing projects with legacy state remain on the legacy store until a **verified `MIGRATION_COMPLETED` event** records semantic equivalence. Presence of partially imported V2 entities alone cannot trigger cutover.
+- Legacy migration validates supported Autopilot and orchestration history, creates a fingerprinted recovery bundle, imports history, proves current semantic equivalence, appends migration completion only after proof, and verifies State Engine integrity.
+- Migration is idempotent and remains a no-op even after legitimate post-migration V2 progress, provided the original legacy source fingerprint and recovery bundle still match.
+- Legacy migration rejects corrupt JSON, missing revision-chain members, Autopilot workflow-identity changes, orchestration revision gaps, orchestration revision-1/manifest disagreement, final-state disagreement, and other semantic inconsistencies before cutover.
+- Legacy source files are retained by T04. T04 does not delete them.
+- Recovery bundle can reconstruct the complete retained legacy file set with per-file fingerprint verification.
+- Acceptance semantics are preserved: migration fixture retains `state=ACCEPTED`, `acceptanceState=ACCEPTED`, `verificationVerdict=PASS`.
+- Integrity hardening includes event mutation/reordering detection, witnessed tail-truncation rejection, exact schema-contract checking, incomplete-layout rejection, and state-root symlink/junction realpath confinement.
+- Snapshot deletion/corruption rebuilds from canonical events where no integrity-witness conflict exists.
+- Disposable index deletion/rebuild produces semantically equivalent query state.
+- T04 correction history:
+  - `REV-T04-001`: fresh-state regressions updated from legacy pointer-shape assertions to durable V2 persistence invariants.
+  - `REV-T04-002`: Phase 1 historical legacy baseline decoupled from the live persistence backend.
+  - `REV-T04-003`: canonical tail truncation can no longer silently rebuild state backwards when a later snapshot witnesses history.
+  - `REV-T04-004`: State Engine realpath boundary rejects state-root symlink/junction escape.
+  - `REV-T04-005`: partial imported V2 entities cannot trigger migration cutover.
+  - `REV-T04-006`: completed migration remains idempotent after normal V2 progress.
+  - `REV-T04-007`: legacy revision chains must be contiguous and orchestration history anchored to its immutable manifest.
+  - `REV-T04-008`: same-version schema tampering/incomplete V2 layout now fails closed.
+- Focused T04 suite on reviewed implementation head `e3e4b16e372b40042398cfcf210f471e4f762b1b`: **22/22 PASS**.
+- Implementation CI: GitHub Actions run `37678375215`, Ubuntu PASS + Windows PASS, focused T04 gate PASS on both, exact `release:validate` PASS on both.
+- AC-034 representative Phase 1 result:
+  - legacy active transition-state files: 27;
+  - T04 active canonical/recovery State Engine files: 5;
+  - reduction: **81.48%**, exceeding the >=80% engineering objective.
+- Important disclosure: T04 deliberately retains the 27 original legacy files for recovery. During that safety window physical files total 32 (27 retained legacy + 5 State Engine). The 81.48% measurement is the reduction in the new active canonical/recovery representation, not temporary total on-disk file count.
+- Canonical T04 evidence:
+  - `docs/04-architecture/dkf-state-engine-v2-t04-review.md`
+  - `docs/04-architecture/dkf-scale-context-iteration-phase06-t04-validation.md`
+- Required code/architecture/security/security-control review verdicts: PASS; unresolved Critical 0, Major 0, Minor 0.
+- DKF remains general-purpose, host/provider/domain neutral.
+- v0.12.0 remains unreleased; package version remains 0.11.2; T04 acceptance does not merge to `main`, tag, publish, release, or delete retained legacy state.
+- Next validated increment: **DKF120-T05 — Lifecycle Instances**. T05 requires its own Development Contract before production implementation.

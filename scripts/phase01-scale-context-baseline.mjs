@@ -11,7 +11,6 @@ import { createPolicyBoundDevelopmentContract } from '../runtime/orchestration/c
 import { buildContextPackage } from '../runtime/orchestration/context-package.mjs';
 import { selectRequiredGates } from '../runtime/orchestration/gate-selector.mjs';
 import { createInitialState } from '../runtime/autopilot/transition-model.mjs';
-import { saveStateRevision, getStateDir } from '../runtime/autopilot/state-store.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
@@ -139,13 +138,27 @@ function contextFixture({ label, layout, relevantLines, unrelatedLines, reposito
 function legacyStateFixture(revisions = 26) {
   const root = tempProject('legacy-state');
   try {
+    // Historical baseline fixture: construct the pre-v0.12 legacy snapshot chain
+    // directly so this measurement remains stable after State Engine V2 changes
+    // the live saveStateRevision() implementation.
     const state = createInitialState({ autonomy: 'guided-autopilot' }, root);
+    const stateDir = path.join(root, '.development-kit', 'autopilot', 'state');
+    fs.mkdirSync(stateDir, { recursive: true });
+
     for (let revision = 1; revision <= revisions; revision += 1) {
       state.stateRevision = revision;
       state.updatedAt = new Date(Date.parse(state.createdAt) + revision * 1000).toISOString();
-      saveStateRevision(state, root);
+      const name = 'revision-' + String(revision).padStart(6, '0') + '.json';
+      fs.writeFileSync(path.join(stateDir, name), JSON.stringify(state, null, 2), 'utf8');
     }
-    const stateDir = getStateDir(root);
+
+    fs.writeFileSync(path.join(stateDir, 'current.json'), JSON.stringify({
+      currentRevision: revisions,
+      currentRevisionFile: 'revision-' + String(revisions).padStart(6, '0') + '.json',
+      workflowId: state.workflowId,
+      updatedAt: state.updatedAt,
+    }, null, 2), 'utf8');
+
     const files = fs.readdirSync(stateDir).filter((name) => fs.statSync(path.join(stateDir, name)).isFile());
     const revisionFiles = files.filter((name) => /^revision-\d{6}\.json$/.test(name));
     const bytes = files.reduce((sum, name) => sum + fs.statSync(path.join(stateDir, name)).size, 0);

@@ -98,6 +98,9 @@ jobs:
       - name: Validate v0.12 Execution Capsules & Context Cache increment
         run: npm run execution-capsule:test
 
+      - name: Validate v0.12 State Engine V2 increment
+        run: npm run state-engine-v2:test
+
       - name: Validate Design Authority governance
         run: npm run design-authority:validate
 
