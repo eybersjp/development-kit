@@ -252,13 +252,15 @@ export function loadRunManifest(contractId, runId, rootDir = process.cwd()) {
 }
 
 export function loadCurrentRunState(contractId, runId, rootDir = process.cwd()) {
-  const v2 = v2RunState(contractId, runId, rootDir);
-  if (v2) {
-    validateOrchestrationRun(v2);
-    if (v2.contractId !== contractId || v2.runId !== runId) {
-      throw new OrchestrationRunError('State Engine V2 run identity mismatch');
+  if (shouldUseV2RunState(contractId, runId, rootDir)) {
+    const v2 = v2RunState(contractId, runId, rootDir);
+    if (v2) {
+      validateOrchestrationRun(v2);
+      if (v2.contractId !== contractId || v2.runId !== runId) {
+        throw new OrchestrationRunError('State Engine V2 run identity mismatch');
+      }
+      return v2;
     }
-    return v2;
   }
 
   const runDir = getRunDirectory(rootDir, contractId, runId);
