@@ -241,6 +241,8 @@
 * [DKF Scale, Context & Iteration — v0.12 Technical Design](04-architecture/dkf-scale-context-iteration-v0.12-technical-design.md)
 * [DKF Scale, Context & Iteration — v0.12 Implementation PLAN](04-architecture/dkf-scale-context-iteration-v0.12-implementation-plan.md)
 * [DKF Scale, Context & Iteration — Phase 2 Validation](04-architecture/dkf-scale-context-iteration-phase02-validation.md)
+* [DKF Cost Observatory — T01 Review](04-architecture/dkf-cost-observatory-t01-review.md)
+* [DKF Scale, Context & Iteration — Phase 3 T01 Validation](04-architecture/dkf-scale-context-iteration-phase03-t01-validation.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)
