@@ -826,6 +826,17 @@ export function listEntityRecords(type, rootDir = process.cwd()) {
     .sort((a, b) => a.entityId.localeCompare(b.entityId));
 }
 
+export function loadLatestEntityState(type, rootDir = process.cwd()) {
+  const normalizedType = entityType(type);
+  const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true });
+  const bucket = snapshot?.entities?.[normalizedType] ?? {};
+  const records = Object.entries(bucket)
+    .map(([id, record]) => ({ id, record }))
+    .sort((a, b) => b.record.lastEventSequence - a.record.lastEventSequence || a.id.localeCompare(b.id));
+  if (records.length === 0) return null;
+  return structuredClone(records[0].record.state);
+}
+
 export function queryStateIndex({
   rootDir = process.cwd(),
   contractId = null,
