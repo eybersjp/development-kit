@@ -47,6 +47,7 @@ const COMMANDS = [
   '/dk-build-auto',
   '/dk-test',
   '/dk-review',
+  '/dk-audit',
   '/dk-simplify',
   '/dk-debug',
   '/dk-ship',
