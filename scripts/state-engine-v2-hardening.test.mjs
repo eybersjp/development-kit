@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 
 import {
   appendEntityState,
@@ -81,3 +81,61 @@ test('T04-H03 four processes append without losing events or corrupting sequence
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
 
+
+
+test('T04-H04 torn append with a valid pending journal deterministically repairs without losing committed history', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const before = fs.readFileSync(paths.events, 'utf8');
+  appendMetadataEvent({ rootDir, eventType: 'FOLLOWUP_EVENT', payload: { value: 2 } });
+  const expected = fs.readFileSync(paths.events, 'utf8');
+  const suffix = expected.slice(before.length);
+  fs.writeFileSync(paths.events, before + suffix.slice(0, 23), 'utf8');
+  fs.writeFileSync(paths.pending, JSON.stringify({
+    schemaVersion: '1.0.0',
+    previousByteLength: Buffer.byteLength(before),
+    previousHash: 'sha256:' + createHash('sha256').update(before).digest('hex'),
+    suffix,
+  }), 'utf8');
+
+  const recovered = loadCanonicalEvents(rootDir);
+  assert.equal(recovered.length, 2);
+  assert.equal(fs.readFileSync(paths.events, 'utf8'), expected);
+  assert.equal(fs.existsSync(paths.pending), false);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
+
+test('T04-H07 conflicting pending suffix must fail closed, not truncate canonical evidence', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const before = fs.readFileSync(paths.events, 'utf8');
+  fs.writeFileSync(paths.events, before + 'tampered', 'utf8');
+  fs.writeFileSync(paths.pending, JSON.stringify({
+    schemaVersion: '1.0.0',
+    previousByteLength: Buffer.byteLength(before),
+    previousHash: 'sha256:' + createHash('sha256').update(before).digest('hex'),
+    suffix: '{"valid":true}\n',
+  }), 'utf8');
+
+  assert.throws(() => loadCanonicalEvents(rootDir), /suffix conflicts/i);
+  assert.ok(fs.readFileSync(paths.events, 'utf8').endsWith('tampered'));
+  assert.equal(fs.existsSync(paths.pending), true);
+});
+
+test('T04-H08 stale lock from a provably dead local process can be recovered', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  fs.writeFileSync(paths.lock, JSON.stringify({
+    owner: 'dead-worker',
+    pid: 2147483647,
+    hostname: os.hostname(),
+    acquiredAt: '2026-10-08T00:00:00.000Z',
+  }), 'utf8');
+  const old = new Date(Date.now() - 30_000);
+  fs.utimesSync(paths.lock, old, old);
+  appendMetadataEvent({ rootDir, eventType: 'RECOVERED_LOCK', payload: { value: 2 } });
+  assert.equal(loadCanonicalEvents(rootDir).length, 2);
+});
