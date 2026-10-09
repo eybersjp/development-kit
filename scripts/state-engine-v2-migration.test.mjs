@@ -773,3 +773,53 @@ test('T04-H31 staged restore does not advance historical root access and modific
   assert.ok(Math.abs(after.atimeMs - before.atimeMs) < 1000, 'root access time must be preserved');
   assert.ok(Math.abs(after.mtimeMs - before.mtimeMs) < 1000, 'root modification time must be preserved');
 });
+
+
+test('T04-H32 offline staged restore preserves the text of unrelated relative symlinks', (t) => {
+  const source = tempProject(t, 'dk-link-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const targetRoot = tempProject(t, 'dk-link-target-');
+  fs.writeFileSync(path.join(targetRoot, 'target.txt'), 'ORIGINAL', 'utf8');
+  const link = path.join(targetRoot, 'relative-link.txt');
+  try {
+    fs.symlinkSync('target.txt', link, 'file');
+  } catch (error) {
+    if (['EPERM','EACCES','ENOTSUP'].includes(error.code)) { t.skip('Relative symlink unavailable'); return; }
+    throw error;
+  }
+  const priorLink = fs.readlinkSync(link);
+  restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot, confirmOffline: true });
+  assert.equal(fs.readlinkSync(link), priorLink);
+  assert.equal(fs.readFileSync(link, 'utf8'), 'ORIGINAL');
+});
+
+test('T04-H33 backup with duplicate normalized destinations is refused before staging', async (t) => {
+  const source = tempProject(t, 'dk-dup-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const targetRoot = tempProject(t, 'dk-dup-target-');
+  const pathA = path.join(targetRoot, '.development-kit', 'autopilot', 'state', 'revision-000001.json');
+  const backup = JSON.parse(fs.readFileSync(migrated.backupPath, 'utf8'));
+  const first = backup.files[0];
+  const duplicate = { ...first, path: './' + first.path };
+  backup.files.push(duplicate);
+  backup.fileCount = backup.files.length;
+  const manifest = backup.files.map(e => ({ path: e.path, fingerprint: e.fingerprint, bytes: e.bytes }));
+  const crypto = await import('node:crypto');
+  function canonical(value) {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === 'object') return Object.fromEntries(
+      Object.entries(value).sort(([a],[b]) => a.localeCompare(b)).map(([key,val]) => [key, canonical(val)])
+    );
+    return value;
+  }
+  backup.sourceFingerprint = 'sha256:' + crypto.createHash('sha256').update(JSON.stringify(canonical(manifest))).digest('hex');
+  const hostileBackup = path.join(source, 'alias-backup.json');
+  fs.writeFileSync(hostileBackup, JSON.stringify(backup));
+  assert.throws(
+    () => restoreLegacyBackup({ backupPath: hostileBackup, targetRoot, confirmOffline: true }),
+    /duplicate normalized/i,
+  );
+  assert.equal(fs.existsSync(pathA), false);
+});
