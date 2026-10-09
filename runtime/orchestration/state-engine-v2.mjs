@@ -166,18 +166,52 @@ function fsyncParentDirectory(directory) {
 }
 
 function atomicWrite(filePath, content) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tempPath = `${filePath}.tmp-${process.pid}-${crypto.randomUUID()}`;
-  const fd = fs.openSync(tempPath, 'wx');
+  const directory = path.dirname(filePath);
+  fs.mkdirSync(directory, { recursive: true });
+  // Pin the already-validated State Engine directory before creating a
+  // journal, snapshot or index. Linux exposes descriptor-relative paths via
+  // /proc/self/fd; renames there cannot follow a subsequently swapped
+  // workspace directory symlink into an external target.
+  const dirFd = fs.openSync(directory, 'r');
+  const file = path.basename(filePath);
+  const pinnedDir = process.platform === 'linux' ? '/proc/self/fd/' + dirFd : directory;
+  const tempPath = path.join(pinnedDir, file + '.tmp-' + process.pid + '-' + crypto.randomUUID());
+  const destination = path.join(pinnedDir, file);
+  let published = false;
   try {
-    fs.writeFileSync(fd, content, 'utf8');
-    fs.fsyncSync(fd);
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(directory);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed during durable write preparation');
+    }
+    const rootDir = path.dirname(path.dirname(directory));
+    assertStateRootRealpathSafe({ root: rootDir, stateRoot: directory });
+    const fd = fs.openSync(tempPath, 'wx', 0o600);
+    try {
+      fs.writeFileSync(fd, content, 'utf8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    // On platforms without descriptor-relative paths revalidate immediately
+    // before publication; a hostile same-UID process remains outside the
+    // portable Node.js isolation guarantees on those systems.
+    const latest = fs.lstatSync(directory);
+    if (!latest.isDirectory() || latest.isSymbolicLink() ||
+      latest.dev !== pinned.dev || latest.ino !== pinned.ino) {
+      throw new StateEngineError('State Engine directory was replaced before durable publication');
+    }
+    fs.renameSync(tempPath, destination);
+    published = true;
+    if (process.platform !== 'win32') fs.fsyncSync(dirFd);
+    return filePath;
   } finally {
-    fs.closeSync(fd);
+    if (!published) {
+      try { fs.unlinkSync(tempPath); } catch {}
+    }
+    fs.closeSync(dirFd);
   }
-  fs.renameSync(tempPath, filePath);
-  fsyncParentDirectory(path.dirname(filePath));
-  return filePath;
 }
 
 function acquireStateLock(rootDir, timeoutMs = 12000) {
