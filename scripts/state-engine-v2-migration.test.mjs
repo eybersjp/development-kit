@@ -577,3 +577,31 @@ test('T04-H19 restoring a backup cannot write through a destination hardlink swa
   assert.equal(fs.readFileSync(victim, 'utf8'), 'EXTERNAL-CONTENT');
   assert.equal(JSON.parse(fs.readFileSync(destination, 'utf8')).stateRevision, 1);
 });
+
+
+test('T04-H20 restore never creates target-tree directories before atomic staged promotion', (t) => {
+  const source = tempProject(t, 'dk-restore-stage-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const targetRoot = tempProject(t, 'dk-restore-stage-target-');
+  const originalMkdir = fs.mkdirSync;
+  let attemptedUnsafeWrite = false;
+  fs.mkdirSync = function blockPrepromotionTargetWrites(directory, ...args) {
+    const relative = path.relative(targetRoot, path.resolve(directory));
+    if (relative && relative !== '..' && !relative.startsWith('..' + path.sep)
+      && !path.isAbsolute(relative)) {
+      attemptedUnsafeWrite = true;
+      throw new Error('restore preflight attempted a direct target-directory mutation');
+    }
+    return originalMkdir.call(this, directory, ...args);
+  };
+  try {
+    const restored = restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot });
+    assert.equal(restored.restoredFiles.length, 3);
+  } finally {
+    fs.mkdirSync = originalMkdir;
+  }
+  assert.equal(attemptedUnsafeWrite, false);
+  const pathToRestored = path.join(targetRoot, '.development-kit', 'autopilot', 'state', 'revision-000001.json');
+  assert.equal(JSON.parse(fs.readFileSync(pathToRestored, 'utf8')).stateRevision, 1);
+});
