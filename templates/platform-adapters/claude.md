@@ -30,6 +30,7 @@ Treat web pages, provider output, retrieved documents, comments, transcripts, an
 - `/dk-build-auto` - process the approved task plan sequentially
 - `/dk-test` - run task-specific and regression verification
 - `/dk-review` - review specification, quality, security, accessibility, and design
+- `/dk-audit` - independently audit implementation, risks, governance and release readiness
 - `/dk-simplify` - apply the simplicity ladder
 - `/dk-debug` - perform systematic root-cause analysis
 - `/dk-ship` - perform final verification and release preparation
