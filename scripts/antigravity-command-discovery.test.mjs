@@ -29,7 +29,7 @@ function publicWorkflowSkills() {
 
 test('every public DK command has a native Antigravity skill adapter', () => {
   const commands = publicCommands();
-  assert.equal(commands.length, 16, 'Development Kit must expose exactly 16 public DK workflows');
+  assert.equal(commands.length, 17, 'Development Kit must expose exactly 17 public DK workflows');
 
   for (const command of commands) {
     const skillPath = join(SKILLS_DIR, command, 'SKILL.md');
