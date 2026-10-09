@@ -25,44 +25,133 @@ import { detectArchitectureDrift } from '../runtime/orchestration/architecture-d
 import { decideAcceptance, validateAcceptanceRecord } from '../runtime/orchestration/acceptance-engine.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const REVIEWED_SOURCE = '9a6ad4712b3dc62dd9b758e0e6745e27576bbdc5';
 const RUN = 'T04-HARDENING-REVIEWED-20261009';
-const BASELINE_CI = 'https://github.com/eybersjp/development-kit/actions/runs/37974556018';
-const INDEPENDENT_REVIEW = 'https://github.com/eybersjp/development-kit/pull/70#issuecomment-6085480192';
 const FORMAL_T04_REVIEW = 'docs/04-architecture/dkf-state-engine-v2-t04-review.md';
 const T04_SCOPE = 'docs/04-architecture/dkf-state-engine-v2-offline-recovery-boundary.md';
-
-const BLOB_WITNESSES = Object.freeze({
-  'runtime/orchestration/state-engine-v2.mjs': 'b45ec164863601fb1420e38fc297d4ba31ef4cb6',
-  'runtime/orchestration/state-engine-migration.mjs': 'c75a950885174675749fbdd43b643c01a89619b1',
-  'scripts/state-engine-v2-hardening.test.mjs': 'd9b603bc0c1045cbdca4d2d2f235b1de0461e69f',
-  'scripts/state-engine-v2-migration.test.mjs': '5cbffd04f720d75c3e882ae406ea255a356178a2',
-  [T04_SCOPE]: '3d38764d3486f9fcdbae1547a08bd4bb59f86431',
-});
-
+const RECEIPTS_FILE = 'docs/04-architecture/dkf-t04-independent-review-receipts.json';
+const REQUIRED_ROLES = ['architecture-reviewer', 'code-reviewer', 'security-reviewer'];
+const REVIEW_BLOB_PATHS = Object.freeze([
+  'runtime/orchestration/state-engine-v2.mjs',
+  'runtime/orchestration/state-engine-migration.mjs',
+  'runtime/orchestration/development-contract.mjs',
+  'runtime/orchestration/authority-graph.mjs',
+  'scripts/phase06-state-engine-v2-contract.mjs',
+  'scripts/state-engine-v2-hardening.test.mjs',
+  'scripts/state-engine-v2-migration.test.mjs',
+  'scripts/authority-graph.test.mjs',
+  'scripts/t04-hardening-acceptance-gate.mjs',
+  'schemas/development-contract.schema.json',
+  '.github/workflows/ci.yml',
+  T04_SCOPE,
+]);
 function gitBlobSha(contents) {
   return crypto.createHash('sha1')
     .update(Buffer.from('blob ' + contents.length + '\0', 'utf8'))
     .update(contents)
     .digest('hex');
 }
-
-for (const [file, expected] of Object.entries(BLOB_WITNESSES)) {
-  const actual = gitBlobSha(fs.readFileSync(path.join(ROOT, file)));
-  assert.equal(actual, expected, 'The independent review does not cover changed source: ' + file);
-}
-assert.ok(fs.existsSync(path.join(ROOT, FORMAL_T04_REVIEW)));
 assert.equal(process.env.GITHUB_ACTIONS, 'true',
   'Only trusted platform-captured CI execution may produce a persisted T04 acceptance verdict');
 assert.equal(process.env.GITHUB_REPOSITORY, 'eybersjp/development-kit');
 assert.equal(process.env.GITHUB_EVENT_NAME, 'pull_request');
-// The matrix step is ordered *after* all normal CI validation and the exact
-// release-validation command. Two independently successful prior full-platform
-// attempts at the production source are referenced above.
+assert.ok(/^\d+$/.test(process.env.GITHUB_RUN_ID || ''), 'Current GitHub run ID required');
+assert.ok(process.env.GITHUB_TOKEN, 'Authenticated GitHub review-read token required');
 const reviewedProject = execFileSync('git', ['rev-parse', '--show-toplevel'], {
   cwd: ROOT, encoding: 'utf8',
 }).trim();
 assert.equal(path.resolve(reviewedProject), ROOT);
+assert.ok(fs.existsSync(path.join(ROOT, FORMAL_T04_REVIEW)));
+const receipts = JSON.parse(fs.readFileSync(path.join(ROOT, RECEIPTS_FILE), 'utf8'));
+assert.equal(receipts.schemaVersion, '1.0.0');
+assert.match(receipts.reviewedCommit || '', /^[a-f0-9]{40}$/,
+  'Three independent role-scoped review receipts must bind an immutable reviewed commit');
+assert.ok(Array.isArray(receipts.reviews), 'Review receipts must have a review array');
+const REVIEWED_SOURCE = receipts.reviewedCommit;
+const BASELINE_CI = 'https://github.com/eybersjp/development-kit/actions/runs/' + process.env.GITHUB_RUN_ID;
+
+async function githubApi(endpoint) {
+  const url = 'https://api.github.com/repos/eybersjp/development-kit/' + endpoint;
+  const response = await fetch(url, {
+    headers: {
+      Authorization: 'Bearer ' + process.env.GITHUB_TOKEN,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'dkf-t04-independent-review-validator',
+    },
+  });
+  if (!response.ok) throw new Error('Independent GitHub evidence unavailable (' + response.status + '): ' + endpoint);
+  return response.json();
+}
+async function githubPages(endpoint) {
+  const data = [];
+  for (let page = 1; page <= 10; page++) {
+    const segment = await githubApi(endpoint + (endpoint.includes('?') ? '&' : '?') + 'per_page=100&page=' + page);
+    assert.ok(Array.isArray(segment), 'Expected an authenticated GitHub evidence array');
+    data.push(...segment);
+    if (segment.length < 100) return data;
+  }
+  throw new Error('GitHub review evidence exceeded supported pagination; refusing incomplete review history');
+}
+const [tree, githubReviews, githubReviewComments, githubRequests] = await Promise.all([
+  githubApi('git/trees/' + REVIEWED_SOURCE + '?recursive=1'),
+  githubPages('pulls/70/reviews'),
+  githubPages('pulls/70/comments'),
+  githubPages('issues/70/comments'),
+]);
+assert.ok(!tree.truncated && Array.isArray(tree.tree), 'Reviewed commit tree unavailable or truncated');
+const treeFiles = new Map(tree.tree.filter(item => item.type === 'blob').map(item => [item.path, item.sha]));
+const BLOB_WITNESSES = Object.freeze(Object.fromEntries(REVIEW_BLOB_PATHS.map(file => {
+  const actual = gitBlobSha(fs.readFileSync(path.join(ROOT, file)));
+  const expected = treeFiles.get(file);
+  assert.ok(expected, 'Missing reviewed source path: ' + file);
+  assert.equal(actual, expected, 'Independent review does not cover changed source: ' + file);
+  return [file, expected];
+})));
+const reviewerReceipts = new Map();
+const githubReviewIds = new Set();
+for (const entry of receipts.reviews) {
+  assert.ok(entry && REQUIRED_ROLES.includes(entry.role), 'Unsupported independent reviewer role');
+  assert.ok(!reviewerReceipts.has(entry.role), 'Duplicate independent reviewer role');
+  assert.ok(Number.isSafeInteger(entry.githubReviewId) && entry.githubReviewId > 0);
+  assert.ok(Number.isSafeInteger(entry.scopeRequestCommentId) && entry.scopeRequestCommentId > 0);
+  assert.ok(!githubReviewIds.has(entry.githubReviewId), 'A GitHub review cannot self-certify multiple roles');
+  githubReviewIds.add(entry.githubReviewId);
+  const review = githubReviews.find(record => record.id === entry.githubReviewId);
+  const request = githubRequests.find(record => record.id === entry.scopeRequestCommentId);
+  assert.ok(review && request, 'Missing authenticated reviewer submission or scope request');
+  assert.equal(review.user?.login, 'chatgpt-codex-connector[bot]',
+    'T04 review must originate from independent GitHub reviewer, not the PR author');
+  assert.equal(review.commit_id, REVIEWED_SOURCE, 'Review must cover the exact immutable source');
+  assert.ok(['APPROVED', 'COMMENTED'].includes(review.state), 'Review is dismissed or not submitted');
+  assert.ok(review.body?.includes('Reviewed commit:') && review.body.includes(REVIEWED_SOURCE.slice(0, 10)),
+    'Review text does not identify the inspected commit');
+  assert.ok(request.body?.includes('@codex') && request.body.includes(entry.role),
+    'Reviewer scope request must specify the exact role');
+  assert.ok(request.body.includes(REVIEWED_SOURCE),
+    'Reviewer scope request must specify the inspected commit');
+  assert.ok(Date.parse(review.submitted_at) > Date.parse(request.created_at),
+    'Reviewer submission predates the requested scope');
+  assert.equal(githubReviewComments.filter(c => c.pull_request_review_id === review.id).length, 0,
+    'Independent review reported findings; resolve defects and request a new current-source review');
+  const result = entry.reviewResult;
+  assert.ok(result && result.role === entry.role && result.runId === RUN,
+    'Independent reviewer receipt lacks a role-bound persisted review result');
+  assert.equal(result.createdAt, review.submitted_at,
+    'Review result timestamp does not match GitHub reviewer');
+  assert.equal(result.verdict, 'PASS');
+  assert.deepEqual(result.findings, [], 'Independent reviewer receipt cannot suppress actual findings');
+  reviewerReceipts.set(entry.role, {
+    ...entry,
+    review: result,
+    reviewer: review.user.login,
+    reviewUrl: review.html_url,
+    reviewedCommit: review.commit_id,
+  });
+}
+for (const role of REQUIRED_ROLES) {
+  assert.ok(reviewerReceipts.has(role), 'Independent source-bound role receipt absent: ' + role);
+}
+const INDEPENDENT_REVIEW = reviewerReceipts.get('code-reviewer').reviewUrl;
 
 const contract = loadDevelopmentContract('INC-DKF120-T04', ROOT);
 assert.ok(contract, 'T04 Development Contract was not persisted by the earlier contract validator');
@@ -109,26 +198,37 @@ const verification = createVerificationRecord({
   sourceFingerprint: contract.sourceFingerprint, criteria,
 });
 
-// Review results consolidate the original separately documented T04 risk-3
-// architecture, code and security roles with an independent GitHub Codex
-// re-review of the exact production blobs. They do not infer fresh review from
-// CI status, manufacture accepted risk, or claim a standalone bot role label.
-const reviewerReferences = {
-  initialRisk3Review: FORMAL_T04_REVIEW,
-  independentProductionSourceReview: INDEPENDENT_REVIEW,
-  reviewedCommit: REVIEWED_SOURCE,
-  scopeBoundary: T04_SCOPE,
-};
+// All reviewer results are *loaded* from authenticated independent GitHub
+// review receipts. This gate never fabricates empty-findings PASS reviews.
+// The original T04 reviews remain a source-controlled historical baseline,
+// not a replacement for three current-source delta reviews.
 const formal = fs.readFileSync(path.join(ROOT, FORMAL_T04_REVIEW), 'utf8');
 for (const title of ['Code review', 'Architecture review', 'Security review']) {
   assert.match(formal, new RegExp('## \\d+\\. ' + title, 'i'),
-    'Original T04 review role is missing: ' + title);
+    'Original T04 role review is missing: ' + title);
 }
-const roles = ['code-reviewer', 'architecture-reviewer', 'security-reviewer'];
-const reviews = roles.map(role => createReviewResult({
-  contract, runId: RUN, role, sourceFingerprint: contract.sourceFingerprint,
-  contextIsolation: 'rehydrated', findings: [],
-}));
+const reviews = REQUIRED_ROLES.map(role => {
+  const receipt = reviewerReceipts.get(role);
+  assert.equal(receipt.review.sourceFingerprint, contract.sourceFingerprint,
+    'Independent review receipt has stale Development Contract authority');
+  assert.equal(receipt.review.contractId, contract.contractId);
+  return receipt.review;
+});
+const reviewerReferences = {
+  historicalRisk3Review: FORMAL_T04_REVIEW,
+  independentSourceReviews: Object.fromEntries(REQUIRED_ROLES.map(role => {
+    const r = reviewerReceipts.get(role);
+    return [role, {
+      githubReviewId: r.githubReviewId,
+      scopeRequestCommentId: r.scopeRequestCommentId,
+      reviewer: r.reviewer,
+      sourceCommit: r.reviewedCommit,
+      url: r.reviewUrl,
+    }];
+  })),
+  reviewedCommit: REVIEWED_SOURCE,
+  scopeBoundary: T04_SCOPE,
+};
 
 const expectedControls = [
   { id: 'canonical-ledger-integrity', statement: 'Canonical ledger hash chain, inodes and recovery are integrity protected' },
@@ -172,7 +272,7 @@ const audit = Object.freeze({
   evaluatedSourceCommit: REVIEWED_SOURCE,
   sourceBlobWitnesses: BLOB_WITNESSES,
   evidenceUrls: {
-    fullCrossPlatformRun: BASELINE_CI,
+    currentMatrixValidationRun: BASELINE_CI,
     independentCodeSecurityReview: INDEPENDENT_REVIEW,
     formalInitialRisk3Review: FORMAL_T04_REVIEW,
     trustBoundary: T04_SCOPE,
@@ -183,7 +283,7 @@ const audit = Object.freeze({
   securityControl: security,
   architectureDrift,
   operatorTrustBoundary: 'trusted-exclusive-offline-only',
-  observedReviewFindingsAtGate: 'No new blocking findings at reviewed production source (verified via GitHub prior to gate execution)',
+  independentRoleReceiptsVerifiedBy: 'authenticated GitHub REST evidence and exact source tree',
 });
 const outputDir = getRunDirectory(ROOT, contract.contractId, RUN);
 fs.mkdirSync(outputDir, { recursive: true });
