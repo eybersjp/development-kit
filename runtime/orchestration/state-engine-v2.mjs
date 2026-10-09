@@ -223,11 +223,32 @@ function acquireStateLock(rootDir, timeoutMs = 5000) {
             if (probeError.code === 'ESRCH') alive = false;
           }
           if (!alive) {
-            const latest = fs.statSync(paths.lock);
+            let latest;
+            try {
+              latest = fs.statSync(paths.lock);
+            } catch (raceError) {
+              // Another writer may have removed this stale lock between the
+              // initial stat and the ownership recheck. Retry acquisition.
+              if (raceError.code === 'ENOENT') continue;
+              throw raceError;
+            }
             const sameIdentity = latest.ino === stat.ino && latest.mtimeMs === stat.mtimeMs && latest.size === stat.size;
-            if (sameIdentity && fs.readFileSync(paths.lock, 'utf8') === JSON.stringify(prior)) {
-              fs.unlinkSync(paths.lock);
-              continue;
+            if (sameIdentity) {
+              let actual;
+              try {
+                actual = fs.readFileSync(paths.lock, 'utf8');
+              } catch (raceError) {
+                if (raceError.code === 'ENOENT') continue;
+                throw raceError;
+              }
+              if (actual === JSON.stringify(prior)) {
+                try {
+                  fs.unlinkSync(paths.lock);
+                } catch (raceError) {
+                  if (raceError.code !== 'ENOENT') throw raceError;
+                }
+                continue;
+              }
             }
           }
         }
@@ -877,7 +898,10 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
   const allEvents = [...existing, ...newEvents];
   // Validate and reconstruct before beginning a durable state mutation.
   const nextSnapshot = rebuildSnapshotFromEvents(allEvents);
-  const suffix = newEvents.map((event) => JSON.stringify(stable(event))).join('\n') + '\n';
+  // A valid last event may lack the optional terminating newline. Preserve
+  // record separation when appending, including in the crash-recovery journal.
+  const separator = existingContent.length > 0 && !existingContent.endsWith('\n') ? '\n' : '';
+  const suffix = separator + newEvents.map((event) => JSON.stringify(stable(event))).join('\n') + '\n';
   const pending = {
     schemaVersion: '1.0.0',
     previousByteLength: Buffer.byteLength(existingContent, 'utf8'),
