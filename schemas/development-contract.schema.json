@@ -144,6 +144,15 @@
           },
           "requiredEvidence": {
             "type": "boolean"
+          },
+          "requirementId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requirementIds": {
+            "$ref": "#/$defs/stringArray"
           }
         }
       }
