@@ -22,3 +22,7 @@ Development Kit ships **9 primary non-test Node.js scripts** in `scripts/`, expo
 - `install-antigravity.mjs` — exits 1 when no target is found and none requested; 0 otherwise
 
 See [validation-architecture.md](../../04-architecture/validation-architecture.md) for how the scripts fit together.
+
+## Additional v0.12 Verification
+
+- **State Engine V2 endurance:** `npm run state-engine-v2:benchmark` — 300-transition disposable fixture on the Windows/Ubuntu CI matrix. See [state-engine-v2-benchmark.md](state-engine-v2-benchmark.md). The resulting timings are observations, not release performance acceptance.
