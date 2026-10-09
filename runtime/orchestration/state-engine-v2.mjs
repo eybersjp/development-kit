@@ -993,25 +993,56 @@ function recoverPendingCommitLocked(rootDir) {
   ) {
     throw new StateEngineError('Pending State Engine commit metadata is invalid');
   }
-  const bytes = fs.readFileSync(paths.events);
-  if (bytes.length < pending.previousByteLength) {
-    throw new StateEngineError('Canonical state history was truncated during a pending commit');
+  // Bind every recovery operation to the same verified canonical descriptor.
+  // Pathname truncation can otherwise modify a hardlinked external file when
+  // an attacker replaces events.jsonl after the prefix has been inspected.
+  const flags = fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW ?? 0);
+  const fd = fs.openSync(paths.events, flags);
+  let canonical;
+  try {
+    const opened = fs.fstatSync(fd);
+    const entry = fs.lstatSync(paths.events);
+    if (!opened.isFile() || !entry.isFile() || entry.isSymbolicLink() ||
+      opened.nlink !== 1 || entry.nlink !== 1 ||
+      opened.dev !== entry.dev || opened.ino !== entry.ino) {
+      throw new StateEngineError('Recovery canonical ledger inode/symlink/hardlink integrity failed');
+    }
+    const bytes = Buffer.alloc(opened.size);
+    let read = 0;
+    while (read < bytes.length) {
+      const amount = fs.readSync(fd, bytes, read, bytes.length - read, read);
+      if (amount <= 0) throw new StateEngineError('Canonical ledger changed while recovering pending commit');
+      read += amount;
+    }
+    if (bytes.length < pending.previousByteLength) {
+      throw new StateEngineError('Canonical state history was truncated during a pending commit');
+    }
+    if (sha256(bytes.subarray(0, pending.previousByteLength)) !== pending.previousHash) {
+      throw new StateEngineError('Canonical state prefix differs from pending commit integrity witness');
+    }
+    const existingSuffix = bytes.subarray(pending.previousByteLength);
+    const expectedSuffix = Buffer.from(pending.suffix, 'utf8');
+    if (!expectedSuffix.subarray(0, existingSuffix.length).equals(existingSuffix)) {
+      throw new StateEngineError('Canonical state suffix conflicts with pending commit; refusing recovery');
+    }
+    if (existingSuffix.length < expectedSuffix.length) {
+      // Truncate and repair through this FD, never a separately resolved path.
+      fs.ftruncateSync(fd, pending.previousByteLength);
+      let written = 0;
+      while (written < expectedSuffix.length) {
+        const amount = fs.writeSync(fd, expectedSuffix, written,
+          expectedSuffix.length - written, pending.previousByteLength + written);
+        if (amount <= 0) throw new StateEngineError('Pending recovery append made no forward progress');
+        written += amount;
+      }
+      fs.fsyncSync(fd);
+    }
+    canonical = rebuildSnapshotFromEvents(
+      parseLedger(Buffer.concat([bytes.subarray(0, pending.previousByteLength), expectedSuffix]).toString('utf8')),
+    );
+  } finally {
+    fs.closeSync(fd);
   }
-  if (sha256(bytes.subarray(0, pending.previousByteLength)) !== pending.previousHash) {
-    throw new StateEngineError('Canonical state prefix differs from pending commit integrity witness');
-  }
-  const existingSuffix = bytes.subarray(pending.previousByteLength);
-  const expectedSuffix = Buffer.from(pending.suffix, 'utf8');
-  if (!expectedSuffix.subarray(0, existingSuffix.length).equals(existingSuffix)) {
-    throw new StateEngineError('Canonical state suffix conflicts with pending commit; refusing recovery');
-  }
-  if (existingSuffix.length < expectedSuffix.length) {
-    // Repair only a provably incomplete suffix whose complete content is already
-    // durably captured in the pending journal. Never discard a committed prefix.
-    fs.truncateSync(paths.events, pending.previousByteLength);
-    appendDurably(paths.events, pending.suffix);
-  }
-  const canonical = rebuildSnapshotFromEvents(parseLedger(fs.readFileSync(paths.events, 'utf8')));
   // Reconstruct both derived views before acknowledging the durable commit.
   let witness = null;
   try {
