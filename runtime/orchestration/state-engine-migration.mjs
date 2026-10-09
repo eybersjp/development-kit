@@ -677,6 +677,53 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
   return Object.freeze({ recovered: true, outcome, displacedOriginal: outcome === 'promoted-original-retained' ? displaced : null });
 }
 
+/**
+ * Snapshot descendant metadata before copying: cpSync recreates ownership
+ * under the maintenance identity and may update source directory atimes.
+ * Post-order records let directories receive their final times only after
+ * all nested file handles have been visited.
+ */
+function collectRestoreMetadata(source, relative = '') {
+  const stat = fs.lstatSync(source);
+  const children = stat.isDirectory()
+    ? fs.readdirSync(source).flatMap(name => collectRestoreMetadata(
+      path.join(source, name), relative ? path.join(relative, name) : name,
+    ))
+    : [];
+  return [...children, {
+    relative, mode: stat.mode & 0o7777,
+    uid: stat.uid, gid: stat.gid,
+    atime: stat.atime, mtime: stat.mtime,
+    kind: stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : stat.isSymbolicLink() ? 'symlink' : 'unsupported',
+  }];
+}
+
+function applyRestoreMetadata(stage, records) {
+  for (const entry of records) {
+    const destination = entry.relative ? path.join(stage, entry.relative) : stage;
+    const current = fs.lstatSync(destination);
+    const sameKind = entry.kind === 'directory' ? current.isDirectory()
+      : entry.kind === 'file' ? current.isFile()
+      : entry.kind === 'symlink' ? current.isSymbolicLink() : false;
+    if (!sameKind) throw new StateMigrationError('Staged restore object type differs from original metadata');
+    if (process.platform !== 'win32' &&
+      (current.uid !== entry.uid || current.gid !== entry.gid)) {
+      if (entry.kind === 'symlink') fs.lchownSync(destination, entry.uid, entry.gid);
+      else fs.chownSync(destination, entry.uid, entry.gid);
+    }
+    if (entry.kind === 'symlink') continue; // never follow
+    fs.chmodSync(destination, entry.mode);
+    fs.utimesSync(destination, entry.atime, entry.mtime);
+    // Persist restored metadata, and avoid readdir once parent atime is set.
+    if (entry.kind === 'directory') {
+      syncRestoreParent(destination);
+    } else if (process.platform !== 'win32') {
+      const fd = fs.openSync(destination, 'r');
+      try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    }
+  }
+}
+
 export function restoreLegacyBackup({
   backupPath,
   targetRoot,
@@ -715,6 +762,7 @@ export function restoreLegacyBackup({
   const parent = path.dirname(resolvedRoot);
   const originalRootExists = fs.existsSync(resolvedRoot);
   const rootStat = originalRootExists ? fs.lstatSync(resolvedRoot) : null;
+  const originalMetadata = originalRootExists ? collectRestoreMetadata(resolvedRoot) : [];
   const rootIdentity = originalRootExists ? fs.lstatSync(resolvedRoot, { bigint: true }) : null;
   if (rootStat && (!rootStat.isDirectory() || rootStat.isSymbolicLink())) {
     throw new StateMigrationError('Legacy backup restore root must be an ordinary directory');
@@ -751,21 +799,12 @@ export function restoreLegacyBackup({
       restored.push(entry.path);
     }
 
-    // The stage is private while being populated. Before promotion, restore
-    // the original root's traversal permissions and POSIX ownership so
-    // existing service/group consumers keep their access after cutover.
-    if (rootStat) {
-      const stagedStat = fs.statSync(stage);
-      if (process.platform !== 'win32' &&
-        (stagedStat.uid !== rootStat.uid || stagedStat.gid !== rootStat.gid)) {
-        fs.chownSync(stage, rootStat.uid, rootStat.gid);
-      }
-      fs.chmodSync(stage, rootStat.mode & 0o7777);
-      fs.utimesSync(stage, rootStat.atime, rootStat.mtime);
-    }
-
-    // Seal the entire stage before making the promotion journal durable.
+    // Seal and flush staged file contents before metadata restoration.
+    // Metadata is replayed post-order so source file owners and descendant
+    // traversal modes do not drift and historical parent atimes are applied
+    // after every directory traversal has finished.
     syncRestoreTree(stage);
+    if (rootStat) applyRestoreMetadata(stage, originalMetadata);
 
     // Durable journal precedes *both* root-directory renames. A crash after
     // either rename is recoverable by an explicit offline recovery invocation.
