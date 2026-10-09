@@ -465,3 +465,54 @@ test('AC-034 representative 26-revision migration exceeds the >=80% active canon
   }
   assert.equal(fs.existsSync(getLegacyBackupPath(rootDir)), true);
 });
+
+
+test('T04-H05 restore refuses a preexisting symlink/junction parent and leaves outside directory untouched', (t) => {
+  const rootDir = tempProject(t, 'dk-restore-source-');
+  writeLegacyAutopilot(rootDir, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir });
+  const restoreRoot = tempProject(t, 'dk-restore-target-');
+  const outside = tempProject(t, 'dk-restore-outside-');
+  const dkRoot = path.join(restoreRoot, '.development-kit');
+  fs.mkdirSync(dkRoot, { recursive: true });
+  try {
+    fs.symlinkSync(outside, path.join(dkRoot, 'autopilot'), process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+      t.skip('Host does not permit directory symlink/junction creation');
+      return;
+    }
+    throw error;
+  }
+  assert.throws(
+    () => restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot: restoreRoot }),
+    /symbolic link|junction|escapes/i,
+  );
+  assert.deepEqual(fs.readdirSync(outside), []);
+});
+
+test('T04-H06 restore refuses a final-file symlink even when overwrite is explicitly enabled', (t) => {
+  const rootDir = tempProject(t, 'dk-restore-source-');
+  writeLegacyAutopilot(rootDir, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir });
+  const restoreRoot = tempProject(t, 'dk-restore-target-');
+  const outside = tempProject(t, 'dk-restore-outside-');
+  const filename = path.join(outside, 'should-not-change.json');
+  fs.writeFileSync(filename, 'SAFE', 'utf8');
+  const parent = path.join(restoreRoot, '.development-kit', 'autopilot', 'state');
+  fs.mkdirSync(parent, { recursive: true });
+  try {
+    fs.symlinkSync(filename, path.join(parent, 'revision-000001.json'), 'file');
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+      t.skip('Host does not permit file symlink creation');
+      return;
+    }
+    throw error;
+  }
+  assert.throws(
+    () => restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot: restoreRoot, overwrite: true }),
+    /regular file|symbolic link|junction/i,
+  );
+  assert.equal(fs.readFileSync(filename, 'utf8'), 'SAFE');
+});
