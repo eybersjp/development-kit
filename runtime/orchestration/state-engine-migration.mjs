@@ -517,10 +517,11 @@ export function migrateLegacyStateToV2({
   });
 }
 
-function resolveSafeRestoreDestination(targetRoot, relativePath) {
+function resolveSafeRestoreDestination(targetRoot, relativePath, { createMissing = false } = {}) {
   const root = path.resolve(targetRoot);
   const destination = resolveProjectPath(root, relativePath);
-  fs.mkdirSync(root, { recursive: true });
+  if (createMissing) fs.mkdirSync(root, { recursive: true });
+  if (!fs.existsSync(root)) return destination;
   if (fs.lstatSync(root).isSymbolicLink()) {
     throw new StateMigrationError('Legacy backup restore root must not be a symbolic link');
   }
@@ -540,7 +541,8 @@ function resolveSafeRestoreDestination(targetRoot, relativePath) {
       if (!stat.isDirectory()) throw new StateMigrationError('Legacy backup restore parent is not a directory: ' + relativePath);
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
-      fs.mkdirSync(current);
+      if (createMissing) fs.mkdirSync(current);
+      else continue;
     }
     const real = fs.realpathSync(current);
     const rel = path.relative(rootReal, real);
@@ -604,7 +606,7 @@ export function restoreLegacyBackup({
     fs.cpSync(resolvedRoot, stage, { recursive: true, force: true, dereference: false });
     const restored = [];
     for (const { entry } of destinations) {
-      const destination = resolveSafeRestoreDestination(stage, entry.path);
+      const destination = resolveSafeRestoreDestination(stage, entry.path, { createMissing: true });
       const content = Buffer.from(entry.contentBase64, 'base64');
       const tempFile = destination + '.tmp-' + crypto.randomUUID();
       const fd = fs.openSync(tempFile, 'wx', 0o600);
