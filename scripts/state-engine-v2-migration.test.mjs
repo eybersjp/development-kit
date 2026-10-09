@@ -605,3 +605,19 @@ test('T04-H20 restore never creates target-tree directories before atomic staged
   const pathToRestored = path.join(targetRoot, '.development-kit', 'autopilot', 'state', 'revision-000001.json');
   assert.equal(JSON.parse(fs.readFileSync(pathToRestored, 'utf8')).stateRevision, 1);
 });
+
+
+test('T04-H21 stage-promoted restore supports an absent root within an existing parent directory', (t) => {
+  const source = tempProject(t, 'dk-restore-newroot-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const parent = tempProject(t, 'dk-restore-newroot-parent-');
+  const root = path.join(parent, 'new-restore-root');
+  assert.equal(fs.existsSync(root), false);
+  const restored = restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot: root });
+  assert.equal(restored.restoredFiles.length, 3);
+  assert.equal(
+    JSON.parse(fs.readFileSync(path.join(root, '.development-kit','autopilot','state','revision-000001.json'), 'utf8')).stateRevision,
+    1,
+  );
+});
