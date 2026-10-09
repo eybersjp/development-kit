@@ -117,7 +117,10 @@ function statePaths(rootDir = process.cwd()) {
     lock: path.join(stateRoot, 'state.lock'),
     pending: path.join(stateRoot, 'pending-commit.json'),
   });
-  if (fs.existsSync(stateRoot)) assertStateRootRealpathSafe(paths);
+  if (fs.existsSync(stateRoot)) {
+    assertStateRootRealpathSafe(paths);
+    assertStateFilesNotLinks(paths);
+  }
   return paths;
 }
 
@@ -131,6 +134,31 @@ function assertStateRootRealpathSafe(paths) {
   return stateReal;
 }
 
+function assertStateFilesNotLinks(paths) {
+  for (const field of ['events', 'snapshot', 'index', 'schema', 'pending', 'lock']) {
+    try {
+      const stat = fs.lstatSync(paths[field]);
+      if (stat.isSymbolicLink() || !stat.isFile()) {
+        throw new StateEngineError('State Engine internal file is not a regular file: ' + field);
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+}
+
+function fsyncParentDirectory(directory) {
+  // POSIX directory fsync preserves renames/journal creation across a power
+  // loss; Windows does not support the same portable directory operation.
+  if (process.platform === 'win32') return;
+  const dirFd = fs.openSync(directory, 'r');
+  try {
+    fs.fsyncSync(dirFd);
+  } finally {
+    fs.closeSync(dirFd);
+  }
+}
+
 function atomicWrite(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.tmp-${process.pid}-${crypto.randomUUID()}`;
@@ -142,6 +170,7 @@ function atomicWrite(filePath, content) {
     fs.closeSync(fd);
   }
   fs.renameSync(tempPath, filePath);
+  fsyncParentDirectory(path.dirname(filePath));
   return filePath;
 }
 
@@ -818,6 +847,7 @@ function recoverPendingCommitLocked(rootDir) {
   }
   parseLedger(fs.readFileSync(paths.events, 'utf8'));
   fs.unlinkSync(paths.pending);
+  fsyncParentDirectory(paths.stateRoot);
 }
 
 function withStateLock(rootDir, task) {
@@ -860,6 +890,7 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
   appendDurably(paths.events, suffix);
   const { index } = persistDerived(nextSnapshot, rootDir);
   fs.unlinkSync(paths.pending);
+  fsyncParentDirectory(paths.stateRoot);
   return { events: newEvents, snapshot: nextSnapshot, index };
 }
 
