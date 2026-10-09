@@ -486,3 +486,48 @@ test('T04-H29 interrupted ledger recovery must never truncate an external hardli
   }
   assert.deepEqual(fs.readFileSync(victim), expectedExternal);
 });
+
+
+test('T04-H36 pending journal cannot overwrite external file after state-directory swap', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'FIRST', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const outside = tempProject(t);
+  const protectedFile = path.join(outside, 'pending-commit.json');
+  fs.writeFileSync(protectedFile, 'EXTERNAL-DATA-MUST-STAY', 'utf8');
+  const moved = paths.stateRoot + '-held-for-test';
+  const originalOpen = fs.openSync;
+  let swapped = false;
+  fs.openSync = function swapRootAtJournalTempOpen(target, flags, ...rest) {
+    if (!swapped && typeof target === 'string' &&
+      target.includes('pending-commit.json.tmp-') && flags === 'wx') {
+      fs.renameSync(paths.stateRoot, moved);
+      try {
+        fs.symlinkSync(outside, paths.stateRoot, process.platform === 'win32' ? 'junction' : 'dir');
+      } catch (error) {
+        fs.renameSync(moved, paths.stateRoot);
+        if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+          t.skip('Host does not permit test directory symlinks/junctions');
+          return originalOpen.call(this, target, flags, ...rest);
+        }
+        throw error;
+      }
+      swapped = true;
+    }
+    return originalOpen.call(this, target, flags, ...rest);
+  };
+  try {
+    assert.throws(
+      () => appendMetadataEvent({ rootDir, eventType: 'SECOND_MUST_NOT_PUBLISH', payload: {} }),
+      /directory|symbolic|changed|outside|project root|symlink|mismatch/i,
+    );
+  } finally {
+    fs.openSync = originalOpen;
+    if (swapped) {
+      fs.unlinkSync(paths.stateRoot);
+      fs.renameSync(moved, paths.stateRoot);
+    }
+  }
+  assert.equal(fs.readFileSync(protectedFile, 'utf8'), 'EXTERNAL-DATA-MUST-STAY');
+  assert.equal(loadCanonicalEvents(rootDir).length, 1);
+});
