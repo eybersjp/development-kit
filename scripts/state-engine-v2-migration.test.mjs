@@ -544,3 +544,36 @@ test('T04-H13 backup restore rejects a hard-linked overwrite destination', (t) =
   );
   assert.equal(fs.readFileSync(external, 'utf8'), 'PROTECTED');
 });
+
+
+test('T04-H19 restoring a backup cannot write through a destination hardlink swapped at open time', (t) => {
+  const source = tempProject(t, 'dk-restore-race-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const targetRoot = tempProject(t, 'dk-restore-race-target-');
+  const protectedRoot = tempProject(t, 'dk-restore-race-outside-');
+  const victim = path.join(protectedRoot, 'external.json');
+  fs.writeFileSync(victim, 'EXTERNAL-CONTENT', 'utf8');
+  const parent = path.join(targetRoot, '.development-kit', 'autopilot', 'state');
+  fs.mkdirSync(parent, {recursive:true});
+  const destination = path.join(parent, 'revision-000001.json');
+  fs.writeFileSync(destination, 'stale value', 'utf8');
+  const originalOpen = fs.openSync;
+  let swapped = false;
+  fs.openSync = function swappedAtDestinationOpen(file, flags, ...rest) {
+    if (!swapped && file === destination) {
+      swapped = true;
+      fs.rmSync(destination);
+      fs.linkSync(victim, destination);
+    }
+    return originalOpen.call(this, file, flags, ...rest);
+  };
+  try {
+    const restored = restoreLegacyBackup({ backupPath:migrated.backupPath, targetRoot, overwrite:true });
+    assert.ok(restored.restoredFiles.includes('.development-kit/autopilot/state/revision-000001.json'));
+  } finally {
+    fs.openSync = originalOpen;
+  }
+  assert.equal(fs.readFileSync(victim, 'utf8'), 'EXTERNAL-CONTENT');
+  assert.equal(JSON.parse(fs.readFileSync(destination, 'utf8')).stateRevision, 1);
+});
