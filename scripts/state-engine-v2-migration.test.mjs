@@ -621,3 +621,25 @@ test('T04-H21 stage-promoted restore supports an absent root within an existing 
     1,
   );
 });
+
+
+test('T04-H23 staged restore preserves the existing destination root mode and ownership', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('POSIX mode/uid semantics are not portable to Windows'); return;
+  }
+  const source = tempProject(t, 'dk-mode-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const targetRoot = tempProject(t, 'dk-mode-target-');
+  fs.chmodSync(targetRoot, 0o755);
+  const before = fs.statSync(targetRoot);
+  restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot });
+  const after = fs.statSync(targetRoot);
+  assert.equal(after.mode & 0o7777, before.mode & 0o7777);
+  assert.equal(after.uid, before.uid);
+  assert.equal(after.gid, before.gid);
+  assert.equal(
+    JSON.parse(fs.readFileSync(path.join(targetRoot,'.development-kit','autopilot','state','revision-000001.json'),'utf8')).stateRevision,
+    1,
+  );
+});
