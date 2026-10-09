@@ -244,3 +244,14 @@ Integrated through PR #54; Issue #51 is completed.
 - DKF remains general-purpose, host/provider/domain neutral.
 - v0.12.0 remains unreleased; package version remains 0.11.2; T04 acceptance does not merge to `main`, tag, publish, release, or delete retained legacy state.
 - Next validated increment: **DKF120-T05 — Lifecycle Instances**. T05 requires its own Development Contract before production implementation.
+
+## v0.12 T04 Reliability Hardening — 9 October 2026
+
+- Implemented bounded audit repairs on fix/v0.12-t04-state-engine-hardening; stacked PR #70, cumulative draft CI PR #69. Both are unmerged.
+- AUD-05 physical event rewrites replaced with journal-backed fsynced append, deterministic recovery and fail-closed conflict detection. Full-history CPU replay remains a performance limitation.
+- AUD-06 writers serialize current-state reads, event construction and sequence allocation under a PID/hostname owner-aware lock. Live aged owners are not stolen; verified-dead local owners can be reclaimed.
+- AUD-07 restore destination parents/files are symlink/junction protected, with no-follow/exclusive final opens; internal State Engine files are also protected.
+- Nine new T04-H01 through T04-H09 tests passed on Windows and Ubuntu. GitHub Actions run 37961832237 passed the full exact release-validation command on both.
+- Disposable 300-event endurance fixture: Ubuntu 7,213 ms, Windows 19,986 ms, ledger 189,651 bytes; historical full-rewrite traffic modeled as 28,479,948 bytes (99.33% modeled avoidance). No broad CPU or release-performance claim.
+- Canonical new evidence: docs/04-architecture/dkf-state-engine-v2-t04-hardening-validation.md. Existing T04 acceptance authority, approval and v0.11.2 published release remain unchanged.
+- Next: independent risk-3 review and deterministic runtime acceptance of the hardening diff prior to merge, then continue T05. Never merge cumulative validation PR #69 as an accidental release.
