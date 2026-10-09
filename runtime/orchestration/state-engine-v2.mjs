@@ -197,7 +197,17 @@ function acquireStateLock(rootDir, timeoutMs = 5000) {
       }
       return { path: paths.lock, owner };
     } catch (error) {
-      if (error.code !== 'EEXIST') throw new StateEngineError('Unable to acquire State Engine lock: ' + error.message);
+      if (error.code !== 'EEXIST') {
+        // Windows can briefly deny create/open while another process closes or
+        // removes this exact lock file. Retry a bounded transient sharing
+        // violation; never interpret it as permission to steal the lock.
+        if (process.platform !== 'win32' || !['EPERM', 'EACCES'].includes(error.code)) {
+          throw new StateEngineError('Unable to acquire State Engine lock: ' + error.message);
+        }
+        const transientWaitStart = Date.now();
+        while (Date.now() - transientWaitStart < 25) {}
+        continue;
+      }
       let stat;
       try {
         stat = fs.statSync(paths.lock);
