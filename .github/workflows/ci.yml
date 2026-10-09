@@ -116,3 +116,16 @@ jobs:
 
       - name: Validate exact release command
         run: npm run release:validate
+
+      - name: Compute T04 hardening risk-3 acceptance using DKF runtime
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/v0.12-t04-state-engine-hardening' }}
+        run: node scripts/t04-hardening-acceptance-gate.mjs
+
+      - name: Retain T04 deterministic acceptance evidence
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/v0.12-t04-state-engine-hardening' && success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: t04-hardening-acceptance-${{ matrix.os }}
+          path: .development-kit/runs/INC-DKF120-T04/T04-HARDENING-REVIEWED-20261009/
+          retention-days: 30
+          if-no-files-found: error
