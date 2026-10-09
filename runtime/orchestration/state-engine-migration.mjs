@@ -584,31 +584,72 @@ export function restoreLegacyBackup({
     }
   }
 
-  const restored = [];
-  for (const { entry, destination } of destinations) {
-    const content = Buffer.from(entry.contentBase64, 'base64');
-    // Recheck boundaries immediately before open; O_NOFOLLOW protects the final
-    // component on platforms where it is available.
-    resolveSafeRestoreDestination(targetRoot, entry.path);
-    const flags = (overwrite ? fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC
-      : fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL)
-      | (fs.constants.O_NOFOLLOW ?? 0);
-    const fd = fs.openSync(destination, flags, 0o600);
-    try {
-      fs.writeFileSync(fd, content);
-      fs.fsyncSync(fd);
-    } finally {
-      fs.closeSync(fd);
-    }
-    if (stateSha256(fs.readFileSync(destination)) !== entry.fingerprint) {
-      throw new StateMigrationError('Restored legacy file failed fingerprint verification: ' + entry.path);
-    }
-    restored.push(entry.path);
+  // Path-based preflight + O_NOFOLLOW cannot secure an overwrite against a
+  // concurrent parent-directory swap. Build and fsync a complete replacement
+  // tree in an owner-only sibling directory. Publish by renaming the root
+  // directory itself; no restored byte is ever opened through an attacker-
+  // mutable path *inside* targetRoot.
+  const resolvedRoot = path.resolve(targetRoot);
+  const parent = path.dirname(resolvedRoot);
+  const rootStat = fs.lstatSync(resolvedRoot);
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    throw new StateMigrationError('Legacy backup restore root must be an ordinary directory');
   }
-  return Object.freeze({
-    restoredFiles: restored.sort(),
-    sourceFingerprint: bundle.sourceFingerprint,
-  });
+  const stage = fs.mkdtempSync(path.join(parent, '.dk-legacy-restore-stage-'));
+  const displaced = stage + '-original';
+  let promoted = false;
+  let displacedOriginal = false;
+  try {
+    fs.chmodSync(stage, 0o700);
+    fs.cpSync(resolvedRoot, stage, { recursive: true, force: true, dereference: false });
+    const restored = [];
+    for (const { entry } of destinations) {
+      const destination = resolveSafeRestoreDestination(stage, entry.path);
+      const content = Buffer.from(entry.contentBase64, 'base64');
+      const tempFile = destination + '.tmp-' + crypto.randomUUID();
+      const fd = fs.openSync(tempFile, 'wx', 0o600);
+      try {
+        fs.writeFileSync(fd, content);
+        fs.fsyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
+      }
+      // An atomic rename replaces the *directory entry* even if the prior
+      // staging entry is a link; it never truncates an external hardlink inode.
+      fs.renameSync(tempFile, destination);
+      if (stateSha256(fs.readFileSync(destination)) !== entry.fingerprint) {
+        throw new StateMigrationError('Staged legacy file failed fingerprint verification: ' + entry.path);
+      }
+      restored.push(entry.path);
+    }
+
+    // Moving the existing root out of the way does not follow a symlink.
+    // Verify that the directory moved is still the original preflighted inode
+    // before publishing the staged replacement.
+    fs.renameSync(resolvedRoot, displaced);
+    displacedOriginal = true;
+    const moved = fs.lstatSync(displaced);
+    if (moved.dev !== rootStat.dev || moved.ino !== rootStat.ino) {
+      throw new StateMigrationError('Legacy backup restore root changed during staging');
+    }
+    fs.renameSync(stage, resolvedRoot);
+    promoted = true;
+    displacedOriginal = false;
+    fs.rmSync(displaced, { recursive: true, force: true });
+    return Object.freeze({
+      restoredFiles: restored.sort(),
+      sourceFingerprint: bundle.sourceFingerprint,
+    });
+  } finally {
+    if (displacedOriginal) {
+      try {
+        if (!fs.existsSync(resolvedRoot)) fs.renameSync(displaced, resolvedRoot);
+      } catch {}
+    }
+    if (!promoted) {
+      try { fs.rmSync(stage, { recursive: true, force: true }); } catch {}
+    }
+  }
 }
 
 export function getLegacyBackupPath(rootDir = process.cwd()) {
