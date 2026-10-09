@@ -894,9 +894,6 @@ export function appendEntityState({
     if (current && revision < current.stateRevision) {
       throw new StateEngineError('Refusing stateRevision regression for ' + normalizedType + '/' + normalizedId);
     }
-    if (current && revision === current.stateRevision && stableJson(current.state) !== stableJson(nextState)) {
-      throw new StateEngineError('Refusing conflicting same-revision state overwrite for ' + normalizedType + '/' + normalizedId);
-    }
     if (current && stableJson(current.state) === stableJson(nextState)) {
       return Object.freeze({ changed: false, event: null, snapshot: currentSnapshot });
     }
