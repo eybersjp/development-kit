@@ -119,17 +119,37 @@ jobs:
       - name: Validate exact release command
         run: npm run release:validate
 
-      - name: Compute T04 hardening risk-3 acceptance using DKF runtime
-        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/v0.12-t04-state-engine-hardening' }}
+  t04_acceptance:
+    name: T04 independently reviewed acceptance
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/v0.12-t04-state-engine-hardening' }}
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Check out validated source
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Materialize source-bound T04 Development Contract
+        run: node scripts/phase06-state-engine-v2-contract.mjs
+
+      - name: Verify independent reviews and compute deterministic T04 acceptance
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/t04-hardening-acceptance-gate.mjs
 
-      - name: Retain T04 deterministic acceptance evidence
-        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/v0.12-t04-state-engine-hardening' && success() }}
+      - name: Retain independent risk-3 acceptance evidence
         uses: actions/upload-artifact@v4
         with:
-          name: t04-hardening-acceptance-${{ matrix.os }}
+          name: t04-hardening-acceptance
           path: .development-kit/runs/INC-DKF120-T04/T04-HARDENING-REVIEWED-20261009/
           retention-days: 30
           include-hidden-files: true
