@@ -731,3 +731,45 @@ test('T04-H28 restore journals preserve original after a simulated process death
   assert.equal(fs.readFileSync(sentinel,'utf8'),'KEEP-ME');
   assert.equal(fs.existsSync(root),true);
 });
+
+
+test('T04-H30 offline staged restore preserves descendant file identity and POSIX permission metadata', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('POSIX ownership and mode semantics require a POSIX host'); return;
+  }
+  const source = tempProject(t, 'dk-descendant-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const root = tempProject(t, 'dk-descendant-target-');
+  const nested = path.join(root, 'unrelated', 'private.txt');
+  fs.mkdirSync(path.dirname(nested), { recursive: true });
+  fs.writeFileSync(nested, 'PROTECTED-CONTENT');
+  fs.chmodSync(nested, 0o600);
+  if (process.getuid?.() === 0) {
+    fs.chownSync(nested, 65534, 65534);
+  }
+  const before = fs.statSync(nested);
+  restoreLegacyBackup({ backupPath:migrated.backupPath, targetRoot:root, confirmOffline:true });
+  const after = fs.statSync(nested);
+  assert.equal(after.uid, before.uid);
+  assert.equal(after.gid, before.gid);
+  assert.equal(after.mode & 0o7777, before.mode & 0o7777);
+  assert.equal(fs.readFileSync(nested, 'utf8'), 'PROTECTED-CONTENT');
+});
+
+test('T04-H31 staged restore does not advance historical root access and modification timestamps', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('POSIX access-time semantics require a POSIX host'); return;
+  }
+  const source = tempProject(t, 'dk-atime-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const root = tempProject(t, 'dk-atime-target-');
+  const old = new Date('2001-01-01T00:00:00.000Z');
+  fs.utimesSync(root, old, old);
+  const before = fs.statSync(root);
+  restoreLegacyBackup({ backupPath:migrated.backupPath, targetRoot:root, confirmOffline:true });
+  const after = fs.statSync(root);
+  assert.ok(Math.abs(after.atimeMs - before.atimeMs) < 1000, 'root access time must be preserved');
+  assert.ok(Math.abs(after.mtimeMs - before.mtimeMs) < 1000, 'root modification time must be preserved');
+});
