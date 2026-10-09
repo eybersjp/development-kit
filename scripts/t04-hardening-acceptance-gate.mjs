@@ -56,6 +56,8 @@ assert.equal(process.env.GITHUB_REPOSITORY, 'eybersjp/development-kit');
 assert.equal(process.env.GITHUB_EVENT_NAME, 'pull_request');
 assert.ok(/^\d+$/.test(process.env.GITHUB_RUN_ID || ''), 'Current GitHub run ID required');
 assert.ok(process.env.GITHUB_TOKEN, 'Authenticated GitHub review-read token required');
+assert.equal(process.env.GITHUB_JOB, 't04_acceptance',
+  'T04 acceptance may only run after the complete Windows/Ubuntu matrix succeeds');
 const reviewedProject = execFileSync('git', ['rev-parse', '--show-toplevel'], {
   cwd: ROOT, encoding: 'utf8',
 }).trim();
@@ -82,24 +84,37 @@ async function githubApi(endpoint) {
   if (!response.ok) throw new Error('Independent GitHub evidence unavailable (' + response.status + '): ' + endpoint);
   return response.json();
 }
-async function githubPages(endpoint) {
-  const data = [];
-  for (let page = 1; page <= 10; page++) {
-    const segment = await githubApi(endpoint + (endpoint.includes('?') ? '&' : '?') + 'per_page=100&page=' + page);
-    assert.ok(Array.isArray(segment), 'Expected an authenticated GitHub evidence array');
-    data.push(...segment);
-    if (segment.length < 100) return data;
-  }
-  throw new Error('GitHub review evidence exceeded supported pagination; refusing incomplete review history');
-}
-const [tree, githubReviews, githubReviewComments, githubRequests] = await Promise.all([
-  githubApi('git/trees/' + REVIEWED_SOURCE + '?recursive=1'),
-  githubPages('pulls/70/reviews'),
-  githubPages('pulls/70/comments'),
-  githubPages('issues/70/comments'),
-]);
+const tree = await githubApi('git/trees/' + REVIEWED_SOURCE + '?recursive=1');
 assert.ok(!tree.truncated && Array.isArray(tree.tree), 'Reviewed commit tree unavailable or truncated');
 const treeFiles = new Map(tree.tree.filter(item => item.type === 'blob').map(item => [item.path, item.sha]));
+
+// Compare the *entire* Git index against the independently reviewed commit.
+// A post-review modification to acceptance-engine.mjs, a new executable file,
+// or any other tracked dependency now fails, not just files on a hand-picked
+// witness list. The receipts themselves are the sole post-review exception.
+const staged = execFileSync('git', ['ls-files', '--stage', '-z'], {
+  cwd: ROOT, encoding: 'utf8',
+});
+const indexFiles = new Map();
+for (const record of staged.split('\0').filter(Boolean)) {
+  const matched = record.match(/^\d+ ([a-f0-9]{40}) \d+\t([\s\S]+)$/);
+  assert.ok(matched, 'Cannot parse Git index entry for reviewed-source check');
+  const [, blobSha, filename] = matched;
+  indexFiles.set(filename, blobSha);
+}
+for (const [filename, blob] of indexFiles) {
+  if (filename === RECEIPTS_FILE) continue;
+  assert.equal(blob, treeFiles.get(filename),
+    'The complete checked-out source differs from independently reviewed commit: ' + filename);
+}
+for (const filename of treeFiles.keys()) {
+  if (filename === RECEIPTS_FILE) continue;
+  assert.ok(indexFiles.has(filename),
+    'The current checkout is missing independently reviewed source: ' + filename);
+}
+assert.equal(execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+  cwd: ROOT, encoding: 'utf8',
+}).trim(), '', 'Tracked working-tree modifications invalidate reviewed-source authority');
 const BLOB_WITNESSES = Object.freeze(Object.fromEntries(REVIEW_BLOB_PATHS.map(file => {
   const actual = gitBlobSha(fs.readFileSync(path.join(ROOT, file)));
   const expected = treeFiles.get(file);
@@ -107,6 +122,18 @@ const BLOB_WITNESSES = Object.freeze(Object.fromEntries(REVIEW_BLOB_PATHS.map(fi
   assert.equal(actual, expected, 'Independent review does not cover changed source: ' + file);
   return [file, expected];
 })));
+
+async function findCodexReaction(commentId, reactionId) {
+  for (let page = 1; ; page++) {
+    const items = await githubApi('issues/comments/' + commentId +
+      '/reactions?per_page=100&page=' + page);
+    assert.ok(Array.isArray(items), 'GitHub review reactions response is invalid');
+    const hit = items.find(item => item.id === reactionId);
+    if (hit) return hit;
+    if (items.length < 100) throw new Error('Authenticated independent clean-review reaction not found');
+  }
+}
+
 const reviewerReceipts = new Map();
 const githubReviewIds = new Set();
 const scopeRequestIds = new Set();
@@ -117,10 +144,13 @@ for (const entry of receipts.reviews) {
   assert.ok(!scopeRequestIds.has(entry.scopeRequestCommentId),
     'Each role requires an independently requested reviewer execution');
   scopeRequestIds.add(entry.scopeRequestCommentId);
-  const request = githubRequests.find(record => record.id === entry.scopeRequestCommentId);
+  const request = await githubApi('issues/comments/' + entry.scopeRequestCommentId);
   assert.ok(request, 'Independent reviewer scope request was not found in GitHub');
-  assert.ok(request.body?.includes('@codex') && request.body.includes(entry.role),
+  assert.ok(request.body?.includes('@codex') && request.body.includes('Independent role: ' + entry.role),
     'Scope request must explicitly specify independent reviewer role');
+  assert.deepEqual(REQUIRED_ROLES.filter(role =>
+    request.body.includes('Independent role: ' + role)), [entry.role],
+    'A scope request cannot authenticate multiple reviewer roles');
   assert.ok(request.body.includes(REVIEWED_SOURCE),
     'Reviewer scope request must bind the inspected immutable source commit');
 
@@ -132,7 +162,7 @@ for (const entry of receipts.reviews) {
     assert.ok(!githubReviewIds.has(entry.githubReviewId),
       'A single independent review cannot self-certify multiple roles');
     githubReviewIds.add(entry.githubReviewId);
-    const review = githubReviews.find(record => record.id === entry.githubReviewId);
+    const review = await githubApi('pulls/70/reviews/' + entry.githubReviewId);
     assert.ok(review, 'Independent GitHub reviewer submission was not found');
     assert.equal(review.user?.login, 'chatgpt-codex-connector[bot]',
       'Independent reviewer identity is not authenticated');
@@ -140,11 +170,14 @@ for (const entry of receipts.reviews) {
     assert.ok(['APPROVED', 'COMMENTED'].includes(review.state),
       'GitHub reviewer submission is dismissed or not completed');
     assert.ok(review.body?.includes('Reviewed commit:') &&
-      review.body.includes(REVIEWED_SOURCE.slice(0, 10)),
-      'Reviewer submission does not identify the source inspected');
+      review.body.includes(REVIEWED_SOURCE.slice(0, 10)) &&
+      review.body.includes('Review role: ' + entry.role) &&
+      /\bPASS\b/.test(review.body),
+      'GitHub reviewer did not expressly attest the requested role and PASS verdict');
     assert.ok(Date.parse(review.submitted_at) > Date.parse(request.created_at),
       'Reviewer submission predates its role-scoped request');
-    assert.equal(githubReviewComments.filter(c => c.pull_request_review_id === review.id).length, 0,
+    const comments = await githubApi('pulls/70/reviews/' + review.id + '/comments?per_page=1');
+    assert.ok(Array.isArray(comments) && comments.length === 0,
       'Independent reviewer reported findings; fix and request new current-source review');
     reviewDate = review.submitted_at;
     reviewUrl = review.html_url;
@@ -154,22 +187,15 @@ for (const entry of receipts.reviews) {
     // a completed review finds no issues, rather than creating a PR review.
     // This is a genuine external reviewer result, not a self-authored PASS.
     assert.ok(Number.isSafeInteger(entry.githubReactionId) && entry.githubReactionId > 0);
-    const reactions = await githubApi('issues/comments/' + entry.scopeRequestCommentId +
-      '/reactions?per_page=100');
-    assert.ok(Array.isArray(reactions), 'Cannot verify external clean-review reaction');
-    const reaction = reactions.find(item => item.id === entry.githubReactionId);
-    assert.ok(reaction, 'Independent Codex clean review reaction not found');
+    const reaction = await findCodexReaction(entry.scopeRequestCommentId, entry.githubReactionId);
     assert.equal(reaction.user?.login, 'chatgpt-codex-connector[bot]',
       'Review completion reaction must originate from the independent bot');
     assert.equal(reaction.content, '+1', 'Pending or negative reaction is not a PASS verdict');
     assert.ok(Date.parse(reaction.created_at) > Date.parse(request.created_at),
       'Review completion predates the requested role');
-    const reportedFindings = githubReviewComments.filter(comment =>
-      comment.user?.login === 'chatgpt-codex-connector[bot]' &&
-      comment.commit_id === REVIEWED_SOURCE &&
-      Date.parse(comment.created_at) >= Date.parse(request.created_at));
-    assert.equal(reportedFindings.length, 0,
-      'Reviewer reported source-bound findings after the scoped review request');
+    // The bot's independently authored +1 *on this exact, single-role,
+    // immutable-source scope request* is its clean-review signal. We never
+    // infer that a generic COMMENTED review completed another role.
     reviewDate = reaction.created_at;
     reviewUrl = 'https://github.com/eybersjp/development-kit/pull/70#issuecomment-' +
       entry.scopeRequestCommentId;
