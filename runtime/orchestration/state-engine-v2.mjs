@@ -721,6 +721,20 @@ export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = t
   }
 
   if (current.lastEventSequence > canonical.lastEventSequence) {
+    // A concurrent writer can finish its canonical append and snapshot update
+    // between the reader's ledger and snapshot reads. Re-read the immutable
+    // ledger before treating this as history loss. Strict integrity reads must
+    // still reject inconsistent persisted views rather than masking them.
+    if (rebuildIfNeeded) {
+      const refreshed = rebuildSnapshotFromEvents(loadCanonicalEvents(rootDir));
+      if (
+        refreshed.lastEventSequence > current.lastEventSequence
+        || (refreshed.lastEventSequence === current.lastEventSequence
+            && refreshed.lastEventHash === current.lastEventHash)
+      ) {
+        return refreshed;
+      }
+    }
     throw new StateEngineError(
       'Canonical state history appears truncated relative to the materialized snapshot',
       {
