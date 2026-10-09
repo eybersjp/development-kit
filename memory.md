@@ -272,3 +272,11 @@ Integrated through PR #54; Issue #51 is completed.
 - 37965890821 fully passed Windows and Ubuntu for the prior H15..H19 code revision; latest H20/H21 restore code and documentation require fresh CI verification and current-head independent security/code review before formal T04 acceptance.
 - Restore now stages a complete private sibling tree and promotes using root-directory renames; restoration requires a trusted parent and should run without concurrent external writers. Abandoned lock recovery guards require operator inspection, not blind removal.
 - PR #70 remains DRAFT, unmerged; main/release remains 0.11.2. Only risk-3 independently validated and accepted T04 may be integrated before T05.
+
+### T04 independent-review H22/H23 correction (9 October 2026)
+
+- Third Codex code review (`cf504f7`) identified two additional P1 issues: a symlink swap at the exact canonical events append-open boundary, and lost destination root directory permissions after staged legacy restore.
+- Red test H22 recorded external-file modification in Actions run 37967267072. Red test H23 recorded POSIX root 0755->0700 in 37967284714.
+- Fixed canonical descriptor opening with O_NOFOLLOW where supported, lstat/fstat inode identity and nlink checks and binding to the observed pre-commit inode+size. Fixed restore promotion to preserve original root mode, timestamps and POSIX UID/GID (fails closed if ownership cannot be set).
+- Total hardening tests now H01–H23; H14 Windows-only and H23 POSIX-only. Latest independent review and full CI remain mandatory for the final HEAD. Node filesystem APIs do not guarantee preservation of custom Windows ACLs; this requires explicit host-native verification.
+- The stacked PR #70 remains unmerged and 0.11.2 remains published. Do not confuse successful GitHub Actions with a persisted DKF risk-3 acceptance verdict.

@@ -16,7 +16,7 @@
 
 ## Reproduction and verification
 
-Twenty-one T04-H01..H21 regression cases verify on Ubuntu and Windows: physical append file identity, aged live lock, four-process/48-event contention, interrupted append recovery, restore directory and file symlinks, conflicting pending suffix, dead-owner recovery and canonical-file symlink rejection.
+Twenty-three T04-H01..H23 regression cases verify on Ubuntu and Windows: physical append file identity, aged live lock, four-process/48-event contention, interrupted append recovery, restore directory and file symlinks, conflicting pending suffix, dead-owner recovery and canonical-file symlink rejection.
 
 Additional test-driven cases are **H10** (missing terminal newline), **H11** (stale-lock recheck race), **H12** (legitimate concurrent snapshot advance) and **H13** (hard-linked restore destination). The unfixed earlier heads failed as expected: CI runs `37963478049` (H10/H11) and `37963732490` (H12/H13). All four new cases subsequently passed on both platforms.
 
@@ -53,3 +53,14 @@ Original T04 contract and acceptance criteria remain unchanged; no T05+ scope, v
 - **H21:** staged restore preserves support for a previously nonexistent target root with an existing parent.
 
 The review that identified H15–H19 was recorded on PR #70 against head `ffe49ffb60`. Its five associated threads must be resolved only after validating the revised code and obtaining an independent current-head review. Passing the CI suite does not supersede those risk-3 approval gates. Restore is an offline maintenance operation: protect target-parent access and avoid other writers to the recovery directory while staging and promoting. Staging relies on same-filesystem sibling directory renames. Source/workflow authority, the published version (0.11.2), and the prohibition on merging validation PR #69 remain unchanged.
+
+## Third independent-review correction — H22 and H23
+
+Code review of `cf504f7` identified two additional P1 issues, reproduced before repair:
+
+- **H22 — event symlink substitution at append/open:** pre-fix run `37967267072` showed an external sentinel file receiving appended canonical JSON after a symlink was swapped into the event pathname. The fixed append opens with `O_NOFOLLOW` where supported, verifies `lstat()` and `fstat()` refer to the same one-link inode, and checks the opened descriptor against the exact canonical inode and byte length witnessed before the commit was prepared. The write is rejected before modifying external content.
+- **H23 — root metadata preservation:** pre-fix run `37967284714` showed an existing `0755` restore root becoming `0700`. The corrected staged restore restores the original directory's mode and timestamps before promotion, and on POSIX preserves UID/GID or fails closed when ownership cannot be set. The existing-stage private mode is retained for previously absent roots.
+
+**Verification authority:** previous H01–H21 source passed Ubuntu and Windows CI `37966537455`, including exact release:validate. The final H01–H23 implementation and documentation require CI at the latest branch head. This is correction evidence, not an independent final acceptance decision.
+
+**Metadata limitation:** generic Node.js APIs cannot establish full equivalence of every filesystem ACL/security-descriptor property (especially custom Windows ACLs). Restoring into an existing root with nonstandard ACLs requires separately verified host-native permission preservation before declaring the backup operation complete. No claim of universal Windows ACL preservation is made.
