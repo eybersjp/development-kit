@@ -101,6 +101,10 @@ jobs:
       - name: Validate v0.12 State Engine V2 increment
         run: npm run state-engine-v2:test
 
+      - name: Validate cross-owner legacy restore metadata
+        if: ${{ matrix.os == 'ubuntu-latest' && github.event.pull_request.head.repo.full_name == github.repository }}
+        run: sudo "$(command -v node)" --test --test-name-pattern='T04-H30' scripts/state-engine-v2-migration.test.mjs
+
       - name: Benchmark v0.12 State Engine V2 append endurance
         run: npm run state-engine-v2:benchmark
 
