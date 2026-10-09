@@ -517,6 +517,48 @@ export function migrateLegacyStateToV2({
   });
 }
 
+function resolveSafeRestoreDestination(targetRoot, relativePath) {
+  const root = path.resolve(targetRoot);
+  const destination = resolveProjectPath(root, relativePath);
+  fs.mkdirSync(root, { recursive: true });
+  if (fs.lstatSync(root).isSymbolicLink()) {
+    throw new StateMigrationError('Legacy backup restore root must not be a symbolic link');
+  }
+  const rootReal = fs.realpathSync(root);
+  const components = path.relative(root, destination).split(path.sep);
+  if (components.some((part) => !part || part === '.' || part === '..')) {
+    throw new StateMigrationError('Invalid legacy backup restore path');
+  }
+  let current = root;
+  for (const component of components.slice(0, -1)) {
+    current = path.join(current, component);
+    try {
+      const stat = fs.lstatSync(current);
+      if (stat.isSymbolicLink()) {
+        throw new StateMigrationError('Legacy backup restore path contains a symbolic link or junction: ' + relativePath);
+      }
+      if (!stat.isDirectory()) throw new StateMigrationError('Legacy backup restore parent is not a directory: ' + relativePath);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      fs.mkdirSync(current);
+    }
+    const real = fs.realpathSync(current);
+    const rel = path.relative(rootReal, real);
+    if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
+      throw new StateMigrationError('Legacy backup restore escapes its target root: ' + relativePath);
+    }
+  }
+  try {
+    const existing = fs.lstatSync(destination);
+    if (!existing.isFile() || existing.isSymbolicLink()) {
+      throw new StateMigrationError('Legacy backup restore destination must be a regular file: ' + relativePath);
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  return destination;
+}
+
 export function restoreLegacyBackup({
   backupPath,
   targetRoot,
@@ -527,17 +569,36 @@ export function restoreLegacyBackup({
   const bundle = readJson(backupPath, 'Legacy backup');
   validateBackupBundle(bundle);
 
-  const restored = [];
-  for (const entry of bundle.files) {
-    const destination = resolveProjectPath(targetRoot, entry.path);
+  // Complete a full destination security and overwrite preflight before writing
+  // even one byte; a later malicious backup path cannot leave a partial restore.
+  const destinations = bundle.files.map((entry) => ({
+    entry,
+    destination: resolveSafeRestoreDestination(targetRoot, entry.path),
+  }));
+  for (const { entry, destination } of destinations) {
     if (fs.existsSync(destination) && !overwrite) {
-      throw new StateMigrationError(`Refusing to overwrite restored legacy path: ${entry.path}`);
+      throw new StateMigrationError('Refusing to overwrite restored legacy path: ' + entry.path);
     }
+  }
+
+  const restored = [];
+  for (const { entry, destination } of destinations) {
     const content = Buffer.from(entry.contentBase64, 'base64');
-    fs.mkdirSync(path.dirname(destination), { recursive: true });
-    fs.writeFileSync(destination, content);
+    // Recheck boundaries immediately before open; O_NOFOLLOW protects the final
+    // component on platforms where it is available.
+    resolveSafeRestoreDestination(targetRoot, entry.path);
+    const flags = (overwrite ? fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC
+      : fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL)
+      | (fs.constants.O_NOFOLLOW ?? 0);
+    const fd = fs.openSync(destination, flags, 0o600);
+    try {
+      fs.writeFileSync(fd, content);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     if (stateSha256(fs.readFileSync(destination)) !== entry.fingerprint) {
-      throw new StateMigrationError(`Restored legacy file failed fingerprint verification: ${entry.path}`);
+      throw new StateMigrationError('Restored legacy file failed fingerprint verification: ' + entry.path);
     }
     restored.push(entry.path);
   }
