@@ -578,6 +578,27 @@ function syncRestoreParent(parent) {
   try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
 }
 
+/**
+ * Sync the staged file bytes and (on POSIX) every containing directory before
+ * the promotion journal becomes durable. A rename alone does not durably
+ * commit nested directory entries after sudden power loss.
+ */
+function syncRestoreTree(directory) {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const item = path.join(directory, entry.name);
+    if (entry.isSymbolicLink()) continue; // retain links as links, never follow
+    if (entry.isDirectory()) {
+      syncRestoreTree(item);
+    } else if (entry.isFile()) {
+      const fd = fs.openSync(item, 'r');
+      try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    } else {
+      throw new StateMigrationError('Legacy restore stage contains an unsupported special file');
+    }
+  }
+  syncRestoreParent(directory);
+}
+
 function createRestoreJournal(file, data) {
   const fd = fs.openSync(file, 'wx', 0o600);
   try {
@@ -740,6 +761,9 @@ export function restoreLegacyBackup({
       fs.chmodSync(stage, rootStat.mode & 0o7777);
       fs.utimesSync(stage, rootStat.atime, rootStat.mtime);
     }
+
+    // Seal the entire stage before making the promotion journal durable.
+    syncRestoreTree(stage);
 
     // Durable journal precedes *both* root-directory renames. A crash after
     // either rename is recoverable by an explicit offline recovery invocation.
