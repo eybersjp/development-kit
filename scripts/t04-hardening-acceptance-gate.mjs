@@ -86,7 +86,8 @@ async function githubApi(endpoint) {
 }
 const tree = await githubApi('git/trees/' + REVIEWED_SOURCE + '?recursive=1');
 assert.ok(!tree.truncated && Array.isArray(tree.tree), 'Reviewed commit tree unavailable or truncated');
-const treeFiles = new Map(tree.tree.filter(item => item.type === 'blob').map(item => [item.path, item.sha]));
+const treeFiles = new Map(tree.tree.filter(item => item.type === 'blob')
+  .map(item => [item.path, { sha: item.sha, mode: item.mode }]));
 
 // Compare the *entire* Git index against the independently reviewed commit.
 // A post-review modification to acceptance-engine.mjs, a new executable file,
@@ -97,15 +98,15 @@ const staged = execFileSync('git', ['ls-files', '--stage', '-z'], {
 });
 const indexFiles = new Map();
 for (const record of staged.split('\0').filter(Boolean)) {
-  const matched = record.match(/^\d+ ([a-f0-9]{40}) \d+\t([\s\S]+)$/);
+  const matched = record.match(/^(\d+) ([a-f0-9]{40}) \d+\t([\s\S]+)$/);
   assert.ok(matched, 'Cannot parse Git index entry for reviewed-source check');
-  const [, blobSha, filename] = matched;
-  indexFiles.set(filename, blobSha);
+  const [, mode, blobSha, filename] = matched;
+  indexFiles.set(filename, { sha: blobSha, mode });
 }
 for (const [filename, blob] of indexFiles) {
   if (filename === RECEIPTS_FILE) continue;
-  assert.equal(blob, treeFiles.get(filename),
-    'The complete checked-out source differs from independently reviewed commit: ' + filename);
+  assert.deepEqual(blob, treeFiles.get(filename),
+    'The complete checked-out source (including file modes) differs from independently reviewed commit: ' + filename);
 }
 for (const filename of treeFiles.keys()) {
   if (filename === RECEIPTS_FILE) continue;
@@ -117,7 +118,7 @@ assert.equal(execFileSync('git', ['status', '--porcelain', '--untracked-files=no
 }).trim(), '', 'Tracked working-tree modifications invalidate reviewed-source authority');
 const BLOB_WITNESSES = Object.freeze(Object.fromEntries(REVIEW_BLOB_PATHS.map(file => {
   const actual = gitBlobSha(fs.readFileSync(path.join(ROOT, file)));
-  const expected = treeFiles.get(file);
+  const expected = treeFiles.get(file)?.sha;
   assert.ok(expected, 'Missing reviewed source path: ' + file);
   assert.equal(actual, expected, 'Independent review does not cover changed source: ' + file);
   return [file, expected];
