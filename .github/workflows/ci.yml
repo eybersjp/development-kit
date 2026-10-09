@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
+  issues: read
 
 jobs:
   validate:
@@ -119,6 +121,8 @@ jobs:
 
       - name: Compute T04 hardening risk-3 acceptance using DKF runtime
         if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/v0.12-t04-state-engine-hardening' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/t04-hardening-acceptance-gate.mjs
 
       - name: Retain T04 deterministic acceptance evidence
