@@ -628,6 +628,19 @@ export function restoreLegacyBackup({
       restored.push(entry.path);
     }
 
+    // The stage is private while being populated. Before promotion, restore
+    // the original root's traversal permissions and POSIX ownership so
+    // existing service/group consumers keep their access after cutover.
+    if (rootStat) {
+      const stagedStat = fs.statSync(stage);
+      if (process.platform !== 'win32' &&
+        (stagedStat.uid !== rootStat.uid || stagedStat.gid !== rootStat.gid)) {
+        fs.chownSync(stage, rootStat.uid, rootStat.gid);
+      }
+      fs.chmodSync(stage, rootStat.mode & 0o7777);
+      fs.utimesSync(stage, rootStat.atime, rootStat.mtime);
+    }
+
     // Moving the existing root out of the way does not follow a symlink.
     // Verify that the directory moved is still the original preflighted inode
     // before publishing the staged replacement.
