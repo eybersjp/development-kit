@@ -747,6 +747,14 @@ export function restoreLegacyBackup({
     entry,
     destination: resolveSafeRestoreDestination(targetRoot, entry.path),
   }));
+  const normalizedDestinations = new Set();
+  for (const { entry, destination } of destinations) {
+    const key = process.platform === 'win32' ? destination.toLowerCase() : destination;
+    if (normalizedDestinations.has(key)) {
+      throw new StateMigrationError('Duplicate normalized backup restore destination: ' + entry.path);
+    }
+    normalizedDestinations.add(key);
+  }
   for (const { entry, destination } of destinations) {
     if (fs.existsSync(destination) && !overwrite) {
       throw new StateMigrationError('Refusing to overwrite restored legacy path: ' + entry.path);
@@ -776,7 +784,7 @@ export function restoreLegacyBackup({
   try {
     fs.chmodSync(stage, 0o700);
     if (originalRootExists) {
-      fs.cpSync(resolvedRoot, stage, { recursive: true, force: true, dereference: false });
+      fs.cpSync(resolvedRoot, stage, { recursive: true, force: true, dereference: false, verbatimSymlinks: true });
     }
     const restored = [];
     for (const { entry } of destinations) {
