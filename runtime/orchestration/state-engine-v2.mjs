@@ -141,6 +141,9 @@ function assertStateFilesNotLinks(paths) {
       if (stat.isSymbolicLink() || !stat.isFile()) {
         throw new StateEngineError('State Engine internal file is not a regular file: ' + field);
       }
+      if (stat.nlink > 1) {
+        throw new StateEngineError('State Engine internal file has multiple hard links: ' + field);
+      }
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
     }
@@ -233,33 +236,55 @@ function acquireStateLock(rootDir, timeoutMs = 5000) {
             if (probeError.code === 'ESRCH') alive = false;
           }
           if (!alive) {
-            let latest;
+            // Pathname compare-then-unlink is unsafe: another reclaimer may
+            // install a fresh live lock between the check and unlink. mkdir
+            // gives each local stale-lock reclaimer exclusive ownership of a
+            // recovery guard, so other reclaimers cannot race its unlink.
+            const reclaimGuard = paths.lock + '.reclaim';
+            let guardOwned = false;
             try {
-              latest = fs.statSync(paths.lock);
-            } catch (raceError) {
-              // Another writer may have removed this stale lock between the
-              // initial stat and the ownership recheck. Retry acquisition.
-              if (raceError.code === 'ENOENT') continue;
-              throw raceError;
-            }
-            const sameIdentity = latest.ino === stat.ino && latest.mtimeMs === stat.mtimeMs && latest.size === stat.size;
-            if (sameIdentity) {
-              let actual;
               try {
-                actual = fs.readFileSync(paths.lock, 'utf8');
-              } catch (raceError) {
-                if (raceError.code === 'ENOENT') continue;
-                throw raceError;
+                fs.mkdirSync(reclaimGuard, { mode: 0o700 });
+                guardOwned = true;
+              } catch (guardError) {
+                if (guardError.code !== 'EEXIST') throw guardError;
               }
-              if (actual === JSON.stringify(prior)) {
+              if (guardOwned) {
+                let latest;
                 try {
-                  fs.unlinkSync(paths.lock);
+                  latest = fs.statSync(paths.lock);
                 } catch (raceError) {
                   if (raceError.code !== 'ENOENT') throw raceError;
                 }
-                continue;
+                if (latest && latest.ino === stat.ino && latest.mtimeMs === stat.mtimeMs && latest.size === stat.size) {
+                  let current;
+                  try {
+                    current = JSON.parse(fs.readFileSync(paths.lock, 'utf8'));
+                  } catch (readError) {
+                    if (readError.code !== 'ENOENT') throw readError;
+                  }
+                  if (current?.owner === prior.owner && current?.pid === prior.pid && current?.hostname === prior.hostname) {
+                    // Verify ownership is still dead inside the reclaim guard.
+                    let confirmedDead = false;
+                    try {
+                      process.kill(current.pid, 0);
+                    } catch (probeError) {
+                      confirmedDead = probeError.code === 'ESRCH';
+                    }
+                    if (confirmedDead) {
+                      try {
+                        fs.unlinkSync(paths.lock);
+                      } catch (removeError) {
+                        if (removeError.code !== 'ENOENT') throw removeError;
+                      }
+                    }
+                  }
+                }
               }
+            } finally {
+              if (guardOwned) fs.rmdirSync(reclaimGuard);
             }
+            if (guardOwned) continue;
           }
         }
       }
@@ -840,6 +865,10 @@ function buildEvent({
 function appendDurably(filePath, appendedText) {
   const fd = fs.openSync(filePath, 'a');
   try {
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile() || stat.nlink !== 1) {
+      throw new StateEngineError('Canonical event file is not an exclusive regular inode (multiple hard links)');
+    }
     const bytes = Buffer.from(appendedText, 'utf8');
     let written = 0;
     while (written < bytes.length) {
