@@ -726,23 +726,43 @@ function persistDerived(snapshot, rootDir) {
   return { snapshot, index };
 }
 
+function repairDerivedLocked(rootDir) {
+  // Snapshot repair replays the *current* ledger under the writer lock, never a
+  // stale cached history from before another writer committed a later event.
+  const paths = ensureStateEngineLayout(rootDir);
+  const canonical = rebuildSnapshotFromEvents(parseLedger(fs.readFileSync(paths.events, 'utf8')));
+  if (fs.existsSync(paths.snapshot)) {
+    let witness = null;
+    try {
+      witness = JSON.parse(fs.readFileSync(paths.snapshot, 'utf8'));
+      validateStateSnapshot(witness);
+    } catch {
+      witness = null;
+    }
+    if (witness && witness.lastEventSequence > canonical.lastEventSequence) {
+      throw new StateEngineError('Canonical state history appears truncated relative to the materialized snapshot');
+    }
+    if (witness && witness.lastEventSequence === canonical.lastEventSequence
+      && witness.lastEventHash !== canonical.lastEventHash) {
+      throw new StateEngineError('Canonical state history hash differs from the materialized snapshot integrity witness');
+    }
+  }
+  persistDerived(canonical, rootDir);
+  return canonical;
+}
+
 export function rebuildStateSnapshot(rootDir = process.cwd()) {
-  const events = loadCanonicalEvents(rootDir);
-  const snapshot = rebuildSnapshotFromEvents(events);
-  persistDerived(snapshot, rootDir);
-  return snapshot;
+  return withStateLock(rootDir, () => repairDerivedLocked(rootDir));
 }
 
 export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = true } = {}) {
   const paths = statePaths(rootDir);
   if (!fs.existsSync(paths.events)) return null;
-  const events = loadCanonicalEvents(rootDir);
-  const canonical = rebuildSnapshotFromEvents(events);
+  const canonical = rebuildSnapshotFromEvents(loadCanonicalEvents(rootDir));
 
   if (!fs.existsSync(paths.snapshot)) {
     if (!rebuildIfNeeded) return null;
-    persistDerived(canonical, rootDir);
-    return canonical;
+    return withStateLock(rootDir, () => repairDerivedLocked(rootDir));
   }
 
   let current;
@@ -751,22 +771,18 @@ export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = t
     validateStateSnapshot(current);
   } catch (error) {
     if (!rebuildIfNeeded) throw error;
-    persistDerived(canonical, rootDir);
-    return canonical;
+    return withStateLock(rootDir, () => repairDerivedLocked(rootDir));
   }
 
   if (current.lastEventSequence > canonical.lastEventSequence) {
-    // A concurrent writer can finish its canonical append and snapshot update
-    // between the reader's ledger and snapshot reads. Re-read the immutable
-    // ledger before treating this as history loss. Strict integrity reads must
-    // still reject inconsistent persisted views rather than masking them.
+    // A legitimate writer can advance the snapshot between a reader's ledger
+    // and snapshot reads. Check the latest canonical history before declaring
+    // truncation, without silencing a genuine witnessed history regression.
     if (rebuildIfNeeded) {
       const refreshed = rebuildSnapshotFromEvents(loadCanonicalEvents(rootDir));
-      if (
-        refreshed.lastEventSequence > current.lastEventSequence
+      if (refreshed.lastEventSequence > current.lastEventSequence
         || (refreshed.lastEventSequence === current.lastEventSequence
-            && refreshed.lastEventHash === current.lastEventHash)
-      ) {
+          && refreshed.lastEventHash === current.lastEventHash)) {
         return refreshed;
       }
     }
@@ -780,11 +796,8 @@ export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = t
       },
     );
   }
-
-  if (
-    current.lastEventSequence === canonical.lastEventSequence
-    && current.lastEventHash !== canonical.lastEventHash
-  ) {
+  if (current.lastEventSequence === canonical.lastEventSequence
+    && current.lastEventHash !== canonical.lastEventHash) {
     throw new StateEngineError(
       'Canonical state history hash differs from the materialized snapshot integrity witness',
       {
@@ -794,21 +807,21 @@ export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = t
       },
     );
   }
-
   if (stableJson(current) !== stableJson(canonical)) {
     if (!rebuildIfNeeded) throw new StateEngineError('Materialized snapshot does not match canonical history');
-    persistDerived(canonical, rootDir);
-    return canonical;
+    return withStateLock(rootDir, () => repairDerivedLocked(rootDir));
   }
   return current;
 }
 
 export function rebuildStateIndex(rootDir = process.cwd()) {
-  const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
-  const paths = ensureStateEngineLayout(rootDir);
-  const index = buildStateIndex(snapshot);
-  atomicWrite(paths.index, stablePretty(index));
-  return index;
+  return withStateLock(rootDir, () => {
+    const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
+    const paths = ensureStateEngineLayout(rootDir);
+    const index = buildStateIndex(snapshot);
+    atomicWrite(paths.index, stablePretty(index));
+    return index;
+  });
 }
 
 export function loadStateIndex(rootDir = process.cwd(), { rebuildIfNeeded = true } = {}) {
@@ -919,17 +932,38 @@ function recoverPendingCommitLocked(rootDir) {
     fs.truncateSync(paths.events, pending.previousByteLength);
     appendDurably(paths.events, pending.suffix);
   }
-  parseLedger(fs.readFileSync(paths.events, 'utf8'));
+  const canonical = rebuildSnapshotFromEvents(parseLedger(fs.readFileSync(paths.events, 'utf8')));
+  // Reconstruct both derived views before acknowledging the durable commit.
+  let witness = null;
+  try {
+    witness = JSON.parse(fs.readFileSync(paths.snapshot, 'utf8'));
+    validateStateSnapshot(witness);
+  } catch {
+    witness = null;
+  }
+  if (witness && witness.lastEventSequence > canonical.lastEventSequence) {
+    throw new StateEngineError('Cannot recover a pending commit over a later snapshot integrity witness');
+  }
+  if (witness && witness.lastEventSequence === canonical.lastEventSequence
+    && witness.lastEventHash !== canonical.lastEventHash) {
+    throw new StateEngineError('Pending recovery conflicts with snapshot integrity witness');
+  }
+  persistDerived(canonical, rootDir);
   fs.unlinkSync(paths.pending);
   fsyncParentDirectory(paths.stateRoot);
 }
 
+const ACTIVE_STATE_LOCKS = new Set();
 function withStateLock(rootDir, task) {
+  const key = path.resolve(rootDir);
+  if (ACTIVE_STATE_LOCKS.has(key)) return task();
   const lock = acquireStateLock(rootDir);
+  ACTIVE_STATE_LOCKS.add(key);
   try {
     recoverPendingCommitLocked(rootDir);
     return task();
   } finally {
+    ACTIVE_STATE_LOCKS.delete(key);
     releaseStateLock(lock);
   }
 }
