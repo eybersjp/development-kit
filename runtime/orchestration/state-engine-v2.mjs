@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 export const STATE_ENGINE_SCHEMA_VERSION = '2.0.0';
@@ -114,6 +115,7 @@ function statePaths(rootDir = process.cwd()) {
     index: path.join(stateRoot, STATE_INDEX_FILE),
     schema: path.join(stateRoot, STATE_SCHEMA_FILE),
     lock: path.join(stateRoot, 'state.lock'),
+    pending: path.join(stateRoot, 'pending-commit.json'),
   });
   if (fs.existsSync(stateRoot)) assertStateRootRealpathSafe(paths);
   return paths;
@@ -146,28 +148,62 @@ function atomicWrite(filePath, content) {
 function acquireStateLock(rootDir, timeoutMs = 5000) {
   const paths = statePaths(rootDir);
   fs.mkdirSync(paths.stateRoot, { recursive: true });
-  const owner = `state-lock-${crypto.randomUUID()}`;
+  assertStateRootRealpathSafe(paths);
+  const owner = 'state-lock-' + crypto.randomUUID();
   const started = Date.now();
 
   while (Date.now() - started < timeoutMs) {
     try {
       const fd = fs.openSync(paths.lock, 'wx');
       try {
-        fs.writeFileSync(fd, JSON.stringify({ owner, acquiredAt: new Date().toISOString() }), 'utf8');
+        fs.writeFileSync(fd, JSON.stringify({
+          owner,
+          pid: process.pid,
+          hostname: os.hostname(),
+          acquiredAt: new Date().toISOString(),
+        }), 'utf8');
         fs.fsyncSync(fd);
       } finally {
         fs.closeSync(fd);
       }
       return { path: paths.lock, owner };
     } catch (error) {
-      if (error.code !== 'EEXIST') throw new StateEngineError(`Unable to acquire State Engine lock: ${error.message}`);
+      if (error.code !== 'EEXIST') throw new StateEngineError('Unable to acquire State Engine lock: ' + error.message);
+      let stat;
       try {
-        const stat = fs.statSync(paths.lock);
-        if (Date.now() - stat.mtimeMs > 15_000) {
-          fs.unlinkSync(paths.lock);
-          continue;
+        stat = fs.statSync(paths.lock);
+      } catch (readError) {
+        if (readError.code === 'ENOENT') continue;
+        throw new StateEngineError('Cannot inspect existing State Engine lock: ' + readError.message);
+      }
+      if (Date.now() - stat.mtimeMs > 15_000) {
+        let prior;
+        try {
+          prior = JSON.parse(fs.readFileSync(paths.lock, 'utf8'));
+        } catch {
+          // Corrupt or incomplete lock metadata must never authorize lock stealing.
+          prior = null;
         }
-      } catch {}
+        // A live local PID owns the lock regardless of its age. Remote and legacy
+        // owners are treated as unknown and cannot be stolen automatically.
+        if (prior && prior.hostname === os.hostname() && Number.isSafeInteger(prior.pid) && prior.pid > 0) {
+          let alive = true;
+          try {
+            process.kill(prior.pid, 0);
+          } catch (probeError) {
+            if (probeError.code === 'ESRCH') alive = false;
+          }
+          if (!alive) {
+            const latest = fs.statSync(paths.lock);
+            const sameIdentity = latest.ino === stat.ino && latest.mtimeMs === stat.mtimeMs && latest.size === stat.size;
+            if (sameIdentity && fs.readFileSync(paths.lock, 'utf8') === JSON.stringify(prior)) {
+              fs.unlinkSync(paths.lock);
+              continue;
+            }
+          }
+        }
+      }
+      // Use bounded, synchronous waiting so Node >=18 and current callers remain compatible.
       const waitStart = Date.now();
       while (Date.now() - waitStart < 25) {}
     }
@@ -340,7 +376,14 @@ function parseLedger(content) {
 export function loadCanonicalEvents(rootDir = process.cwd()) {
   const paths = statePaths(rootDir);
   if (!fs.existsSync(paths.events)) return [];
-  return parseLedger(fs.readFileSync(paths.events, 'utf8'));
+  if (fs.existsSync(paths.pending)) {
+    return withStateLock(rootDir, () => parseLedger(fs.readFileSync(paths.events, 'utf8')));
+  }
+  const content = fs.readFileSync(paths.events, 'utf8');
+  if (fs.existsSync(paths.pending)) {
+    return withStateLock(rootDir, () => parseLedger(fs.readFileSync(paths.events, 'utf8')));
+  }
+  return parseLedger(content);
 }
 
 function normalizePathSegments(value) {
@@ -720,40 +763,104 @@ function buildEvent({
   return event;
 }
 
-function writeLedgerAtomically(existingContent, newEvents, rootDir) {
-  const paths = ensureStateEngineLayout(rootDir);
-  let prefix = existingContent;
-  if (prefix && !prefix.endsWith('\n')) prefix += '\n';
-  const suffix = newEvents.map((event) => JSON.stringify(stable(event))).join('\n');
-  const nextContent = suffix ? `${prefix}${suffix}\n` : prefix;
-  atomicWrite(paths.events, nextContent);
+function appendDurably(filePath, appendedText) {
+  const fd = fs.openSync(filePath, 'a');
+  try {
+    const bytes = Buffer.from(appendedText, 'utf8');
+    let written = 0;
+    while (written < bytes.length) {
+      const amount = fs.writeSync(fd, bytes, written, bytes.length - written);
+      if (amount <= 0) throw new StateEngineError('Canonical event append made no forward progress');
+      written += amount;
+    }
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
-function commitPreparedEvents(newEvents, rootDir = process.cwd()) {
+function recoverPendingCommitLocked(rootDir) {
+  const paths = ensureStateEngineLayout(rootDir);
+  if (!fs.existsSync(paths.pending)) return;
+  let pending;
+  try {
+    pending = JSON.parse(fs.readFileSync(paths.pending, 'utf8'));
+  } catch (error) {
+    throw new StateEngineError('Pending State Engine commit is invalid: ' + error.message);
+  }
+  if (
+    pending.schemaVersion !== '1.0.0'
+    || !Number.isSafeInteger(pending.previousByteLength)
+    || pending.previousByteLength < 0
+    || !SHA256_PATTERN.test(pending.previousHash)
+    || typeof pending.suffix !== 'string'
+    || !pending.suffix.endsWith('\n')
+  ) {
+    throw new StateEngineError('Pending State Engine commit metadata is invalid');
+  }
+  const bytes = fs.readFileSync(paths.events);
+  if (bytes.length < pending.previousByteLength) {
+    throw new StateEngineError('Canonical state history was truncated during a pending commit');
+  }
+  if (sha256(bytes.subarray(0, pending.previousByteLength)) !== pending.previousHash) {
+    throw new StateEngineError('Canonical state prefix differs from pending commit integrity witness');
+  }
+  const existingSuffix = bytes.subarray(pending.previousByteLength);
+  const expectedSuffix = Buffer.from(pending.suffix, 'utf8');
+  if (!expectedSuffix.subarray(0, existingSuffix.length).equals(existingSuffix)) {
+    throw new StateEngineError('Canonical state suffix conflicts with pending commit; refusing recovery');
+  }
+  if (existingSuffix.length < expectedSuffix.length) {
+    // Repair only a provably incomplete suffix whose complete content is already
+    // durably captured in the pending journal. Never discard a committed prefix.
+    fs.truncateSync(paths.events, pending.previousByteLength);
+    appendDurably(paths.events, pending.suffix);
+  }
+  parseLedger(fs.readFileSync(paths.events, 'utf8'));
+  fs.unlinkSync(paths.pending);
+}
+
+function withStateLock(rootDir, task) {
+  const lock = acquireStateLock(rootDir);
+  try {
+    recoverPendingCommitLocked(rootDir);
+    return task();
+  } finally {
+    releaseStateLock(lock);
+  }
+}
+
+function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
   if (!Array.isArray(newEvents) || newEvents.length === 0) {
     const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
     return { events: [], snapshot, index: loadStateIndex(rootDir, { rebuildIfNeeded: true }) };
   }
 
-  const lock = acquireStateLock(rootDir);
-  try {
-    const paths = ensureStateEngineLayout(rootDir);
-    const existingContent = fs.readFileSync(paths.events, 'utf8');
-    const existing = parseLedger(existingContent);
-    let previous = existing.at(-1) ?? null;
-    for (const event of newEvents) {
-      validateStateEvent(event, previous);
-      previous = event;
-    }
-
-    writeLedgerAtomically(existingContent, newEvents, rootDir);
-    const allEvents = [...existing, ...newEvents];
-    const snapshot = rebuildSnapshotFromEvents(allEvents);
-    const { index } = persistDerived(snapshot, rootDir);
-    return { events: newEvents, snapshot, index };
-  } finally {
-    releaseStateLock(lock);
+  const paths = ensureStateEngineLayout(rootDir);
+  const existingContent = fs.readFileSync(paths.events, 'utf8');
+  const existing = parseLedger(existingContent);
+  let previous = existing.at(-1) ?? null;
+  for (const event of newEvents) {
+    validateStateEvent(event, previous);
+    previous = event;
   }
+  const allEvents = [...existing, ...newEvents];
+  // Validate and reconstruct before beginning a durable state mutation.
+  const nextSnapshot = rebuildSnapshotFromEvents(allEvents);
+  const suffix = newEvents.map((event) => JSON.stringify(stable(event))).join('\n') + '\n';
+  const pending = {
+    schemaVersion: '1.0.0',
+    previousByteLength: Buffer.byteLength(existingContent, 'utf8'),
+    previousHash: sha256(Buffer.from(existingContent, 'utf8')),
+    suffix,
+  };
+  atomicWrite(paths.pending, stablePretty(pending));
+  // Physical append avoids O(history) rewrites; the pending journal permits
+  // deterministic repair after a torn write or interrupted snapshot persist.
+  appendDurably(paths.events, suffix);
+  const { index } = persistDerived(nextSnapshot, rootDir);
+  fs.unlinkSync(paths.pending);
+  return { events: newEvents, snapshot: nextSnapshot, index };
 }
 
 function nextEventContext(rootDir) {
@@ -780,45 +887,37 @@ export function appendEntityState({
   const nextState = cloneSerializable(state, 'Entity state');
   const revision = stateRevision(nextState.stateRevision);
 
-  ensureStateEngineLayout(rootDir);
-  const currentSnapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
-  const current = currentSnapshot.entities[normalizedType]?.[normalizedId] ?? null;
+  return withStateLock(rootDir, () => {
+    const currentSnapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
+    const current = currentSnapshot.entities[normalizedType]?.[normalizedId] ?? null;
 
-  if (current && revision < current.stateRevision) {
-    throw new StateEngineError(`Refusing stateRevision regression for ${normalizedType}/${normalizedId}`);
-  }
-  if (current && stableJson(current.state) === stableJson(nextState)) {
-    return Object.freeze({ changed: false, event: null, snapshot: currentSnapshot });
-  }
+    if (current && revision < current.stateRevision) {
+      throw new StateEngineError('Refusing stateRevision regression for ' + normalizedType + '/' + normalizedId);
+    }
+    if (current && revision === current.stateRevision && stableJson(current.state) !== stableJson(nextState)) {
+      throw new StateEngineError('Refusing conflicting same-revision state overwrite for ' + normalizedType + '/' + normalizedId);
+    }
+    if (current && stableJson(current.state) === stableJson(nextState)) {
+      return Object.freeze({ changed: false, event: null, snapshot: currentSnapshot });
+    }
 
-  const context = nextEventContext(rootDir);
-  const payload = current
-    ? {
-        stateRevision: revision,
-        operations: diffValues(current.state, nextState),
-      }
-    : {
-        stateRevision: revision,
-        state: nextState,
-      };
-
-  const event = buildEvent({
-    sequence: context.sequence,
-    previousEventHash: context.previousEventHash,
-    timestamp: at,
-    actorClass,
-    type: current ? 'ENTITY_STATE_UPDATED' : 'ENTITY_STATE_INITIALIZED',
-    id: normalizedId,
-    entity: normalizedType,
-    refs,
-    payload,
-  });
-
-  const committed = commitPreparedEvents([event], rootDir);
-  return Object.freeze({
-    changed: true,
-    event,
-    snapshot: committed.snapshot,
+    const context = nextEventContext(rootDir);
+    const payload = current
+      ? { stateRevision: revision, operations: diffValues(current.state, nextState) }
+      : { stateRevision: revision, state: nextState };
+    const event = buildEvent({
+      sequence: context.sequence,
+      previousEventHash: context.previousEventHash,
+      timestamp: at,
+      actorClass,
+      type: current ? 'ENTITY_STATE_UPDATED' : 'ENTITY_STATE_INITIALIZED',
+      id: normalizedId,
+      entity: normalizedType,
+      refs,
+      payload,
+    });
+    const committed = commitPreparedEventsLocked([event], rootDir);
+    return Object.freeze({ changed: true, event, snapshot: committed.snapshot });
   });
 }
 
@@ -830,21 +929,22 @@ export function appendMetadataEvent({
   actorClass = 'runtime',
   timestamp: at = new Date().toISOString(),
 } = {}) {
-  ensureStateEngineLayout(rootDir);
-  const context = nextEventContext(rootDir);
-  const event = buildEvent({
-    sequence: context.sequence,
-    previousEventHash: context.previousEventHash,
-    timestamp: at,
-    actorClass,
-    type,
-    id: null,
-    entity: null,
-    refs,
-    payload,
+  return withStateLock(rootDir, () => {
+    const context = nextEventContext(rootDir);
+    const event = buildEvent({
+      sequence: context.sequence,
+      previousEventHash: context.previousEventHash,
+      timestamp: at,
+      actorClass,
+      type,
+      id: null,
+      entity: null,
+      refs,
+      payload,
+    });
+    const committed = commitPreparedEventsLocked([event], rootDir);
+    return Object.freeze({ event, snapshot: committed.snapshot });
   });
-  const committed = commitPreparedEvents([event], rootDir);
-  return Object.freeze({ event, snapshot: committed.snapshot });
 }
 
 export function loadEntityState(type, id, rootDir = process.cwd()) {
@@ -965,7 +1065,7 @@ export function countStateEngineFiles(rootDir = process.cwd()) {
   const paths = statePaths(rootDir);
   if (!fs.existsSync(paths.stateRoot)) return 0;
   return fs.readdirSync(paths.stateRoot, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name !== 'state.lock' && !entry.name.includes('.tmp-'))
+    .filter((entry) => entry.isFile() && entry.name !== 'state.lock' && entry.name !== 'pending-commit.json' && !entry.name.includes('.tmp-'))
     .length;
 }
 
