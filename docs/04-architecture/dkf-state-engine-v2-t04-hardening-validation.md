@@ -16,7 +16,7 @@
 
 ## Reproduction and verification
 
-Twenty-eight T04-H01..H28 regression cases verify on Ubuntu and Windows: physical append file identity, aged live lock, four-process/48-event contention, interrupted append recovery, restore directory and file symlinks, conflicting pending suffix, dead-owner recovery and canonical-file symlink rejection.
+Thirty-one T04-H01..H31 regression cases verify on Ubuntu and Windows: physical append file identity, aged live lock, four-process/48-event contention, interrupted append recovery, restore directory and file symlinks, conflicting pending suffix, dead-owner recovery and canonical-file symlink rejection.
 
 Additional test-driven cases are **H10** (missing terminal newline), **H11** (stale-lock recheck race), **H12** (legitimate concurrent snapshot advance) and **H13** (hard-linked restore destination). The unfixed earlier heads failed as expected: CI runs `37963478049` (H10/H11) and `37963732490` (H12/H13). All four new cases subsequently passed on both platforms.
 
@@ -78,3 +78,15 @@ The crash journal uses BigInt-backed decimal device/inode witnesses for portable
 **Security boundary decision pending independent review:** see [Offline Recovery Boundary](dkf-state-engine-v2-offline-recovery-boundary.md). The restore capability is *operator-initiated offline maintenance only*. A malicious concurrent process with the same OS credentials cannot be isolated by cross-platform Node.js pathname guards and must be excluded operationally. The `confirmOffline` flag is an attestation, **not technical evidence** that the host is safe. If the environment is not exclusively controlled, restoration is unsupported and must not run. This scope must be independently accepted rather than silently dismissing security findings.
 
 **Review status:** PR #70 remains unmerged; Issue #71 tracks the remaining recovery and isolation contract. Source implementation and targeted CI passing do not on their own create a valid risk-3 code/architecture/security review or persisted deterministic ACCEPTED state. Published version remains v0.11.2.
+
+## Fifth independent-review corrections — H29 to H31
+
+Independent review at source `c80dc253eadf6676fa195628aebd10cb3f82dae9` identified:
+
+- **P1 runtime pending-commit path race:** after validating a canonical ledger prefix, pathname `truncateSync` could shorten an external hardlinked inode swapped into `events.jsonl`. H29 captured the external-file modification on the unfixed source (GitHub Actions `37974023511`, Windows and Ubuntu). The fixed recovery opens a no-follow, inode-verified and single-link FD; validates all bytes and performs `ftruncateSync`, positioned suffix writes and `fsyncSync` on that same descriptor.
+- **P1 recursive staged ownership:** staging an existing root copied unrelated files under the maintenance identity, potentially losing access for service accounts. A metadata inventory is collected before copying, and post-order replay restores descendant UID/GID, modes and timestamps on POSIX (including symlink ownership without dereferencing symlink targets). H30 checks descendant identity; CI runs the same fixture with an alternate source owner under a restricted internal-branch Ubuntu job.
+- **P2 timestamp drift:** scanning the stage after `utimesSync` advanced the restored root atime. The stage sync precedes post-order metadata replay. H31 uses a historical 2001 atime/mtime fixture.
+
+**Security caveat:** The supported restoration trust boundary remains *explicit, operator-controlled offline maintenance* (see the separate recovery boundary contract). It does not claim immunity to a concurrently malicious same-UID process, and this environmental condition must be independently approved. The automatic runtime journal-recovery path does **not** rely on the offline attestation and must satisfy stronger descriptor-bound checks.
+
+**Acceptance gate:** CI/review must be repeated on the final documented head. The H01–H31 implementation is not deemed ACCEPTED until risk-3 code, architecture and security review findings are closed by evidence, deterministic acceptance is persisted, and PR #70 is merged only into its approved T04 base. Do not merge cumulative PR #69 or publish v0.12.0.

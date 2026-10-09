@@ -288,3 +288,11 @@ Integrated through PR #54; Issue #51 is completed.
 - Added `docs/04-architecture/dkf-state-engine-v2-offline-recovery-boundary.md` describing the explicit trusted-host/offline security model. Node-only cross-platform restore is not a same-UID adversarial security sandbox; the boolean attestation is an operator contract, not OS isolation.
 - Current source includes fsync of staged tree and POSIX directory metadata before journaled promotion. Windows custom ACL fidelity must be verified through a host-native procedure before deployment where nonstandard ACLs are involved.
 - T04 PR #70 is unmerged; independent code/architecture/security review, final checked HEAD, deterministic acceptance and integration are still pending. Do not conflate prior T04 ACCEPTED evidence with acceptance of these later hardening modifications or claim v0.12 released.
+
+### T04 fifth security review / FD-bound replay and full metadata preservation (9 October 2026)
+
+- Codex review of `c80dc253` identified P1 pathname truncate during automatic journal recovery; P1 staged copies changing descendant file ownership; P2 root timestamp drift. Source links are in PR #70.
+- Added H29–H31. H29 reproduced actual outside-file truncation on both Ubuntu and Windows on red run 37974023511. Fixed read/truncate/repair write/fsync on one validated no-follow FD.
+- Staged restore now inventories descendant metadata before copy and restores POSIX ownership, permissions and timestamps post-order after data durability, rather than updating only the root. Added a privileged **internal-branch only** Ubuntu CI fixture to exercise copying files originally owned by a different Unix UID.
+- Current suite includes H01–H31; H14 is Windows-specific and some POSIX metadata fixtures are Windows-skipped as appropriate. Final exact-source CI, fresh independent reviews and the DKF runtime acceptance verdict remain mandatory.
+- No main/release/T05 promotion, no legacy deletion; T04 PR #70 remains pending.
