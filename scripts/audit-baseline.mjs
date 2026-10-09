@@ -36,11 +36,15 @@ export function inspectAuditBaseline(directory = process.cwd()) {
   } catch { /* package manifest is optional; do not execute it */ }
 
   const top = git(root, 'rev-parse', '--show-toplevel');
+  const prefix = git(root, 'rev-parse', '--show-prefix');
+  const inWorkTree = git(root, 'rev-parse', '--is-inside-work-tree');
   const head = git(root, 'rev-parse', '--verify', 'HEAD');
   const branch = git(root, 'symbolic-ref', '--quiet', '--short', 'HEAD');
   const changes = git(root, 'status', '--porcelain=v1', '--untracked-files=no');
-  const toPath = (path) => path ? resolve(path).replaceAll('\\', '/') : null;
-  const atRoot = top.ok && toPath(top.output) === toPath(root);
+  // Git may return differently cased or formatted absolute roots on Windows.
+  // --show-prefix is empty only when -C points to the working-tree root.
+  const atRoot = top.ok && prefix.ok && prefix.output === ''
+    && inWorkTree.ok && inWorkTree.output === 'true';
   const hasHead = atRoot && head.ok && /^[a-f0-9]{40}$/.test(head.output);
   const repository = hasHead ? {
     root,
