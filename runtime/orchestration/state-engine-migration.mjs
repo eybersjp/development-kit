@@ -593,8 +593,9 @@ export function restoreLegacyBackup({
   // mutable path *inside* targetRoot.
   const resolvedRoot = path.resolve(targetRoot);
   const parent = path.dirname(resolvedRoot);
-  const rootStat = fs.lstatSync(resolvedRoot);
-  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+  const originalRootExists = fs.existsSync(resolvedRoot);
+  const rootStat = originalRootExists ? fs.lstatSync(resolvedRoot) : null;
+  if (rootStat && (!rootStat.isDirectory() || rootStat.isSymbolicLink())) {
     throw new StateMigrationError('Legacy backup restore root must be an ordinary directory');
   }
   const stage = fs.mkdtempSync(path.join(parent, '.dk-legacy-restore-stage-'));
@@ -603,7 +604,9 @@ export function restoreLegacyBackup({
   let displacedOriginal = false;
   try {
     fs.chmodSync(stage, 0o700);
-    fs.cpSync(resolvedRoot, stage, { recursive: true, force: true, dereference: false });
+    if (originalRootExists) {
+      fs.cpSync(resolvedRoot, stage, { recursive: true, force: true, dereference: false });
+    }
     const restored = [];
     for (const { entry } of destinations) {
       const destination = resolveSafeRestoreDestination(stage, entry.path, { createMissing: true });
@@ -628,16 +631,18 @@ export function restoreLegacyBackup({
     // Moving the existing root out of the way does not follow a symlink.
     // Verify that the directory moved is still the original preflighted inode
     // before publishing the staged replacement.
-    fs.renameSync(resolvedRoot, displaced);
-    displacedOriginal = true;
-    const moved = fs.lstatSync(displaced);
-    if (moved.dev !== rootStat.dev || moved.ino !== rootStat.ino) {
-      throw new StateMigrationError('Legacy backup restore root changed during staging');
+    if (originalRootExists) {
+      fs.renameSync(resolvedRoot, displaced);
+      displacedOriginal = true;
+      const moved = fs.lstatSync(displaced);
+      if (moved.dev !== rootStat.dev || moved.ino !== rootStat.ino) {
+        throw new StateMigrationError('Legacy backup restore root changed during staging');
+      }
     }
     fs.renameSync(stage, resolvedRoot);
     promoted = true;
     displacedOriginal = false;
-    fs.rmSync(displaced, { recursive: true, force: true });
+    if (originalRootExists) fs.rmSync(displaced, { recursive: true, force: true });
     return Object.freeze({
       restoredFiles: restored.sort(),
       sourceFingerprint: bundle.sourceFingerprint,
