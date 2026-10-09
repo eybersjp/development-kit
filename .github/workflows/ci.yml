@@ -101,6 +101,9 @@ jobs:
       - name: Validate v0.12 State Engine V2 increment
         run: npm run state-engine-v2:test
 
+      - name: Benchmark v0.12 State Engine V2 append endurance
+        run: npm run state-engine-v2:benchmark
+
       - name: Validate Design Authority governance
         run: npm run design-authority:validate
 
