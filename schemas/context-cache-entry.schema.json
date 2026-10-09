@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://development-kit.dev/schemas/context-cache-entry.schema.json",
+  "title": "Development Kit Repository Context Cache Entry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "cacheId",
+    "selectorFingerprint",
+    "inputFingerprint",
+    "createdAt",
+    "selector",
+    "inputs",
+    "targetFacts",
+    "entryFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "cacheId": {
+      "$ref": "#/$defs/sha256"
+    },
+    "selectorFingerprint": {
+      "$ref": "#/$defs/sha256"
+    },
+    "inputFingerprint": {
+      "$ref": "#/$defs/sha256"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "selector": {
+      "type": "object"
+    },
+    "inputs": {
+      "type": "object"
+    },
+    "targetFacts": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "entryFingerprint": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
+  }
+}

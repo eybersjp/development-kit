@@ -11,6 +11,7 @@ import {
   buildTokenProfile,
   materializeScopedContent,
 } from './token-efficiency.mjs';
+import { assertExecutionCapsuleFresh } from './execution-capsule.mjs';
 
 const ROLE_PURPOSE = Object.freeze({
   implementer: 'implementation',
@@ -118,6 +119,7 @@ export function buildContextPackage({
   capabilities = {},
   separateProcess = false,
   externalVerifier = false,
+  executionCapsule = null,
   createdAt = new Date().toISOString(),
 } = {}) {
   validateDevelopmentContract(contract);
@@ -137,6 +139,19 @@ export function buildContextPackage({
   const staleness = checkContractStaleness(contract, rootDir);
   if (staleness.stale) {
     throw new ContextPackageError('Cannot build context from a stale Development Contract', staleness.changes);
+  }
+
+  let capsuleFreshness = null;
+  if (executionCapsule !== null) {
+    try {
+      capsuleFreshness = assertExecutionCapsuleFresh({
+        capsule: executionCapsule,
+        contract,
+        rootDir,
+      });
+    } catch (error) {
+      throw new ContextPackageError(`Cannot build context from an invalid or stale Execution Capsule: ${error.message}`, error.details ?? []);
+    }
   }
 
   const sources = contract.authoritativeSources.map((source) => resolveSource(rootDir, source));
@@ -165,12 +180,16 @@ export function buildContextPackage({
     createdAt,
     contract: structuredClone(contract),
     authoritativeSources: sources,
+    executionCapsule: executionCapsule === null ? null : structuredClone(executionCapsule),
     repositoryState: cloneObject(repositoryState, 'repositoryState'),
     capabilities: cloneObject(capabilities, 'capabilities'),
     isolationMetadata: {
       freshContext: isolation === 'fresh',
       sourceRehydrated: sources.length > 0,
-      repositoryReRead: true,
+      authoritativeSourcesReRead: true,
+      repositoryReRead: executionCapsule === null,
+      repositoryContextFromCapsule: executionCapsule !== null,
+      capsuleFreshnessVerified: capsuleFreshness !== null && capsuleFreshness.stale === false,
       implementationSummaryInherited: implementationReport !== null,
       separateAgentRole: purpose !== 'implementation',
       sameModelOrUnknown: true,

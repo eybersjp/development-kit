@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
+  issues: read
 
 jobs:
   validate:
@@ -83,6 +85,31 @@ jobs:
           npm run token-efficiency:test
           npm run token:audit:check
 
+      - name: Run Scale/Context Phase 0-1 baseline
+        run: node scripts/phase01-scale-context-baseline.mjs
+
+      - name: Validate Scale/Context v0.12 Phase 2 PLAN
+        run: node scripts/phase02-scale-context-plan-validate.mjs
+
+      - name: Validate v0.12 Cost Observatory increment
+        run: npm run cost-observatory:test
+
+      - name: Validate v0.12 Workspace Target Engine increment
+        run: npm run workspace-targets:test
+
+      - name: Validate v0.12 Execution Capsules & Context Cache increment
+        run: npm run execution-capsule:test
+
+      - name: Validate v0.12 State Engine V2 increment
+        run: npm run state-engine-v2:test
+
+      - name: Validate cross-owner legacy restore metadata
+        if: ${{ matrix.os == 'ubuntu-latest' && github.event.pull_request.head.repo.full_name == github.repository }}
+        run: sudo "$(command -v node)" --test --test-name-pattern='T04-H30' scripts/state-engine-v2-migration.test.mjs
+
+      - name: Benchmark v0.12 State Engine V2 append endurance
+        run: npm run state-engine-v2:benchmark
+
       - name: Validate Design Authority governance
         run: npm run design-authority:validate
 
@@ -91,3 +118,39 @@ jobs:
 
       - name: Validate exact release command
         run: npm run release:validate
+
+  t04_acceptance:
+    name: T04 independently reviewed acceptance
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/v0.12-t04-state-engine-hardening' }}
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Check out validated source
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Materialize source-bound T04 Development Contract
+        run: node scripts/phase06-state-engine-v2-contract.mjs
+
+      - name: Verify independent reviews and compute deterministic T04 acceptance
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/t04-hardening-acceptance-gate.mjs
+
+      - name: Retain independent risk-3 acceptance evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: t04-hardening-acceptance
+          path: .development-kit/runs/INC-DKF120-T04/T04-HARDENING-REVIEWED-20261009/
+          retention-days: 30
+          include-hidden-files: true
+          if-no-files-found: error

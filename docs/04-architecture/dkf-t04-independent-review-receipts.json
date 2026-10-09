@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "1.0.0",
+  "reviewedCommit": null,
+  "reviews": [],
+  "status": "PENDING_INDEPENDENT_REVIEWS",
+  "policy": "Each role requires a distinct authenticated external GitHub review of the exact source and zero outstanding comments."
+}
