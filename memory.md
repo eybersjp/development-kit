@@ -65,3 +65,10 @@ Integrated through PR #54; Issue #51 is completed.
 - Green automated tests alone do not authorize publication.
 - Do not claim post-v0.11.1 mainline functionality is published until version, tag, GitHub Release and package publication gates are explicitly completed.
 - After any release-impacting change, run the full release-validation/package-consumer gates on the final merge base and verify the published distribution.
+
+## Independent Audit Foundation — Proposed, Unreleased
+
+- Branch: `feature/dkf-independent-audit-foundation`; proposed read-only, cross-stage `/dk-audit` workflow.
+- Additions: authoritative command, native agent adapter, structured evidence schema, Git baseline helper, installation/discovery, documentation and focused tests.
+- Audit recommendations do not create deterministic acceptance or approve releases. This work remains subject to CI, independent verification, governance and explicit approval.
+- Re-verify the 9 October 2026 audit's historical findings against current implementation and approved v0.12 scope.

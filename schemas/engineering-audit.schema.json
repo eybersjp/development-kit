@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/eybersjp/development-kit/blob/main/schemas/engineering-audit.schema.json",
+  "title": "DKF Independent Engineering Audit Report",
+  "description": "Read-only audit evidence model. Does not authorize or create deterministic DKF acceptance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "repository",
+    "baselineCommit",
+    "scope",
+    "verdict",
+    "findings",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 1
+    },
+    "baselineCommit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "scope": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verdict": {
+      "enum": [
+        "RELEASE_READY",
+        "CONDITIONALLY_READY",
+        "NOT_RELEASE_READY",
+        "INSUFFICIENT_EVIDENCE"
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "releaseApproval": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Provenance only; must never be inferred from audit verdict"
+    },
+    "evidenceRegister": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    },
+    "requiredDecisions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source",
+        "classification"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "classification": {
+          "enum": [
+            "FACT",
+            "REPRODUCED",
+            "SOURCE_SUPPORTED_RISK",
+            "HYPOTHESIS",
+            "INFERENCE",
+            "RECOMMENDATION",
+            "NOT_VERIFIED"
+          ]
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "severity",
+        "status",
+        "component",
+        "evidenceClass",
+        "description",
+        "evidenceIds",
+        "verification"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "enum": [
+            "CRITICAL",
+            "HIGH",
+            "MAJOR",
+            "MODERATE",
+            "LOW",
+            "INFORMATIONAL"
+          ]
+        },
+        "status": {
+          "enum": [
+            "OPEN",
+            "INVESTIGATING",
+            "RESOLVED",
+            "VERIFIED",
+            "ACCEPTED_RISK"
+          ]
+        },
+        "component": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidenceClass": {
+          "enum": [
+            "FACT",
+            "REPRODUCED",
+            "SOURCE_SUPPORTED_RISK",
+            "HYPOTHESIS",
+            "INFERENCE",
+            "RECOMMENDATION",
+            "NOT_VERIFIED"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "verification": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rootCause": {
+          "type": "string"
+        },
+        "remediation": {
+          "type": "string"
+        },
+        "releaseBlocker": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "HIGH",
+            "MEDIUM",
+            "LOW"
+          ]
+        }
+      }
+    }
+  }
+}
