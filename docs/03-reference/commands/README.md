@@ -1,6 +1,6 @@
 # Commands Index
 
-Development Kit provides 14 slash commands covering the full software development lifecycle plus provider-neutral external research and workflow status/recovery operations.
+Development Kit provides 17 slash commands covering the full software development lifecycle plus provider-neutral external research and workflow status/recovery operations.
 
 ```mermaid
 graph LR
@@ -15,6 +15,7 @@ graph LR
     E --> G["/dk-test"]
     F --> G
     G --> H["/dk-review"]
+    X["/dk-audit"] -. "cross-stage independent assurance" .-> H
     H --> I["/dk-simplify"]
     I --> J["/dk-ship"]
     K["/dk-status"] -.-> A
@@ -36,6 +37,7 @@ graph LR
 | [`/dk-build-auto`](dk-build-auto.md) | IMPLEMENT | Process the entire plan automatically |
 | [`/dk-test`](dk-test.md) | VERIFY | Run task-specific verification |
 | [`/dk-review`](dk-review.md) | REVIEW | Run the full multi-axis review cycle |
+| [`/dk-audit`](dk-audit.md) | Cross-stage assurance | Independent project, integration and release evidence audit |
 | [`/dk-simplify`](dk-simplify.md) | SIMPLIFY | Apply the Ponytail simplicity ladder |
 | [`/dk-debug`](dk-debug.md) | Recovery | Systematic root-cause analysis |
 | [`/dk-ship`](dk-ship.md) | COMPLETE | Final verification and release preparation |
@@ -47,6 +49,7 @@ graph LR
 - **Have a rough idea?** -> `/dk-idea`
 - **Need current external facts, standards, compatibility information, or source-backed evidence?** -> `/dk-research`
 - **Need to debug something?** -> `/dk-debug`
+- **Need independent engineering or release assurance?** -> `/dk-audit`
 - **Ready to release?** -> `/dk-ship`
 - **Not sure where you are?** -> `/dk-status`
 
