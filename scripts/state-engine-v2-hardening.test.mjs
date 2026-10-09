@@ -139,3 +139,27 @@ test('T04-H08 stale lock from a provably dead local process can be recovered', (
   appendMetadataEvent({ rootDir, eventType: 'RECOVERED_LOCK', payload: { value: 2 } });
   assert.equal(loadCanonicalEvents(rootDir).length, 2);
 });
+
+
+test('T04-H09 internal canonical events file may not be redirected through a symlink', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const outsideRoot = tempProject(t);
+  const outsideFile = path.join(outsideRoot, 'outside-ledger.jsonl');
+  const originalContent = fs.readFileSync(paths.events, 'utf8');
+  fs.writeFileSync(outsideFile, originalContent, 'utf8');
+  fs.rmSync(paths.events);
+  try {
+    fs.symlinkSync(outsideFile, paths.events, 'file');
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+      t.skip('Host does not permit file symlink creation');
+      return;
+    }
+    throw error;
+  }
+  assert.throws(() => loadCanonicalEvents(rootDir), /not a regular file/i);
+  assert.throws(() => appendMetadataEvent({ rootDir, eventType: 'DANGER', payload: {} }), /not a regular file/i);
+  assert.equal(fs.readFileSync(outsideFile, 'utf8'), originalContent);
+});
