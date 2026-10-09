@@ -296,3 +296,10 @@ Integrated through PR #54; Issue #51 is completed.
 - Staged restore now inventories descendant metadata before copy and restores POSIX ownership, permissions and timestamps post-order after data durability, rather than updating only the root. Added a privileged **internal-branch only** Ubuntu CI fixture to exercise copying files originally owned by a different Unix UID.
 - Current suite includes H01–H31; H14 is Windows-specific and some POSIX metadata fixtures are Windows-skipped as appropriate. Final exact-source CI, fresh independent reviews and the DKF runtime acceptance verdict remain mandatory.
 - No main/release/T05 promotion, no legacy deletion; T04 PR #70 remains pending.
+
+### T04 source-bound risk-3 review and acceptance controls (9 October 2026)
+
+- T04 hardening H32–H35 adds verbatim relative symlink preservation, fail-closed duplicate/case-folded restoration path checks and malformed UTF-16 surrogate refusal; original contract ten requirements trace explicitly to the same five accepted ACs, with negative Authority Graph tests.
+- Earlier deterministic ACCEPTED output from the acceptance script is superseded because reviewer PASS results were generated inside the gate without independently authenticated review. Do not use it as authority.
+- CI now validates Ubuntu and Windows before a dependent T04 acceptance job may decide. Gate binds complete checked-out source Git blobs and executable modes to an immutable externally reviewed commit, apart from the review receipt document; role-specific receipts must authenticate genuine distinct Codex review events or clean reactions and match Development Contract fingerprint. Missing reviews must remain BLOCKED.
+- PR #70 T04 stacked to feature/v0.12-state-engine-v2; cumulative main-targeted #69 must never be merged as a shortcut. Published version remains 0.11.2. No new tag/release or T05 progression until full deterministic risk-3 acceptance.
