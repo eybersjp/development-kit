@@ -5,7 +5,7 @@
 **Branch:** fix/v0.12-t04-state-engine-hardening
 **Stacked PR:** https://github.com/eybersjp/development-kit/pull/70
 **Cumulative CI PR:** https://github.com/eybersjp/development-kit/pull/69 (draft; do not merge as replacement for the approved sequence)
-**CI run:** https://github.com/eybersjp/development-kit/actions/runs/37961832237
+**CI run:** https://github.com/eybersjp/development-kit/actions/runs/37963827500
 
 ## Corrected engineering risks
 
@@ -16,17 +16,20 @@
 
 ## Reproduction and verification
 
-Nine new T04-H01..H09 regression tests pass on Ubuntu and Windows: physical append file identity, aged live lock, four-process/48-event contention, interrupted append recovery, restore directory and file symlinks, conflicting pending suffix, dead-owner recovery and canonical-file symlink rejection.
+Thirteen new T04-H01..H13 regression tests pass on Ubuntu and Windows: physical append file identity, aged live lock, four-process/48-event contention, interrupted append recovery, restore directory and file symlinks, conflicting pending suffix, dead-owner recovery and canonical-file symlink rejection.
 
-The cumulative full CI run 37961832237 passed every required step on Ubuntu and Windows, including T04 focused tests and the exact npm run release:validate command. No skipped test was reported.
+Additional test-driven cases are **H10** (missing terminal newline), **H11** (stale-lock recheck race), **H12** (legitimate concurrent snapshot advance) and **H13** (hard-linked restore destination). The unfixed earlier heads failed as expected: CI runs `37963478049` (H10/H11) and `37963732490` (H12/H13). All four new cases subsequently passed on both platforms.
+
+**Independent-review status:** the initial GitHub Codex review on commit `949ec8c` identified H10/H11. Both are corrected with reproducing tests. A fresh independent code/security review of the updated source was requested on PR #70. Successful CI is not a deterministic DKF `ACCEPTED` verdict; formal review and acceptance must still be recorded before merge.
+The cumulative full CI run 37963827500 passed every required step on Ubuntu and Windows, including T04 focused tests and the exact npm run release:validate command. No skipped test was reported.
 
 ## 300-transition endurance fixture
 
 | Metric | Ubuntu / Node 22.23.3 | Windows / Node 22.23.3 |
 |---|---:|---:|
 | Canonical transitions | 300 | 300 |
-| Write workload | 7,213 ms | 19,986 ms |
-| Full read/integrity verify | 67 ms | 88 ms |
+| Write workload | 6,068 ms | 16,417 ms |
+| Full read/integrity verify | 54 ms | 48 ms |
 | Canonical ledger | 189,651 bytes | 189,651 bytes |
 | Historical full-rewrite byte model | 28,479,948 bytes | 28,479,948 bytes |
 | Modeled write traffic avoided | 99.33% | 99.33% |

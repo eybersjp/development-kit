@@ -255,3 +255,11 @@ Integrated through PR #54; Issue #51 is completed.
 - Disposable 300-event endurance fixture: Ubuntu 7,213 ms, Windows 19,986 ms, ledger 189,651 bytes; historical full-rewrite traffic modeled as 28,479,948 bytes (99.33% modeled avoidance). No broad CPU or release-performance claim.
 - Canonical new evidence: docs/04-architecture/dkf-state-engine-v2-t04-hardening-validation.md. Existing T04 acceptance authority, approval and v0.11.2 published release remain unchanged.
 - Next: independent risk-3 review and deterministic runtime acceptance of the hardening diff prior to merge, then continue T05. Never merge cumulative validation PR #69 as an accidental release.
+
+### T04 risk-3 regression validation follow-up (9 October 2026)
+
+- Codex independent review of earlier T04 hardening head detected two open findings: missing JSONL record separator (high) and stale-lock missing-file race (medium). Added red tests H10/H11, fixed and reran CI.
+- Additional adversarial review identified concurrent snapshot read false truncation (H12) and legacy restore hardlink overwrite (H13). Added reproducing red tests, fixed both, reran CI.
+- Both initial red suites were recorded (runs 37963478049 and 37963732490). Corrected source head ffe49ffb60a1d6eaa132c5caa0f4ff190a5a3351 passed Ubuntu and Windows CI run 37963827500 with H01–H13 tests, exact release:validate and GitGuardian success.
+- Re-measured 300-event endurance: 6,068 ms Ubuntu; 16,417 ms Windows; 54/48 ms read/integrity; same 189,651-byte ledger and 99.33% modeled disk rewrite traffic avoided. Measurements are not deterministic latency acceptance.
+- Formal independent risk-3 code/architecture/security review re-requested for the updated head. Runtime deterministic acceptance is NOT yet recorded; PR #70 unmerged, v0.12 unreleased, T05 not authorized by this entry.
