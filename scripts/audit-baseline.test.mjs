@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inspectAuditBaseline } from './audit-baseline.mjs';
 
@@ -45,11 +45,12 @@ test('never executes package scripts and rejects unknown command arguments', (t)
   const root = fixture(t);
   const sentinel = join(root, 'SENTINEL');
   writeFileSync(join(root, 'package.json'), JSON.stringify({
-    scripts: { postinstall: 'node -e "require(\\\'fs\\\').writeFileSync(\\\'SENTINEL\\\', \\\'unsafe\\\')"'},
+    scripts: { postinstall: 'node -e "process.exit(99)"' },
   }));
   const run = spawnSync(process.execPath, [SCRIPT, '--root', root, '--pretty'], { encoding: 'utf8' });
   assert.equal(run.status, 0, run.stderr);
   assert.equal(JSON.parse(run.stdout).status, 'NOT_VERIFIED');
+  assert.equal(existsSync(sentinel), false, 'Audit must not run repository scripts');
   const invalid = spawnSync(process.execPath, [SCRIPT, '--execute-tests'], { encoding: 'utf8' });
   assert.equal(invalid.status, 2);
 });
