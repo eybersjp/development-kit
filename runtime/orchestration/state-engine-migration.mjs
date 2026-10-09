@@ -590,7 +590,9 @@ function syncRestoreTree(directory) {
     if (entry.isDirectory()) {
       syncRestoreTree(item);
     } else if (entry.isFile()) {
-      const fd = fs.openSync(item, 'r');
+      // FlushFileBuffers on Windows requires a write-capable handle; a
+      // read-only descriptor can fail EPERM even when the file is writable.
+      const fd = fs.openSync(item, process.platform === 'win32' ? 'r+' : 'r');
       try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
     } else {
       throw new StateMigrationError('Legacy restore stage contains an unsupported special file');
