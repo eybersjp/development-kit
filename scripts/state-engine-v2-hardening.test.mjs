@@ -270,3 +270,94 @@ test('T04-H14 transient Windows EPERM on lock creation retries without bypassing
   assert.equal(loadCanonicalEvents(rootDir).length, 2);
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+
+test('T04-H15 simultaneous stale-lock reclaimers cannot delete a new owner', async (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  fs.writeFileSync(paths.lock, JSON.stringify({
+    owner: 'dead-before-contention', pid: 2147483647, hostname: os.hostname(),
+    acquiredAt: '2026-10-08T00:00:00.000Z',
+  }));
+  const aged = new Date(Date.now() - 30_000);
+  fs.utimesSync(paths.lock, aged, aged);
+  await Promise.all(Array.from({ length: 4 }, (_, i) => runWorker(rootDir, 'stale-worker-' + i)));
+  const records = loadCanonicalEvents(rootDir);
+  assert.equal(records.length, 49);
+  assert.equal(records.at(-1).sequence, 49);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
+
+test('T04-H16 canonical ledger hardlink cannot append to an external file', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const outsideRoot = tempProject(t);
+  const victim = path.join(outsideRoot, 'external-history.jsonl');
+  const originalContent = fs.readFileSync(paths.events);
+  fs.writeFileSync(victim, originalContent);
+  fs.rmSync(paths.events);
+  try {
+    fs.linkSync(victim, paths.events);
+  } catch (e) {
+    if (['EPERM','EACCES','ENOTSUP','EXDEV'].includes(e.code)) {
+      t.skip('File hardlinks unavailable'); return;
+    }
+    throw e;
+  }
+  assert.throws(() => appendMetadataEvent({ rootDir, eventType: 'SHOULD_FAIL', payload: {} }), /hard.?link|multiple links/i);
+  assert.deepEqual(fs.readFileSync(victim), originalContent);
+});
+
+test('T04-H17 interrupted commit refreshes derived snapshot and index before clearing journal', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const before = fs.readFileSync(paths.events);
+  const oldSnapshot = fs.readFileSync(paths.snapshot);
+  const oldIndex = fs.readFileSync(paths.index);
+  appendMetadataEvent({ rootDir, eventType: 'FOLLOWUP_EVENT', payload: { value: 2 } });
+  const after = fs.readFileSync(paths.events);
+  fs.writeFileSync(paths.snapshot, oldSnapshot);
+  fs.writeFileSync(paths.index, oldIndex);
+  fs.writeFileSync(paths.pending, JSON.stringify({
+    schemaVersion: '1.0.0',
+    previousByteLength: before.length,
+    previousHash: 'sha256:' + createHash('sha256').update(before).digest('hex'),
+    suffix: after.subarray(before.length).toString('utf8'),
+  }));
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+  assert.equal(JSON.parse(fs.readFileSync(paths.snapshot, 'utf8')).lastEventSequence, 2);
+  assert.equal(JSON.parse(fs.readFileSync(paths.index, 'utf8')).sourceSequence, 2);
+  assert.equal(fs.existsSync(paths.pending), false);
+});
+
+test('T04-H18 stale reader cannot overwrite a later writer snapshot with old derived state', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const oldSnapshot = fs.readFileSync(paths.snapshot);
+  appendMetadataEvent({ rootDir, eventType: 'SECOND_EVENT', payload: { value: 2 } });
+  fs.writeFileSync(paths.snapshot, oldSnapshot);
+  const originalRead = fs.readFileSync;
+  let insertedWriter = false;
+  fs.readFileSync = function staleReaderInterleave(file, ...args) {
+    if (!insertedWriter && file === paths.snapshot) {
+      insertedWriter = true;
+      const staleContent = originalRead.call(this, file, ...args);
+      appendMetadataEvent({ rootDir, eventType: 'THIRD_EVENT', payload: { value: 3 } });
+      return staleContent;
+    }
+    return originalRead.call(this, file, ...args);
+  };
+  try {
+    loadStateSnapshot(rootDir);
+  } finally {
+    fs.readFileSync = originalRead;
+  }
+  assert.equal(insertedWriter, true);
+  assert.equal(JSON.parse(fs.readFileSync(paths.snapshot, 'utf8')).lastEventSequence, 3);
+  assert.equal(JSON.parse(fs.readFileSync(paths.index, 'utf8')).sourceSequence, 3);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
