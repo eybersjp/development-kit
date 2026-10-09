@@ -90,3 +90,18 @@ Independent review at source `c80dc253eadf6676fa195628aebd10cb3f82dae9` identifi
 **Security caveat:** The supported restoration trust boundary remains *explicit, operator-controlled offline maintenance* (see the separate recovery boundary contract). It does not claim immunity to a concurrently malicious same-UID process, and this environmental condition must be independently approved. The automatic runtime journal-recovery path does **not** rely on the offline attestation and must satisfy stronger descriptor-bound checks.
 
 **Acceptance gate:** CI/review must be repeated on the final documented head. The H01–H31 implementation is not deemed ACCEPTED until risk-3 code, architecture and security review findings are closed by evidence, deterministic acceptance is persisted, and PR #70 is merged only into its approved T04 base. Do not merge cumulative PR #69 or publish v0.12.0.
+
+## Sixth review cycle — H32–H35 and authenticated acceptance
+
+Independent PR #70 reviews discovered that copying could rewrite unrelated relative symlinks, duplicate backup entries could overwrite one target, platform case sensitivity differed, and malformed UTF-16 surrogate strings could map to the same filesystem filename.
+
+- **H32:** stage copy now uses verbatim symlink semantics to preserve unrelated relative targets.
+- **H33:** duplicate normalized restore destinations are rejected before stage mutation.
+- **H34:** normalized case/Unicode alias detection is conservative on every supported filesystem.
+- **H35:** reject unpaired UTF-16 surrogate paths before filesystem encoding.
+- **Authority Graph:** ten unchanged approved T04 requirements are explicitly mapped to the existing five acceptance criteria, with negative tests for missing or unknown edges.
+- **Risk-3 review:** the former acceptance driver constructed synthetic reviewer PASS records and hardcoded an older commit. That verdict is invalid as independent approval. The new gate requires three separate, externally authenticated role-specific reviews, binds Git blob hashes and modes for the entire checked-out tree to the reviewed commit, and permits only the receipts document to change after review.
+- **Platform gate:** the acceptance job depends on success of both Windows and Ubuntu validation jobs, not on one matrix leg.
+- **Fail-closed behavior:** missing, stale, inauthentic or finding-bearing review evidence never grants T04 acceptance.
+
+**Promotion boundary:** A persisted deterministic ACCEPTED result with zero runtime blockers, authenticated code/architecture/security reviewer roles and full matrix success is required. Earlier synthetic acceptance outputs are explicitly superseded. No main-branch merge, release or T05 authority is implied.
