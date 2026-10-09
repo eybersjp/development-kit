@@ -181,7 +181,14 @@ export function buildAuthorityGraphFromContract({ contract, verification, rootDi
       const acId = typeof ac === 'string' ? ac : ac?.id;
       if (acId) {
         graph.addNode(acId, 'AC', typeof ac === 'object' ? ac : { description: ac });
-        if (ac?.requirementId && graph.nodes.has(ac.requirementId)) {
+        if (Array.isArray(ac?.requirementIds) && ac.requirementIds.length > 0) {
+          for (const reqId of ac.requirementIds) {
+            if (!graph.nodes.has(reqId) || graph.nodes.get(reqId).type !== 'REQ') {
+              throw new AuthorityGraphError('Criterion explicitly references missing requirement: ' + reqId);
+            }
+            graph.addEdge(reqId, acId);
+          }
+        } else if (ac?.requirementId && graph.nodes.has(ac.requirementId)) {
           graph.addEdge(ac.requirementId, acId);
         } else if (contract.requirements && contract.requirements.length > 0) {
           // Link to first requirement if not explicitly keyed

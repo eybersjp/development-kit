@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync as requireSpawnSync } from 'node:child_process';
 
 import {
   appendEntityState,
@@ -18,6 +19,7 @@ import {
   inspectLegacyState,
   migrateLegacyStateToV2,
   restoreLegacyBackup,
+  recoverLegacyRestore,
 } from '../runtime/orchestration/state-engine-migration.mjs';
 import {
   getCurrentState,
@@ -286,7 +288,7 @@ test('AC-015 bundled legacy backup can restore the complete legacy state chain',
 
   const restoreRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dk-state-restore-'));
   t.after(() => fs.rmSync(restoreRoot, { recursive: true, force: true }));
-  const restored = restoreLegacyBackup({
+  const restored = restoreLegacyBackup({ confirmOffline: true,
     backupPath: getLegacyBackupPath(rootDir),
     targetRoot: restoreRoot,
   });
@@ -464,4 +466,420 @@ test('AC-034 representative 26-revision migration exceeds the >=80% active canon
     assert.equal(fs.existsSync(paths[required]), true);
   }
   assert.equal(fs.existsSync(getLegacyBackupPath(rootDir)), true);
+});
+
+
+test('T04-H05 restore refuses a preexisting symlink/junction parent and leaves outside directory untouched', (t) => {
+  const rootDir = tempProject(t, 'dk-restore-source-');
+  writeLegacyAutopilot(rootDir, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir });
+  const restoreRoot = tempProject(t, 'dk-restore-target-');
+  const outside = tempProject(t, 'dk-restore-outside-');
+  const dkRoot = path.join(restoreRoot, '.development-kit');
+  fs.mkdirSync(dkRoot, { recursive: true });
+  try {
+    fs.symlinkSync(outside, path.join(dkRoot, 'autopilot'), process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+      t.skip('Host does not permit directory symlink/junction creation');
+      return;
+    }
+    throw error;
+  }
+  assert.throws(
+    () => restoreLegacyBackup({ confirmOffline: true, backupPath: migrated.backupPath, targetRoot: restoreRoot }),
+    /symbolic link|junction|escapes/i,
+  );
+  assert.deepEqual(fs.readdirSync(outside), []);
+});
+
+test('T04-H06 restore refuses a final-file symlink even when overwrite is explicitly enabled', (t) => {
+  const rootDir = tempProject(t, 'dk-restore-source-');
+  writeLegacyAutopilot(rootDir, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir });
+  const restoreRoot = tempProject(t, 'dk-restore-target-');
+  const outside = tempProject(t, 'dk-restore-outside-');
+  const filename = path.join(outside, 'should-not-change.json');
+  fs.writeFileSync(filename, 'SAFE', 'utf8');
+  const parent = path.join(restoreRoot, '.development-kit', 'autopilot', 'state');
+  fs.mkdirSync(parent, { recursive: true });
+  try {
+    fs.symlinkSync(filename, path.join(parent, 'revision-000001.json'), 'file');
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+      t.skip('Host does not permit file symlink creation');
+      return;
+    }
+    throw error;
+  }
+  assert.throws(
+    () => restoreLegacyBackup({ confirmOffline: true, backupPath: migrated.backupPath, targetRoot: restoreRoot, overwrite: true }),
+    /regular file|symbolic link|junction/i,
+  );
+  assert.equal(fs.readFileSync(filename, 'utf8'), 'SAFE');
+});
+
+
+test('T04-H13 backup restore rejects a hard-linked overwrite destination', (t) => {
+  const rootDir = tempProject(t, 'dk-hardlink-source-');
+  writeLegacyAutopilot(rootDir, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir });
+  const restoreRoot = tempProject(t, 'dk-hardlink-target-');
+  const outside = tempProject(t, 'dk-hardlink-outside-');
+  const external = path.join(outside, 'protected.json');
+  fs.writeFileSync(external, 'PROTECTED', 'utf8');
+  const destinationDir = path.join(restoreRoot, '.development-kit', 'autopilot', 'state');
+  fs.mkdirSync(destinationDir, { recursive: true });
+  const destination = path.join(destinationDir, 'revision-000001.json');
+  try {
+    fs.linkSync(external, destination);
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOTSUP', 'EXDEV'].includes(error.code)) {
+      t.skip('Filesystem disallows hard-link fixture');
+      return;
+    }
+    throw error;
+  }
+  assert.throws(
+    () => restoreLegacyBackup({ confirmOffline: true, backupPath: migrated.backupPath, targetRoot: restoreRoot, overwrite: true }),
+    /hard.?link|multiple links/i,
+  );
+  assert.equal(fs.readFileSync(external, 'utf8'), 'PROTECTED');
+});
+
+
+test('T04-H19 restoring a backup cannot write through a destination hardlink swapped at open time', (t) => {
+  const source = tempProject(t, 'dk-restore-race-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const targetRoot = tempProject(t, 'dk-restore-race-target-');
+  const protectedRoot = tempProject(t, 'dk-restore-race-outside-');
+  const victim = path.join(protectedRoot, 'external.json');
+  fs.writeFileSync(victim, 'EXTERNAL-CONTENT', 'utf8');
+  const parent = path.join(targetRoot, '.development-kit', 'autopilot', 'state');
+  fs.mkdirSync(parent, {recursive:true});
+  const destination = path.join(parent, 'revision-000001.json');
+  fs.writeFileSync(destination, 'stale value', 'utf8');
+  const originalOpen = fs.openSync;
+  let swapped = false;
+  fs.openSync = function swappedAtDestinationOpen(file, flags, ...rest) {
+    if (!swapped && file === destination) {
+      swapped = true;
+      fs.rmSync(destination);
+      fs.linkSync(victim, destination);
+    }
+    return originalOpen.call(this, file, flags, ...rest);
+  };
+  try {
+    const restored = restoreLegacyBackup({ confirmOffline: true, backupPath:migrated.backupPath, targetRoot, overwrite:true });
+    assert.ok(restored.restoredFiles.includes('.development-kit/autopilot/state/revision-000001.json'));
+  } finally {
+    fs.openSync = originalOpen;
+  }
+  assert.equal(fs.readFileSync(victim, 'utf8'), 'EXTERNAL-CONTENT');
+  assert.equal(JSON.parse(fs.readFileSync(destination, 'utf8')).stateRevision, 1);
+});
+
+
+test('T04-H20 restore never creates target-tree directories before atomic staged promotion', (t) => {
+  const source = tempProject(t, 'dk-restore-stage-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const targetRoot = tempProject(t, 'dk-restore-stage-target-');
+  const originalMkdir = fs.mkdirSync;
+  let attemptedUnsafeWrite = false;
+  fs.mkdirSync = function blockPrepromotionTargetWrites(directory, ...args) {
+    const relative = path.relative(targetRoot, path.resolve(directory));
+    if (relative && relative !== '..' && !relative.startsWith('..' + path.sep)
+      && !path.isAbsolute(relative)) {
+      attemptedUnsafeWrite = true;
+      throw new Error('restore preflight attempted a direct target-directory mutation');
+    }
+    return originalMkdir.call(this, directory, ...args);
+  };
+  try {
+    const restored = restoreLegacyBackup({ confirmOffline: true, backupPath: migrated.backupPath, targetRoot });
+    assert.equal(restored.restoredFiles.length, 3);
+  } finally {
+    fs.mkdirSync = originalMkdir;
+  }
+  assert.equal(attemptedUnsafeWrite, false);
+  const pathToRestored = path.join(targetRoot, '.development-kit', 'autopilot', 'state', 'revision-000001.json');
+  assert.equal(JSON.parse(fs.readFileSync(pathToRestored, 'utf8')).stateRevision, 1);
+});
+
+
+test('T04-H21 stage-promoted restore supports an absent root within an existing parent directory', (t) => {
+  const source = tempProject(t, 'dk-restore-newroot-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const parent = tempProject(t, 'dk-restore-newroot-parent-');
+  const root = path.join(parent, 'new-restore-root');
+  assert.equal(fs.existsSync(root), false);
+  const restored = restoreLegacyBackup({ confirmOffline: true, backupPath: migrated.backupPath, targetRoot: root });
+  assert.equal(restored.restoredFiles.length, 3);
+  assert.equal(
+    JSON.parse(fs.readFileSync(path.join(root, '.development-kit','autopilot','state','revision-000001.json'), 'utf8')).stateRevision,
+    1,
+  );
+});
+
+
+test('T04-H23 staged restore preserves the existing destination root mode and ownership', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('POSIX mode/uid semantics are not portable to Windows'); return;
+  }
+  const source = tempProject(t, 'dk-mode-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const targetRoot = tempProject(t, 'dk-mode-target-');
+  fs.chmodSync(targetRoot, 0o755);
+  const before = fs.statSync(targetRoot);
+  restoreLegacyBackup({ confirmOffline: true, backupPath: migrated.backupPath, targetRoot });
+  const after = fs.statSync(targetRoot);
+  assert.equal(after.mode & 0o7777, before.mode & 0o7777);
+  assert.equal(after.uid, before.uid);
+  assert.equal(after.gid, before.gid);
+  assert.equal(
+    JSON.parse(fs.readFileSync(path.join(targetRoot,'.development-kit','autopilot','state','revision-000001.json'),'utf8')).stateRevision,
+    1,
+  );
+});
+
+
+test('T04-H24 legacy restore requires explicit offline capability', (t) => {
+  const source = tempProject(t, 'dk-offline-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const root = tempProject(t, 'dk-offline-target-');
+  assert.throws(() => restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot: root }),
+    /offline confirmation/i);
+  assert.deepEqual(fs.readdirSync(root), []);
+});
+
+test('T04-H25 interrupted two-step root promotion can restore original using journal', (t) => {
+  const source = tempProject(t, 'dk-crash-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const root = tempProject(t, 'dk-crash-target-');
+  const sentinel = path.join(root, 'persist-original.txt');
+  fs.writeFileSync(sentinel, 'ORIGINAL');
+  const originalRename = fs.renameSync;
+  let movedRoot = false;
+  let failureInjected = false;
+  fs.renameSync = function injectPowerFailure(oldPath, nextPath, ...args) {
+    if (movedRoot && !failureInjected && typeof oldPath === 'string' &&
+      oldPath.includes('.dk-legacy-restore-stage-') && nextPath === root) {
+      failureInjected = true;
+      throw new Error('simulated crash between displacement and promotion');
+    }
+    if (oldPath === root && String(nextPath).endsWith('-original')) movedRoot = true;
+    return originalRename.call(this, oldPath, nextPath, ...args);
+  };
+  try {
+    assert.throws(() => restoreLegacyBackup({
+      confirmOffline: true, backupPath: migrated.backupPath, targetRoot: root,
+    }), /simulated crash/);
+  } finally { fs.renameSync = originalRename; }
+  // If the in-process finally managed the rollback, the leftover journal is
+  // still authoritative. Recovery must be idempotent and must never erase it.
+  assert.equal(fs.readFileSync(sentinel, 'utf8'), 'ORIGINAL');
+  assert.throws(() => restoreLegacyBackup({
+    confirmOffline:true, backupPath:migrated.backupPath, targetRoot:root,
+  }), /Incomplete legacy restore/i);
+  assert.throws(() => recoverLegacyRestore({ targetRoot: root }), /offline confirmation/i);
+  const recovered = recoverLegacyRestore({ targetRoot: root, confirmOffline: true });
+  assert.equal(recovered.recovered, true);
+  assert.equal(fs.readFileSync(sentinel,'utf8'), 'ORIGINAL');
+  assert.equal(recoverLegacyRestore({ targetRoot: root, confirmOffline: true }).recovered, false);
+  const restored = restoreLegacyBackup({
+    confirmOffline:true, backupPath:migrated.backupPath, targetRoot:root,
+  });
+  assert.equal(restored.restoredFiles.length, 3);
+  assert.equal(fs.readFileSync(path.join(root,'persist-original.txt'),'utf8'),'ORIGINAL');
+});
+
+
+test('T04-H28 restore journals preserve original after a simulated process death between root renames', (t) => {
+  const source = tempProject(t, 'dk-crash-worker-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const root = tempProject(t, 'dk-crash-worker-target-');
+  const sentinel = path.join(root, 'original.txt');
+  fs.writeFileSync(sentinel, 'KEEP-ME', 'utf8');
+
+  const script = [
+    'import fs from "node:fs";',
+    'import {restoreLegacyBackup} from '+JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href)+';',
+    'const backup=process.argv[1],root=process.argv[2],rename=fs.renameSync;',
+    'fs.renameSync=function(a,b,...rest){',
+    ' if(a===root && String(b).endsWith("-original")) {const r=rename.call(this,a,b,...rest);process.exit(91);}',
+    ' return rename.call(this,a,b,...rest);',
+    '};',
+    'restoreLegacyBackup({backupPath:backup,targetRoot:root,confirmOffline:true});',
+  ].join('\n');
+  // spawnSync is intentionally used for a true process exit instead of a
+  // caught synchronous exception that runs finally/rollback.
+  const result = requireSpawnSync(process.execPath, ['--input-type=module','-e',script,migrated.backupPath,root]);
+  assert.equal(result.status, 91, result.stderr);
+  assert.equal(fs.existsSync(root), false);
+  assert.throws(() => restoreLegacyBackup({
+    backupPath:migrated.backupPath,targetRoot:root,confirmOffline:true,
+  }), /Incomplete legacy restore/i);
+  const recovered = recoverLegacyRestore({ targetRoot: root, confirmOffline: true });
+  assert.equal(recovered.outcome, 'rolled-back-original');
+  assert.equal(fs.readFileSync(sentinel,'utf8'),'KEEP-ME');
+  assert.equal(fs.existsSync(root),true);
+});
+
+
+test('T04-H30 offline staged restore preserves descendant file identity and POSIX permission metadata', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('POSIX ownership and mode semantics require a POSIX host'); return;
+  }
+  const source = tempProject(t, 'dk-descendant-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const root = tempProject(t, 'dk-descendant-target-');
+  const nested = path.join(root, 'unrelated', 'private.txt');
+  fs.mkdirSync(path.dirname(nested), { recursive: true });
+  fs.writeFileSync(nested, 'PROTECTED-CONTENT');
+  fs.chmodSync(nested, 0o600);
+  if (process.getuid?.() === 0) {
+    fs.chownSync(nested, 65534, 65534);
+  }
+  const before = fs.statSync(nested);
+  restoreLegacyBackup({ backupPath:migrated.backupPath, targetRoot:root, confirmOffline:true });
+  const after = fs.statSync(nested);
+  assert.equal(after.uid, before.uid);
+  assert.equal(after.gid, before.gid);
+  assert.equal(after.mode & 0o7777, before.mode & 0o7777);
+  assert.equal(fs.readFileSync(nested, 'utf8'), 'PROTECTED-CONTENT');
+});
+
+test('T04-H31 staged restore does not advance historical root access and modification timestamps', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('POSIX access-time semantics require a POSIX host'); return;
+  }
+  const source = tempProject(t, 'dk-atime-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const root = tempProject(t, 'dk-atime-target-');
+  const old = new Date('2001-01-01T00:00:00.000Z');
+  fs.utimesSync(root, old, old);
+  const before = fs.statSync(root);
+  restoreLegacyBackup({ backupPath:migrated.backupPath, targetRoot:root, confirmOffline:true });
+  const after = fs.statSync(root);
+  assert.ok(Math.abs(after.atimeMs - before.atimeMs) < 1000, 'root access time must be preserved');
+  assert.ok(Math.abs(after.mtimeMs - before.mtimeMs) < 1000, 'root modification time must be preserved');
+});
+
+
+test('T04-H32 offline staged restore preserves the text of unrelated relative symlinks', (t) => {
+  const source = tempProject(t, 'dk-link-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const targetRoot = tempProject(t, 'dk-link-target-');
+  fs.writeFileSync(path.join(targetRoot, 'target.txt'), 'ORIGINAL', 'utf8');
+  const link = path.join(targetRoot, 'relative-link.txt');
+  try {
+    fs.symlinkSync('target.txt', link, 'file');
+  } catch (error) {
+    if (['EPERM','EACCES','ENOTSUP'].includes(error.code)) { t.skip('Relative symlink unavailable'); return; }
+    throw error;
+  }
+  const priorLink = fs.readlinkSync(link);
+  restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot, confirmOffline: true });
+  assert.equal(fs.readlinkSync(link), priorLink);
+  assert.equal(fs.readFileSync(link, 'utf8'), 'ORIGINAL');
+});
+
+test('T04-H33 backup with duplicate normalized destinations is refused before staging', async (t) => {
+  const source = tempProject(t, 'dk-dup-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const targetRoot = tempProject(t, 'dk-dup-target-');
+  const pathA = path.join(targetRoot, '.development-kit', 'autopilot', 'state', 'revision-000001.json');
+  const backup = JSON.parse(fs.readFileSync(migrated.backupPath, 'utf8'));
+  const first = backup.files[0];
+  const duplicate = { ...first, path: './' + first.path };
+  backup.files.push(duplicate);
+  backup.fileCount = backup.files.length;
+  const manifest = backup.files.map(e => ({ path: e.path, fingerprint: e.fingerprint, bytes: e.bytes }));
+  const crypto = await import('node:crypto');
+  function canonical(value) {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === 'object') return Object.fromEntries(
+      Object.entries(value).sort(([a],[b]) => a.localeCompare(b)).map(([key,val]) => [key, canonical(val)])
+    );
+    return value;
+  }
+  backup.sourceFingerprint = 'sha256:' + crypto.createHash('sha256').update(JSON.stringify(canonical(manifest))).digest('hex');
+  const hostileBackup = path.join(source, 'alias-backup.json');
+  fs.writeFileSync(hostileBackup, JSON.stringify(backup));
+  assert.throws(
+    () => restoreLegacyBackup({ backupPath: hostileBackup, targetRoot, confirmOffline: true }),
+    /duplicate normalized/i,
+  );
+  assert.equal(fs.existsSync(pathA), false);
+});
+
+
+test('T04-H34 backup case aliases fail closed even on a case-sensitive test filesystem', async (t) => {
+  const source = tempProject(t, 'dk-restore-case-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const targetRoot = tempProject(t, 'dk-restore-case-target-');
+  const backup = JSON.parse(fs.readFileSync(migrated.backupPath, 'utf8'));
+  const first = backup.files[0];
+  const alias = { ...first, path: first.path.toUpperCase() };
+  assert.notEqual(alias.path, first.path);
+  backup.files.push(alias);
+  backup.fileCount = backup.files.length;
+  const manifest = backup.files.map(e => ({ path: e.path, fingerprint: e.fingerprint, bytes: e.bytes }));
+  const { createHash } = await import('node:crypto');
+  function stable(value) {
+    if (Array.isArray(value)) return value.map(stable);
+    if (value && typeof value === 'object') return Object.fromEntries(
+      Object.keys(value).sort().map(key => [key, stable(value[key])]));
+    return value;
+  }
+  backup.sourceFingerprint = 'sha256:' + createHash('sha256').update(JSON.stringify(stable(manifest))).digest('hex');
+  const aliasBackup = path.join(source, 'case-alias-backup.json');
+  fs.writeFileSync(aliasBackup, JSON.stringify(backup));
+  assert.throws(
+    () => restoreLegacyBackup({backupPath:aliasBackup,targetRoot,confirmOffline:true}),
+    /duplicate normalized/i,
+  );
+  assert.deepEqual(fs.readdirSync(targetRoot), []);
+});
+
+
+test('T04-H35 backup with distinct unpaired surrogates cannot overwrite one filesystem name', async (t) => {
+  const source = tempProject(t, 'dk-unicode-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const targetRoot = tempProject(t, 'dk-unicode-target-');
+  const backup = JSON.parse(fs.readFileSync(migrated.backupPath, 'utf8'));
+  const sourceEntry = backup.files[0];
+  backup.files.push({ ...sourceEntry, path: 'suspicious-\uD800.json' });
+  backup.files.push({ ...sourceEntry, path: 'suspicious-\uD801.json' });
+  backup.fileCount = backup.files.length;
+  const entries = backup.files.map(e => ({path:e.path, fingerprint:e.fingerprint, bytes:e.bytes}));
+  const { createHash } = await import('node:crypto');
+  function stable(value) {
+    if (Array.isArray(value)) return value.map(stable);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.keys(value).sort().map(k => [k, stable(value[k])]));
+    }
+    return value;
+  }
+  backup.sourceFingerprint = 'sha256:' + createHash('sha256').update(JSON.stringify(stable(entries))).digest('hex');
+  const hostileBackup = path.join(source, 'ill-formed-unicode.json');
+  fs.writeFileSync(hostileBackup, JSON.stringify(backup));
+  assert.throws(
+    () => restoreLegacyBackup({ backupPath: hostileBackup, targetRoot, confirmOffline: true }),
+    /ill-formed Unicode/i,
+  );
+  assert.deepEqual(fs.readdirSync(targetRoot), []);
 });

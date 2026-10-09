@@ -195,6 +195,8 @@
 * [phase04-workspace-target-engine-contract](03-reference/scripts/phase04-workspace-target-engine-contract.md)
 * [phase05-execution-capsule-contract](03-reference/scripts/phase05-execution-capsule-contract.md)
 * [phase06-state-engine-v2-contract](03-reference/scripts/phase06-state-engine-v2-contract.md)
+* [state-engine-v2-benchmark](03-reference/scripts/state-engine-v2-benchmark.md)
+* [t04-hardening-acceptance-gate](03-reference/scripts/t04-hardening-acceptance-gate.md)
 * [sync-plugin](03-reference/scripts/sync-plugin.md)
 * [ui-preview](03-reference/scripts/ui-preview.md)
 * [token-audit](03-reference/scripts/token-audit.md)
@@ -252,6 +254,8 @@
 * [DKF Scale, Context & Iteration — Phase 5 T03 Validation](04-architecture/dkf-scale-context-iteration-phase05-t03-validation.md)
 * [DKF State Engine V2 — T04 Review](04-architecture/dkf-state-engine-v2-t04-review.md)
 * [DKF Scale, Context & Iteration — Phase 6 T04 Validation](04-architecture/dkf-scale-context-iteration-phase06-t04-validation.md)
+* [DKF State Engine V2 — T04 Hardening Validation](04-architecture/dkf-state-engine-v2-t04-hardening-validation.md)
+* [DKF State Engine V2 — Offline Recovery Boundary](04-architecture/dkf-state-engine-v2-offline-recovery-boundary.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)
