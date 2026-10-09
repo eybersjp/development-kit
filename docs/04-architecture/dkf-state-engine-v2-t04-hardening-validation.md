@@ -5,7 +5,7 @@
 **Branch:** fix/v0.12-t04-state-engine-hardening
 **Stacked PR:** https://github.com/eybersjp/development-kit/pull/70
 **Cumulative CI PR:** https://github.com/eybersjp/development-kit/pull/69 (draft; do not merge as replacement for the approved sequence)
-**Confirmed cross-platform CI baseline:** https://github.com/eybersjp/development-kit/actions/runs/37965890821 (H01–H19; final H20/H21 revalidation at branch checks)
+**Confirmed cross-platform code CI baseline:** https://github.com/eybersjp/development-kit/actions/runs/37972680014 (H01–H28; final stage-fsync/documentation review requires latest branch checks)
 
 ## Corrected engineering risks
 
@@ -16,7 +16,7 @@
 
 ## Reproduction and verification
 
-Twenty-three T04-H01..H23 regression cases verify on Ubuntu and Windows: physical append file identity, aged live lock, four-process/48-event contention, interrupted append recovery, restore directory and file symlinks, conflicting pending suffix, dead-owner recovery and canonical-file symlink rejection.
+Twenty-eight T04-H01..H28 regression cases verify on Ubuntu and Windows: physical append file identity, aged live lock, four-process/48-event contention, interrupted append recovery, restore directory and file symlinks, conflicting pending suffix, dead-owner recovery and canonical-file symlink rejection.
 
 Additional test-driven cases are **H10** (missing terminal newline), **H11** (stale-lock recheck race), **H12** (legitimate concurrent snapshot advance) and **H13** (hard-linked restore destination). The unfixed earlier heads failed as expected: CI runs `37963478049` (H10/H11) and `37963732490` (H12/H13). All four new cases subsequently passed on both platforms.
 
@@ -64,3 +64,17 @@ Code review of `cf504f7` identified two additional P1 issues, reproduced before 
 **Verification authority:** previous H01–H21 source passed Ubuntu and Windows CI `37966537455`, including exact release:validate. The final H01–H23 implementation and documentation require CI at the latest branch head. This is correction evidence, not an independent final acceptance decision.
 
 **Metadata limitation:** generic Node.js APIs cannot establish full equivalence of every filesystem ACL/security-descriptor property (especially custom Windows ACLs). Restoring into an existing root with nonstandard ACLs requires separately verified host-native permission preservation before declaring the backup operation complete. No claim of universal Windows ACL preservation is made.
+
+## Fourth hardening increment — H24 to H28 and recovery trust boundary
+
+- **H24:** `restoreLegacyBackup` rejects callers that have not explicitly attested a trusted exclusive offline workspace; no target mutation is permitted without `confirmOffline:true`.
+- **H25:** a failed promotion leaves a durable transaction journal. A new restore is refused until `recoverLegacyRestore({targetRoot,confirmOffline:true})` validates original/candidate device/inode witnesses and resolves the transaction.
+- **H26:** an abandoned `state.lock.reclaim` guard from a provably dead owner can be removed only by explicit offline recovery, after a 60-second inactivity threshold and local process liveness checks.
+- **H27:** orphan recovery refuses a live guard owner even when the guard is old.
+- **H28:** a child-process termination immediately after moving the target root leaves a journal permitting exact original-tree restoration without running the original process's `finally`.
+
+The crash journal uses BigInt-backed decimal device/inode witnesses for portable Windows/Unix verification. The staged restore tree is fsynced before journal publication; POSIX directory entries are synced at transaction boundaries. The previous full cross-platform run `37972680014` passed at the journal-identity revision; latest fsync/documentation changes require current-head CI.
+
+**Security boundary decision pending independent review:** see [Offline Recovery Boundary](dkf-state-engine-v2-offline-recovery-boundary.md). The restore capability is *operator-initiated offline maintenance only*. A malicious concurrent process with the same OS credentials cannot be isolated by cross-platform Node.js pathname guards and must be excluded operationally. The `confirmOffline` flag is an attestation, **not technical evidence** that the host is safe. If the environment is not exclusively controlled, restoration is unsupported and must not run. This scope must be independently accepted rather than silently dismissing security findings.
+
+**Review status:** PR #70 remains unmerged; Issue #71 tracks the remaining recovery and isolation contract. Source implementation and targeted CI passing do not on their own create a valid risk-3 code/architecture/security review or persisted deterministic ACCEPTED state. Published version remains v0.11.2.
