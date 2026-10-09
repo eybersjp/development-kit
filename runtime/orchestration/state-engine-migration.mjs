@@ -161,6 +161,12 @@ function validateBackupBundle(bundle) {
     if (!plainObject(entry) || typeof entry.path !== 'string' || typeof entry.contentBase64 !== 'string') {
       throw new StateMigrationError('Legacy backup entry is invalid');
     }
+    // Node substitutes U+FFFD for unpaired UTF-16 surrogates when mapping
+    // JavaScript paths to filesystem names. Distinct malicious strings can
+    // otherwise resolve to the same on-disk file and silently overwrite.
+    if (Buffer.from(entry.path, 'utf8').toString('utf8') !== entry.path) {
+      throw new StateMigrationError('Legacy backup path contains ill-formed Unicode');
+    }
     const content = Buffer.from(entry.contentBase64, 'base64');
     if (content.length !== entry.bytes || stateSha256(content) !== entry.fingerprint) {
       throw new StateMigrationError(`Legacy backup entry integrity failed: ${entry.path}`);
