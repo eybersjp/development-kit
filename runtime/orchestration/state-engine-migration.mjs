@@ -749,7 +749,11 @@ export function restoreLegacyBackup({
   }));
   const normalizedDestinations = new Set();
   for (const { entry, destination } of destinations) {
-    const key = process.platform === 'win32' ? destination.toLowerCase() : destination;
+    // Conservative case/Unicode folding prevents duplicate-target aliases on
+    // APFS/HFS+, NTFS and case-insensitive mounts on otherwise POSIX hosts.
+    // Refusing distinct-case names on a case-sensitive mount is intentional:
+    // restore cannot safely assume a particular target filesystem policy.
+    const key = destination.normalize('NFC').toLowerCase();
     if (normalizedDestinations.has(key)) {
       throw new StateMigrationError('Duplicate normalized backup restore destination: ' + entry.path);
     }
