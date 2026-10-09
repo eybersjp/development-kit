@@ -1,27 +1,27 @@
 # DKF v0.12 T04 — State Engine V2 Hardening Validation
 
 **Date:** 9 October 2026
-**Status:** Source implementation and cross-platform CI VERIFIED; deterministic T04 review/acceptance evidence still required for promotion.
+**Status:** Engineering remediation implemented; updated CI and independent risk-3 review must pass before acceptance.
 **Branch:** fix/v0.12-t04-state-engine-hardening
 **Stacked PR:** https://github.com/eybersjp/development-kit/pull/70
 **Cumulative CI PR:** https://github.com/eybersjp/development-kit/pull/69 (draft; do not merge as replacement for the approved sequence)
-**CI run:** https://github.com/eybersjp/development-kit/actions/runs/37963827500
+**Confirmed cross-platform CI baseline:** https://github.com/eybersjp/development-kit/actions/runs/37965890821 (H01–H19; final H20/H21 revalidation at branch checks)
 
 ## Corrected engineering risks
 
 - **AUD-05 — event storage:** Canonical events are now physically appended rather than rewriting all prior bytes. An fsynced pending-commit journal records the expected prefix hash and complete suffix before appending. Verified incomplete suffixes can be repaired; conflicting suffixes fail closed. On POSIX, relevant rename/unlink directory metadata is also fsynced.
 - **AUD-06 — multi-process coordination:** The project-local lock spans current-state reads, sequence allocation, event construction and write. Owners are recorded by PID and hostname. A live local lock is not stolen merely because it is aged; a provably dead local owner is recoverable. Remote/unknown ownership fails closed. This is not a distributed multi-host lock.
-- **AUD-07 — backup restore:** Full destination preflight checks parent directories and final files, rejects symlinks and junctions, and uses exclusive/no-follow file opens where supported. Legacy backups and originals remain retained.
-- **Additional protection:** Canonical State Engine internal files may not themselves be symlinks/nonregular files. Existing Autopilot same-revision transition behavior was preserved after an initial regression was corrected.
+- **AUD-07 — backup restore:** Read-only target preflight rejects symlinks, junctions and multiply-linked files. Full restore is assembled in a private sibling staging directory, fingerprint-verified, then promoted by renaming the destination root. No restored content is opened through mutable pre-existing target parents or final hard links. Original target tree is moved aside and rolled back on a failed promotion where possible; retained legacy source and backups are never removed.
+- **Additional protection:** Canonical State Engine internal files may not be symlinks, multiply-linked inodes or nonregular files. Lock reclamation is serialized under an exclusive .reclaim directory; a stopped process during reclamation can leave a guard that must be inspected before manual recovery. The pending journal is cleared only after snapshot and index have been reconstructed and fsynced; stale materialized views are replayed under the State Engine writer lock. Existing Autopilot same-revision transition behavior was preserved after an initial regression was corrected.
 
 ## Reproduction and verification
 
-Thirteen new T04-H01..H13 regression tests pass on Ubuntu and Windows: physical append file identity, aged live lock, four-process/48-event contention, interrupted append recovery, restore directory and file symlinks, conflicting pending suffix, dead-owner recovery and canonical-file symlink rejection.
+Twenty-one T04-H01..H21 regression cases verify on Ubuntu and Windows: physical append file identity, aged live lock, four-process/48-event contention, interrupted append recovery, restore directory and file symlinks, conflicting pending suffix, dead-owner recovery and canonical-file symlink rejection.
 
 Additional test-driven cases are **H10** (missing terminal newline), **H11** (stale-lock recheck race), **H12** (legitimate concurrent snapshot advance) and **H13** (hard-linked restore destination). The unfixed earlier heads failed as expected: CI runs `37963478049` (H10/H11) and `37963732490` (H12/H13). All four new cases subsequently passed on both platforms.
 
 **Independent-review status:** the initial GitHub Codex review on commit `949ec8c` identified H10/H11. Both are corrected with reproducing tests. A fresh independent code/security review of the updated source was requested on PR #70. Successful CI is not a deterministic DKF `ACCEPTED` verdict; formal review and acceptance must still be recorded before merge.
-The cumulative full CI run 37963827500 passed every required step on Ubuntu and Windows, including T04 focused tests and the exact npm run release:validate command. No skipped test was reported.
+The previous cumulative CI run 37965890821 passed every required step on Ubuntu and Windows, including T04 focused tests and the exact npm run release:validate command. No skipped test was reported.
 
 ## 300-transition endurance fixture
 
@@ -40,3 +40,16 @@ The cumulative full CI run 37963827500 passed every required step on Ubuntu and 
 ## Authority and release boundaries
 
 Original T04 contract and acceptance criteria remain unchanged; no T05+ scope, version bump, legacy file deletion, tag or release occurred. Main remains on published 0.11.2. Independently execute the existing risk-3 code/architecture/security review and capture persisted runtime acceptance evidence before promoting/merging the stacked T04 fix. Re-run final integration checks after any source change. T10 still owns release-wide performance objectives.
+
+## Further P1/P2 review corrections — H14 to H21
+
+- **H14:** Windows transient state.lock creation sharing violations retry within the lock timeout, without stealing a lock (Windows-only fixture).
+- **H15:** four independent processes contend to recover one stale owner; exclusive reclamation guard prevents deletion of a subsequently acquired live lock.
+- **H16:** replacing canonical events.jsonl with an external hard link is refused before append, preserving the outside inode.
+- **H17:** interrupted journal recovery rebuilds and persists snapshot/index before deleting the commit marker; immediate strict integrity verification succeeds.
+- **H18:** a writer interleaving with an older reader cannot have its derived snapshot/index rolled back by stale replay.
+- **H19:** switching a legacy restore destination to an external hard link at the former open point cannot modify outside content; staged restore avoids target-path opens.
+- **H20:** restore preflight does not create or mutate directories in the target tree before stage promotion.
+- **H21:** staged restore preserves support for a previously nonexistent target root with an existing parent.
+
+The review that identified H15–H19 was recorded on PR #70 against head `ffe49ffb60`. Its five associated threads must be resolved only after validating the revised code and obtaining an independent current-head review. Passing the CI suite does not supersede those risk-3 approval gates. Restore is an offline maintenance operation: protect target-parent access and avoid other writers to the recovery directory while staging and promoting. Staging relies on same-filesystem sibling directory renames. Source/workflow authority, the published version (0.11.2), and the prohibition on merging validation PR #69 remain unchanged.

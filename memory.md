@@ -263,3 +263,12 @@ Integrated through PR #54; Issue #51 is completed.
 - Both initial red suites were recorded (runs 37963478049 and 37963732490). Corrected source head ffe49ffb60a1d6eaa132c5caa0f4ff190a5a3351 passed Ubuntu and Windows CI run 37963827500 with H01–H13 tests, exact release:validate and GitGuardian success.
 - Re-measured 300-event endurance: 6,068 ms Ubuntu; 16,417 ms Windows; 54/48 ms read/integrity; same 189,651-byte ledger and 99.33% modeled disk rewrite traffic avoided. Measurements are not deterministic latency acceptance.
 - Formal independent risk-3 code/architecture/security review re-requested for the updated head. Runtime deterministic acceptance is NOT yet recorded; PR #70 unmerged, v0.12 unreleased, T05 not authorized by this entry.
+
+### T04 second independent-review remediation (9 October 2026)
+
+- Codex independent re-review of ffe49ffb60 found 5 new issues: P1 stale-lock recovery atomicity, P1 canonical ledger hardlink write, P1 restore write path TOCTOU, P2 pending journal derived-state recovery, P2 stale snapshot repair racing concurrent writes.
+- Implemented exclusive reclamation guard for stale lock files, checked canonical file link counts including opened fd, staged whole-tree legacy restore with root promotion and read-only preflight, derived-state replay before journal deletion, and lock-scoped refresh of stale snapshots/indexes.
+- Added H15..H21 adversarial/compatibility tests, in addition to H01..H14. H14 is Windows-only. Tests cover 4-process dead-lock reclaim contention, external event hardlinks, stale snapshot/index after interrupted commit, concurrent reader/writer update, restore open-time hardlink swap, pure preflight, and nonexistent target.
+- 37965890821 fully passed Windows and Ubuntu for the prior H15..H19 code revision; latest H20/H21 restore code and documentation require fresh CI verification and current-head independent security/code review before formal T04 acceptance.
+- Restore now stages a complete private sibling tree and promotes using root-directory renames; restoration requires a trusted parent and should run without concurrent external writers. Abandoned lock recovery guards require operator inspection, not blind removal.
+- PR #70 remains DRAFT, unmerged; main/release remains 0.11.2. Only risk-3 independently validated and accepted T04 may be integrated before T05.
