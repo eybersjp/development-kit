@@ -553,6 +553,9 @@ function resolveSafeRestoreDestination(targetRoot, relativePath) {
     if (!existing.isFile() || existing.isSymbolicLink()) {
       throw new StateMigrationError('Legacy backup restore destination must be a regular file: ' + relativePath);
     }
+    if (existing.nlink > 1) {
+      throw new StateMigrationError('Legacy backup restore destination has multiple hard links: ' + relativePath);
+    }
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
