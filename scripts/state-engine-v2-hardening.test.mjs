@@ -163,3 +163,51 @@ test('T04-H09 internal canonical events file may not be redirected through a sym
   assert.throws(() => appendMetadataEvent({ rootDir, eventType: 'DANGER', payload: {} }), /not a regular file/i);
   assert.equal(fs.readFileSync(outsideFile, 'utf8'), originalContent);
 });
+
+
+test('T04-H10 appending to a valid ledger without a terminal newline preserves record separation', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const original = fs.readFileSync(paths.events, 'utf8');
+  assert.ok(original.endsWith('\n'));
+  fs.writeFileSync(paths.events, original.slice(0, -1), 'utf8');
+  appendMetadataEvent({ rootDir, eventType: 'FOLLOWUP_EVENT', payload: { value: 2 } });
+  const history = loadCanonicalEvents(rootDir);
+  assert.equal(history.length, 2);
+  assert.equal(history[1].previousEventHash, history[0].eventHash);
+  assert.ok(fs.readFileSync(paths.events, 'utf8').endsWith('\n'));
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
+
+test('T04-H11 missing aged lock during stale-owner recheck retries acquisition safely', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  fs.writeFileSync(paths.lock, JSON.stringify({
+    owner: 'provably-dead-owner',
+    pid: 2147483647,
+    hostname: os.hostname(),
+    acquiredAt: '2026-10-08T00:00:00.000Z',
+  }));
+  const aged = new Date(Date.now() - 30_000);
+  fs.utimesSync(paths.lock, aged, aged);
+  const originalStat = fs.statSync;
+  let lockStatCalls = 0;
+  fs.statSync = function injectConcurrentLockRemoval(target, ...args) {
+    if (target === paths.lock && ++lockStatCalls === 2) {
+      const err = new Error('simulated competing stale-lock reclamation');
+      err.code = 'ENOENT';
+      throw err;
+    }
+    return originalStat.call(this, target, ...args);
+  };
+  try {
+    appendMetadataEvent({ rootDir, eventType: 'AFTER_STALE_LOCK_RACE', payload: { ok: true } });
+  } finally {
+    fs.statSync = originalStat;
+  }
+  assert.ok(lockStatCalls >= 3);
+  assert.equal(loadCanonicalEvents(rootDir).length, 2);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
