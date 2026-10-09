@@ -128,4 +128,5 @@ jobs:
           name: t04-hardening-acceptance-${{ matrix.os }}
           path: .development-kit/runs/INC-DKF120-T04/T04-HARDENING-REVIEWED-20261009/
           retention-days: 30
+          include-hidden-files: true
           if-no-files-found: error
