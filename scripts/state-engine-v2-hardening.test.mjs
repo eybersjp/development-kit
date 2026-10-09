@@ -11,6 +11,7 @@ import {
   appendMetadataEvent,
   getStateEnginePaths,
   loadCanonicalEvents,
+  loadStateSnapshot,
   verifyStateEngineIntegrity,
 } from '../runtime/orchestration/state-engine-v2.mjs';
 
@@ -208,6 +209,32 @@ test('T04-H11 missing aged lock during stale-owner recheck retries acquisition s
     fs.statSync = originalStat;
   }
   assert.ok(lockStatCalls >= 3);
+  assert.equal(loadCanonicalEvents(rootDir).length, 2);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
+
+
+test('T04-H12 snapshot reader tolerates a legitimate writer committing between ledger and snapshot reads', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const originalRead = fs.readFileSync;
+  let insertedWriter = false;
+  fs.readFileSync = function simulateReadWriteInterleave(file, ...args) {
+    if (!insertedWriter && file === paths.snapshot) {
+      insertedWriter = true;
+      appendMetadataEvent({ rootDir, eventType: 'SIMULTANEOUS_EVENT', payload: { value: 2 } });
+    }
+    return originalRead.call(this, file, ...args);
+  };
+  let snapshot;
+  try {
+    snapshot = loadStateSnapshot(rootDir);
+  } finally {
+    fs.readFileSync = originalRead;
+  }
+  assert.equal(insertedWriter, true);
+  assert.equal(snapshot.lastEventSequence, 2);
   assert.equal(loadCanonicalEvents(rootDir).length, 2);
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
