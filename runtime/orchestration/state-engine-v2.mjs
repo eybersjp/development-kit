@@ -875,12 +875,23 @@ function buildEvent({
   return event;
 }
 
-function appendDurably(filePath, appendedText) {
-  const fd = fs.openSync(filePath, 'a');
+function appendDurably(filePath, appendedText, expectedIdentity = null) {
+  // O_NOFOLLOW rejects a final-component symlink on supported POSIX hosts.
+  // On Windows, verify the opened inode and current directory entry before
+  // writing because path-only preflight cannot prevent a replacement race.
+  const flags = fs.constants.O_WRONLY | fs.constants.O_APPEND | (fs.constants.O_NOFOLLOW ?? 0);
+  const fd = fs.openSync(filePath, flags);
   try {
     const stat = fs.fstatSync(fd);
-    if (!stat.isFile() || stat.nlink !== 1) {
-      throw new StateEngineError('Canonical event file is not an exclusive regular inode (multiple hard links)');
+    const entry = fs.lstatSync(filePath);
+    if (!stat.isFile() || stat.nlink !== 1 || entry.isSymbolicLink() ||
+      !entry.isFile() || entry.nlink !== 1 ||
+      entry.dev !== stat.dev || entry.ino !== stat.ino) {
+      throw new StateEngineError('Canonical event file symlink/inode mismatch or multiple hard links');
+    }
+    if (expectedIdentity && (stat.dev !== expectedIdentity.dev ||
+      stat.ino !== expectedIdentity.ino || stat.size !== expectedIdentity.size)) {
+      throw new StateEngineError('Canonical event inode changed between event preparation and append');
     }
     const bytes = Buffer.from(appendedText, 'utf8');
     let written = 0;
@@ -975,6 +986,7 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
   }
 
   const paths = ensureStateEngineLayout(rootDir);
+  const expectedIdentity = fs.lstatSync(paths.events);
   const existingContent = fs.readFileSync(paths.events, 'utf8');
   const existing = parseLedger(existingContent);
   let previous = existing.at(-1) ?? null;
@@ -998,7 +1010,7 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
   atomicWrite(paths.pending, stablePretty(pending));
   // Physical append avoids O(history) rewrites; the pending journal permits
   // deterministic repair after a torn write or interrupted snapshot persist.
-  appendDurably(paths.events, suffix);
+  appendDurably(paths.events, suffix, expectedIdentity);
   const { index } = persistDerived(nextSnapshot, rootDir);
   fs.unlinkSync(paths.pending);
   fsyncParentDirectory(paths.stateRoot);
