@@ -443,3 +443,46 @@ test('T04-H27 offline orphan guard recovery refuses a live owner', (t) => {
   assert.throws(() => recoverAbandonedStateLock({ rootDir, confirmOffline: true }), /live State Engine recovery guard/i);
   assert.equal(fs.existsSync(guard), true);
 });
+
+
+test('T04-H29 interrupted ledger recovery must never truncate an external hardlink swapped during read', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const prefix = fs.readFileSync(paths.events);
+  appendMetadataEvent({ rootDir, eventType: 'FOLLOWUP_EVENT', payload: { value: 2 } });
+  const complete = fs.readFileSync(paths.events);
+  const suffix = complete.subarray(prefix.length);
+  fs.writeFileSync(paths.events, Buffer.concat([prefix, suffix.subarray(0, 40)]));
+  fs.writeFileSync(paths.pending, JSON.stringify({
+    schemaVersion: '1.0.0',
+    previousByteLength: prefix.length,
+    previousHash: 'sha256:' + createHash('sha256').update(prefix).digest('hex'),
+    suffix: suffix.toString('utf8'),
+  }));
+  const outside = tempProject(t);
+  const victim = path.join(outside, 'external-ledger.jsonl');
+  fs.writeFileSync(victim, Buffer.concat([prefix, Buffer.alloc(500, 0x58)]));
+  const expectedExternal = fs.readFileSync(victim);
+  const originalRead = fs.readFileSync;
+  let swapped = false;
+  fs.readFileSync = function swapAfterLedgerRead(file, ...args) {
+    const bytes = originalRead.call(this, file, ...args);
+    if (!swapped && file === paths.events) {
+      swapped = true;
+      fs.renameSync(paths.events, path.join(paths.stateRoot, 'displaced-ledger'));
+      fs.linkSync(victim, paths.events);
+    }
+    return bytes;
+  };
+  try {
+    // The corrected implementation may reject any inode substitution or
+    // complete on its original descriptor. Neither may corrupt the victim.
+    try { loadCanonicalEvents(rootDir); } catch (error) {
+      assert.match(String(error), /canonical|inode|link|history|State Engine/i);
+    }
+  } finally {
+    fs.readFileSync = originalRead;
+  }
+  assert.deepEqual(fs.readFileSync(victim), expectedExternal);
+});
