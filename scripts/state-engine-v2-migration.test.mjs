@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync as requireSpawnSync } from 'node:child_process';
 
 import {
   appendEntityState,
@@ -696,4 +697,37 @@ test('T04-H25 interrupted two-step root promotion can restore original using jou
   });
   assert.equal(restored.restoredFiles.length, 3);
   assert.equal(fs.readFileSync(path.join(root,'persist-original.txt'),'utf8'),'ORIGINAL');
+});
+
+
+test('T04-H28 restore journals preserve original after a simulated process death between root renames', (t) => {
+  const source = tempProject(t, 'dk-crash-worker-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const root = tempProject(t, 'dk-crash-worker-target-');
+  const sentinel = path.join(root, 'original.txt');
+  fs.writeFileSync(sentinel, 'KEEP-ME', 'utf8');
+
+  const script = [
+    'import fs from "node:fs";',
+    'import {restoreLegacyBackup} from '+JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href)+';',
+    'const backup=process.argv[1],root=process.argv[2],rename=fs.renameSync;',
+    'fs.renameSync=function(a,b,...rest){',
+    ' if(a===root && String(b).endsWith("-original")) {const r=rename.call(this,a,b,...rest);process.exit(91);}',
+    ' return rename.call(this,a,b,...rest);',
+    '};',
+    'restoreLegacyBackup({backupPath:backup,targetRoot:root,confirmOffline:true});',
+  ].join('\n');
+  // spawnSync is intentionally used for a true process exit instead of a
+  // caught synchronous exception that runs finally/rollback.
+  const result = requireSpawnSync(process.execPath, ['--input-type=module','-e',script,migrated.backupPath,root]);
+  assert.equal(result.status, 91, result.stderr);
+  assert.equal(fs.existsSync(root), false);
+  assert.throws(() => restoreLegacyBackup({
+    backupPath:migrated.backupPath,targetRoot:root,confirmOffline:true,
+  }), /Incomplete legacy restore/i);
+  const recovered = recoverLegacyRestore({ targetRoot: root, confirmOffline: true });
+  assert.equal(recovered.outcome, 'rolled-back-original');
+  assert.equal(fs.readFileSync(sentinel,'utf8'),'KEEP-ME');
+  assert.equal(fs.existsSync(root),true);
 });
