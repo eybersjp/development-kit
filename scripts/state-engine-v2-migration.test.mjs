@@ -665,9 +665,11 @@ test('T04-H25 interrupted two-step root promotion can restore original using jou
   fs.writeFileSync(sentinel, 'ORIGINAL');
   const originalRename = fs.renameSync;
   let movedRoot = false;
+  let failureInjected = false;
   fs.renameSync = function injectPowerFailure(oldPath, nextPath, ...args) {
-    if (movedRoot && typeof oldPath === 'string' && oldPath.includes('.dk-legacy-restore-stage-') &&
-      nextPath === root) {
+    if (movedRoot && !failureInjected && typeof oldPath === 'string' &&
+      oldPath.includes('.dk-legacy-restore-stage-') && nextPath === root) {
+      failureInjected = true;
       throw new Error('simulated crash between displacement and promotion');
     }
     if (oldPath === root && String(nextPath).endsWith('-original')) movedRoot = true;
