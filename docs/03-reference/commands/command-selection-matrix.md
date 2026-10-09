@@ -17,6 +17,7 @@ Use this table to choose the right command based on your current situation.
 | You have approved tasks, want automatic progression | `/dk-build-auto` | Processes all tasks sequentially, pausing on failures |
 | Implementation is done, need to verify | `/dk-test` | Runs verification suite with unit, integration, edge-case tests |
 | Tests pass, need code review | `/dk-review` | Runs spec compliance -> code quality -> specialist reviews |
+| Need an independent full-project, subsystem or release audit | `/dk-audit` | Examines code, requirements, risks, integration, governance and evidence without conferring acceptance |
 | Review passed, want to remove bloat | `/dk-simplify` | Applies Ponytail ladder to eliminate unnecessary code |
 | Something is broken and you need to debug | `/dk-debug` | Systematic reproduce -> localise -> fix -> protect cycle |
 | Ready to merge or ship | `/dk-ship` | Final gate: full suite, task completion gate, release readiness |
