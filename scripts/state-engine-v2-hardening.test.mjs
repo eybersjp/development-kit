@@ -361,3 +361,45 @@ test('T04-H18 stale reader cannot overwrite a later writer snapshot with old der
   assert.equal(JSON.parse(fs.readFileSync(paths.index, 'utf8')).sourceSequence, 3);
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+
+test('T04-H22 event append refuses a symlink swapped into place immediately before open', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const outside = tempProject(t);
+  const victim = path.join(outside, 'must-not-change.txt');
+  fs.writeFileSync(victim, 'EXTERNAL-SENTINEL', 'utf8');
+  const originalOpen = fs.openSync;
+  let injected = false;
+  fs.openSync = function swapCanonicalPathAtAppendOpen(file, flags, ...args) {
+    const isAppend = flags === 'a' ||
+      (typeof flags === 'number' && (flags & fs.constants.O_APPEND) !== 0);
+    if (!injected && file === paths.events && isAppend) {
+      const displaced = path.join(paths.stateRoot, 'original-ledger-for-test.jsonl');
+      fs.renameSync(paths.events, displaced);
+      try {
+        fs.symlinkSync(victim, paths.events, 'file');
+      } catch (err) {
+        fs.renameSync(displaced, paths.events);
+        if (['EPERM','EACCES','ENOTSUP'].includes(err.code)) {
+          t.skip('Host denies file symlink fixture');
+          return originalOpen.call(this, file, flags, ...args);
+        }
+        throw err;
+      }
+      injected = true;
+    }
+    return originalOpen.call(this, file, flags, ...args);
+  };
+  try {
+    assert.throws(
+      () => appendMetadataEvent({ rootDir, eventType: 'MUST_NOT_ESCAPE', payload: {} }),
+      /symlink|symbolic|inode|link|ELOOP|outside|State Engine/i,
+    );
+  } finally {
+    fs.openSync = originalOpen;
+  }
+  if (!injected) return;
+  assert.equal(fs.readFileSync(victim, 'utf8'), 'EXTERNAL-SENTINEL');
+});
