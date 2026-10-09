@@ -109,43 +109,90 @@ const BLOB_WITNESSES = Object.freeze(Object.fromEntries(REVIEW_BLOB_PATHS.map(fi
 })));
 const reviewerReceipts = new Map();
 const githubReviewIds = new Set();
+const scopeRequestIds = new Set();
 for (const entry of receipts.reviews) {
   assert.ok(entry && REQUIRED_ROLES.includes(entry.role), 'Unsupported independent reviewer role');
   assert.ok(!reviewerReceipts.has(entry.role), 'Duplicate independent reviewer role');
-  assert.ok(Number.isSafeInteger(entry.githubReviewId) && entry.githubReviewId > 0);
   assert.ok(Number.isSafeInteger(entry.scopeRequestCommentId) && entry.scopeRequestCommentId > 0);
-  assert.ok(!githubReviewIds.has(entry.githubReviewId), 'A GitHub review cannot self-certify multiple roles');
-  githubReviewIds.add(entry.githubReviewId);
-  const review = githubReviews.find(record => record.id === entry.githubReviewId);
+  assert.ok(!scopeRequestIds.has(entry.scopeRequestCommentId),
+    'Each role requires an independently requested reviewer execution');
+  scopeRequestIds.add(entry.scopeRequestCommentId);
   const request = githubRequests.find(record => record.id === entry.scopeRequestCommentId);
-  assert.ok(review && request, 'Missing authenticated reviewer submission or scope request');
-  assert.equal(review.user?.login, 'chatgpt-codex-connector[bot]',
-    'T04 review must originate from independent GitHub reviewer, not the PR author');
-  assert.equal(review.commit_id, REVIEWED_SOURCE, 'Review must cover the exact immutable source');
-  assert.ok(['APPROVED', 'COMMENTED'].includes(review.state), 'Review is dismissed or not submitted');
-  assert.ok(review.body?.includes('Reviewed commit:') && review.body.includes(REVIEWED_SOURCE.slice(0, 10)),
-    'Review text does not identify the inspected commit');
+  assert.ok(request, 'Independent reviewer scope request was not found in GitHub');
   assert.ok(request.body?.includes('@codex') && request.body.includes(entry.role),
-    'Reviewer scope request must specify the exact role');
+    'Scope request must explicitly specify independent reviewer role');
   assert.ok(request.body.includes(REVIEWED_SOURCE),
-    'Reviewer scope request must specify the inspected commit');
-  assert.ok(Date.parse(review.submitted_at) > Date.parse(request.created_at),
-    'Reviewer submission predates the requested scope');
-  assert.equal(githubReviewComments.filter(c => c.pull_request_review_id === review.id).length, 0,
-    'Independent review reported findings; resolve defects and request a new current-source review');
+    'Reviewer scope request must bind the inspected immutable source commit');
+
+  let reviewDate;
+  let reviewUrl;
+  let reviewIdentity;
+  if (entry.kind === 'github-review') {
+    assert.ok(Number.isSafeInteger(entry.githubReviewId) && entry.githubReviewId > 0);
+    assert.ok(!githubReviewIds.has(entry.githubReviewId),
+      'A single independent review cannot self-certify multiple roles');
+    githubReviewIds.add(entry.githubReviewId);
+    const review = githubReviews.find(record => record.id === entry.githubReviewId);
+    assert.ok(review, 'Independent GitHub reviewer submission was not found');
+    assert.equal(review.user?.login, 'chatgpt-codex-connector[bot]',
+      'Independent reviewer identity is not authenticated');
+    assert.equal(review.commit_id, REVIEWED_SOURCE, 'Review did not inspect the required immutable source');
+    assert.ok(['APPROVED', 'COMMENTED'].includes(review.state),
+      'GitHub reviewer submission is dismissed or not completed');
+    assert.ok(review.body?.includes('Reviewed commit:') &&
+      review.body.includes(REVIEWED_SOURCE.slice(0, 10)),
+      'Reviewer submission does not identify the source inspected');
+    assert.ok(Date.parse(review.submitted_at) > Date.parse(request.created_at),
+      'Reviewer submission predates its role-scoped request');
+    assert.equal(githubReviewComments.filter(c => c.pull_request_review_id === review.id).length, 0,
+      'Independent reviewer reported findings; fix and request new current-source review');
+    reviewDate = review.submitted_at;
+    reviewUrl = review.html_url;
+    reviewIdentity = { type: 'github-review', id: review.id };
+  } else if (entry.kind === 'codex-clean-reaction') {
+    // Codex emits an authenticated thumbs-up on the originating request when
+    // a completed review finds no issues, rather than creating a PR review.
+    // This is a genuine external reviewer result, not a self-authored PASS.
+    assert.ok(Number.isSafeInteger(entry.githubReactionId) && entry.githubReactionId > 0);
+    const reactions = await githubApi('issues/comments/' + entry.scopeRequestCommentId +
+      '/reactions?per_page=100');
+    assert.ok(Array.isArray(reactions), 'Cannot verify external clean-review reaction');
+    const reaction = reactions.find(item => item.id === entry.githubReactionId);
+    assert.ok(reaction, 'Independent Codex clean review reaction not found');
+    assert.equal(reaction.user?.login, 'chatgpt-codex-connector[bot]',
+      'Review completion reaction must originate from the independent bot');
+    assert.equal(reaction.content, '+1', 'Pending or negative reaction is not a PASS verdict');
+    assert.ok(Date.parse(reaction.created_at) > Date.parse(request.created_at),
+      'Review completion predates the requested role');
+    const reportedFindings = githubReviewComments.filter(comment =>
+      comment.user?.login === 'chatgpt-codex-connector[bot]' &&
+      comment.commit_id === REVIEWED_SOURCE &&
+      Date.parse(comment.created_at) >= Date.parse(request.created_at));
+    assert.equal(reportedFindings.length, 0,
+      'Reviewer reported source-bound findings after the scoped review request');
+    reviewDate = reaction.created_at;
+    reviewUrl = 'https://github.com/eybersjp/development-kit/pull/70#issuecomment-' +
+      entry.scopeRequestCommentId;
+    reviewIdentity = { type: 'codex-clean-reaction', id: reaction.id };
+  } else {
+    assert.fail('Unknown independent reviewer attestation type; fail closed');
+  }
+
   const result = entry.reviewResult;
   assert.ok(result && result.role === entry.role && result.runId === RUN,
-    'Independent reviewer receipt lacks a role-bound persisted review result');
-  assert.equal(result.createdAt, review.submitted_at,
-    'Review result timestamp does not match GitHub reviewer');
+    'Independently sourced reviewer receipt lacks a persisted role-bound review result');
+  assert.equal(result.createdAt, reviewDate,
+    'Persisted reviewer receipt timestamp must match authenticated external evidence');
   assert.equal(result.verdict, 'PASS');
-  assert.deepEqual(result.findings, [], 'Independent reviewer receipt cannot suppress actual findings');
+  assert.deepEqual(result.findings, [],
+    'Independently sourced reviewer receipt may not suppress findings');
   reviewerReceipts.set(entry.role, {
     ...entry,
     review: result,
-    reviewer: review.user.login,
-    reviewUrl: review.html_url,
-    reviewedCommit: review.commit_id,
+    reviewer: 'chatgpt-codex-connector[bot]',
+    reviewUrl,
+    reviewedCommit: REVIEWED_SOURCE,
+    reviewIdentity,
   });
 }
 for (const role of REQUIRED_ROLES) {
@@ -219,7 +266,7 @@ const reviewerReferences = {
   independentSourceReviews: Object.fromEntries(REQUIRED_ROLES.map(role => {
     const r = reviewerReceipts.get(role);
     return [role, {
-      githubReviewId: r.githubReviewId,
+      reviewIdentity: r.reviewIdentity,
       scopeRequestCommentId: r.scopeRequestCommentId,
       reviewer: r.reviewer,
       sourceCommit: r.reviewedCommit,
