@@ -116,6 +116,7 @@ function printCommands() {
   console.log('  /dk-build-auto - Process the entire plan automatically');
   console.log('  /dk-test       - Run verification');
   console.log('  /dk-review     - Run the full review cycle');
+  console.log('  /dk-audit      - Independent evidence-based engineering audit');
   console.log('  /dk-simplify   - Apply the simplicity ladder');
   console.log('  /dk-debug      - Systematic root-cause analysis');
   console.log('  /dk-ship       - Final verification and release preparation');
