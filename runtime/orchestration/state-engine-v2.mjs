@@ -244,10 +244,24 @@ function acquireStateLock(rootDir, timeoutMs = 12000) {
             // recovery guard, so other reclaimers cannot race its unlink.
             const reclaimGuard = paths.lock + '.reclaim';
             let guardOwned = false;
+            let guardMarker = null;
             try {
               try {
                 fs.mkdirSync(reclaimGuard, { mode: 0o700 });
                 guardOwned = true;
+                guardMarker = path.join(reclaimGuard, 'owner.json');
+                const guardFd = fs.openSync(guardMarker, 'wx', 0o600);
+                try {
+                  fs.writeFileSync(guardFd, JSON.stringify({
+                    pid: process.pid,
+                    hostname: os.hostname(),
+                    owner,
+                    acquiredAt: new Date().toISOString(),
+                  }));
+                  fs.fsyncSync(guardFd);
+                } finally {
+                  fs.closeSync(guardFd);
+                }
               } catch (guardError) {
                 if (guardError.code !== 'EEXIST') throw guardError;
               }
@@ -284,7 +298,10 @@ function acquireStateLock(rootDir, timeoutMs = 12000) {
                 }
               }
             } finally {
-              if (guardOwned) fs.rmdirSync(reclaimGuard);
+              if (guardOwned) {
+                if (guardMarker && fs.existsSync(guardMarker)) fs.unlinkSync(guardMarker);
+                fs.rmdirSync(reclaimGuard);
+              }
             }
             if (guardOwned) continue;
           }
@@ -295,6 +312,56 @@ function acquireStateLock(rootDir, timeoutMs = 12000) {
     }
   }
   throw new StateEngineError('State Engine lock acquisition timed out');
+}
+
+/**
+ * Explicit OFFLINE maintenance operation. Never reclaim an orphaned guard in
+ * the normal commit path: proving the reclaimer is gone requires inspecting
+ * owner metadata and ruling out an active writer. The caller must take the
+ * project out of service before acknowledging recovery.
+ */
+export function recoverAbandonedStateLock({ rootDir = process.cwd(), confirmOffline = false } = {}) {
+  if (confirmOffline !== true) {
+    throw new StateEngineError('Explicit offline confirmation is required for abandoned-lock recovery');
+  }
+  const paths = statePaths(rootDir);
+  const guard = paths.lock + '.reclaim';
+  if (!fs.existsSync(guard)) return Object.freeze({ recovered: false, reason: 'no guard' });
+  const stat = fs.lstatSync(guard);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new StateEngineError('Abandoned lock guard is not a regular directory');
+  }
+  if (Date.now() - stat.mtimeMs < 60_000) {
+    throw new StateEngineError('Refusing to reclaim a recently active State Engine guard');
+  }
+  const marker = path.join(guard, 'owner.json');
+  if (fs.existsSync(marker)) {
+    const owner = JSON.parse(fs.readFileSync(marker, 'utf8'));
+    if (owner.hostname !== os.hostname() || !Number.isSafeInteger(owner.pid) || owner.pid <= 0) {
+      throw new StateEngineError('Cannot establish local guard ownership for offline recovery');
+    }
+    try {
+      process.kill(owner.pid, 0);
+      throw new StateEngineError('Refusing to remove a live State Engine recovery guard');
+    } catch (probe) {
+      if (probe.code !== 'ESRCH') throw probe;
+    }
+  }
+  if (fs.existsSync(paths.lock)) {
+    const lock = JSON.parse(fs.readFileSync(paths.lock, 'utf8'));
+    if (lock.hostname !== os.hostname() || !Number.isSafeInteger(lock.pid) || lock.pid <= 0) {
+      throw new StateEngineError('Offline guard recovery requires a provably local dead state lock');
+    }
+    try {
+      process.kill(lock.pid, 0);
+      throw new StateEngineError('Refusing to recover a guard while state lock owner is alive');
+    } catch (probe) {
+      if (probe.code !== 'ESRCH') throw probe;
+    }
+  }
+  if (fs.existsSync(marker)) fs.unlinkSync(marker);
+  fs.rmdirSync(guard);
+  return Object.freeze({ recovered: true, mode: 'confirmed-offline' });
 }
 
 function releaseStateLock(lock) {
