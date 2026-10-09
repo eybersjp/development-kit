@@ -238,3 +238,35 @@ test('T04-H12 snapshot reader tolerates a legitimate writer committing between l
   assert.equal(loadCanonicalEvents(rootDir).length, 2);
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+
+test('T04-H14 transient Windows EPERM on lock creation retries without bypassing ownership', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('Windows-specific filesystem contention semantics');
+    return;
+  }
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const originalOpen = fs.openSync;
+  let attempts = 0;
+  fs.openSync = function injectTemporaryWindowsLockContention(file, flags, ...args) {
+    if (file === paths.lock && flags === 'wx') {
+      attempts += 1;
+      if (attempts === 1) {
+        const err = new Error('simulated Windows transient lock-file sharing violation');
+        err.code = 'EPERM';
+        throw err;
+      }
+    }
+    return originalOpen.call(this, file, flags, ...args);
+  };
+  try {
+    appendMetadataEvent({ rootDir, eventType: 'LOCK_RETRY_SUCCEEDED', payload: { value: 2 } });
+  } finally {
+    fs.openSync = originalOpen;
+  }
+  assert.ok(attempts >= 2);
+  assert.equal(loadCanonicalEvents(rootDir).length, 2);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
