@@ -18,6 +18,7 @@ import {
   inspectLegacyState,
   migrateLegacyStateToV2,
   restoreLegacyBackup,
+  recoverLegacyRestore,
 } from '../runtime/orchestration/state-engine-migration.mjs';
 import {
   getCurrentState,
@@ -286,7 +287,7 @@ test('AC-015 bundled legacy backup can restore the complete legacy state chain',
 
   const restoreRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dk-state-restore-'));
   t.after(() => fs.rmSync(restoreRoot, { recursive: true, force: true }));
-  const restored = restoreLegacyBackup({
+  const restored = restoreLegacyBackup({ confirmOffline: true,
     backupPath: getLegacyBackupPath(rootDir),
     targetRoot: restoreRoot,
   });
@@ -485,7 +486,7 @@ test('T04-H05 restore refuses a preexisting symlink/junction parent and leaves o
     throw error;
   }
   assert.throws(
-    () => restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot: restoreRoot }),
+    () => restoreLegacyBackup({ confirmOffline: true, backupPath: migrated.backupPath, targetRoot: restoreRoot }),
     /symbolic link|junction|escapes/i,
   );
   assert.deepEqual(fs.readdirSync(outside), []);
@@ -511,7 +512,7 @@ test('T04-H06 restore refuses a final-file symlink even when overwrite is explic
     throw error;
   }
   assert.throws(
-    () => restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot: restoreRoot, overwrite: true }),
+    () => restoreLegacyBackup({ confirmOffline: true, backupPath: migrated.backupPath, targetRoot: restoreRoot, overwrite: true }),
     /regular file|symbolic link|junction/i,
   );
   assert.equal(fs.readFileSync(filename, 'utf8'), 'SAFE');
@@ -539,7 +540,7 @@ test('T04-H13 backup restore rejects a hard-linked overwrite destination', (t) =
     throw error;
   }
   assert.throws(
-    () => restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot: restoreRoot, overwrite: true }),
+    () => restoreLegacyBackup({ confirmOffline: true, backupPath: migrated.backupPath, targetRoot: restoreRoot, overwrite: true }),
     /hard.?link|multiple links/i,
   );
   assert.equal(fs.readFileSync(external, 'utf8'), 'PROTECTED');
@@ -569,7 +570,7 @@ test('T04-H19 restoring a backup cannot write through a destination hardlink swa
     return originalOpen.call(this, file, flags, ...rest);
   };
   try {
-    const restored = restoreLegacyBackup({ backupPath:migrated.backupPath, targetRoot, overwrite:true });
+    const restored = restoreLegacyBackup({ confirmOffline: true, backupPath:migrated.backupPath, targetRoot, overwrite:true });
     assert.ok(restored.restoredFiles.includes('.development-kit/autopilot/state/revision-000001.json'));
   } finally {
     fs.openSync = originalOpen;
@@ -596,7 +597,7 @@ test('T04-H20 restore never creates target-tree directories before atomic staged
     return originalMkdir.call(this, directory, ...args);
   };
   try {
-    const restored = restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot });
+    const restored = restoreLegacyBackup({ confirmOffline: true, backupPath: migrated.backupPath, targetRoot });
     assert.equal(restored.restoredFiles.length, 3);
   } finally {
     fs.mkdirSync = originalMkdir;
@@ -614,7 +615,7 @@ test('T04-H21 stage-promoted restore supports an absent root within an existing 
   const parent = tempProject(t, 'dk-restore-newroot-parent-');
   const root = path.join(parent, 'new-restore-root');
   assert.equal(fs.existsSync(root), false);
-  const restored = restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot: root });
+  const restored = restoreLegacyBackup({ confirmOffline: true, backupPath: migrated.backupPath, targetRoot: root });
   assert.equal(restored.restoredFiles.length, 3);
   assert.equal(
     JSON.parse(fs.readFileSync(path.join(root, '.development-kit','autopilot','state','revision-000001.json'), 'utf8')).stateRevision,
@@ -633,7 +634,7 @@ test('T04-H23 staged restore preserves the existing destination root mode and ow
   const targetRoot = tempProject(t, 'dk-mode-target-');
   fs.chmodSync(targetRoot, 0o755);
   const before = fs.statSync(targetRoot);
-  restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot });
+  restoreLegacyBackup({ confirmOffline: true, backupPath: migrated.backupPath, targetRoot });
   const after = fs.statSync(targetRoot);
   assert.equal(after.mode & 0o7777, before.mode & 0o7777);
   assert.equal(after.uid, before.uid);
@@ -642,4 +643,55 @@ test('T04-H23 staged restore preserves the existing destination root mode and ow
     JSON.parse(fs.readFileSync(path.join(targetRoot,'.development-kit','autopilot','state','revision-000001.json'),'utf8')).stateRevision,
     1,
   );
+});
+
+
+test('T04-H24 legacy restore requires explicit offline capability', (t) => {
+  const source = tempProject(t, 'dk-offline-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const root = tempProject(t, 'dk-offline-target-');
+  assert.throws(() => restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot: root }),
+    /offline confirmation/i);
+  assert.deepEqual(fs.readdirSync(root), []);
+});
+
+test('T04-H25 interrupted two-step root promotion can restore original using journal', (t) => {
+  const source = tempProject(t, 'dk-crash-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const root = tempProject(t, 'dk-crash-target-');
+  const sentinel = path.join(root, 'persist-original.txt');
+  fs.writeFileSync(sentinel, 'ORIGINAL');
+  const originalRename = fs.renameSync;
+  let movedRoot = false;
+  fs.renameSync = function injectPowerFailure(oldPath, nextPath, ...args) {
+    if (movedRoot && typeof oldPath === 'string' && oldPath.includes('.dk-legacy-restore-stage-') &&
+      nextPath === root) {
+      throw new Error('simulated crash between displacement and promotion');
+    }
+    if (oldPath === root && String(nextPath).endsWith('-original')) movedRoot = true;
+    return originalRename.call(this, oldPath, nextPath, ...args);
+  };
+  try {
+    assert.throws(() => restoreLegacyBackup({
+      confirmOffline: true, backupPath: migrated.backupPath, targetRoot: root,
+    }), /simulated crash/);
+  } finally { fs.renameSync = originalRename; }
+  // If the in-process finally managed the rollback, the leftover journal is
+  // still authoritative. Recovery must be idempotent and must never erase it.
+  assert.equal(fs.readFileSync(sentinel, 'utf8'), 'ORIGINAL');
+  assert.throws(() => restoreLegacyBackup({
+    confirmOffline:true, backupPath:migrated.backupPath, targetRoot:root,
+  }), /Incomplete legacy restore/i);
+  assert.throws(() => recoverLegacyRestore({ targetRoot: root }), /offline confirmation/i);
+  const recovered = recoverLegacyRestore({ targetRoot: root, confirmOffline: true });
+  assert.equal(recovered.recovered, true);
+  assert.equal(fs.readFileSync(sentinel,'utf8'), 'ORIGINAL');
+  assert.equal(recoverLegacyRestore({ targetRoot: root, confirmOffline: true }).recovered, false);
+  const restored = restoreLegacyBackup({
+    confirmOffline:true, backupPath:migrated.backupPath, targetRoot:root,
+  });
+  assert.equal(restored.restoredFiles.length, 3);
+  assert.equal(fs.readFileSync(path.join(root,'persist-original.txt'),'utf8'),'ORIGINAL');
 });
