@@ -564,13 +564,110 @@ function resolveSafeRestoreDestination(targetRoot, relativePath, { createMissing
   return destination;
 }
 
+
+/** A deterministic sibling journal lets offline recovery find interrupted root promotion. */
+function restoreJournalPath(targetRoot) {
+  const root = path.resolve(targetRoot);
+  const digest = crypto.createHash('sha256').update(root).digest('hex').slice(0, 24);
+  return path.join(path.dirname(root), '.dk-restore-journal-' + digest + '.json');
+}
+
+function syncRestoreParent(parent) {
+  if (process.platform === 'win32') return;
+  const fd = fs.openSync(parent, 'r');
+  try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+}
+
+function createRestoreJournal(file, data) {
+  const fd = fs.openSync(file, 'wx', 0o600);
+  try {
+    fs.writeFileSync(fd, stablePretty(data));
+    fs.fsyncSync(fd);
+  } finally { fs.closeSync(fd); }
+  syncRestoreParent(path.dirname(file));
+}
+
+/**
+ * Recover only an interrupted OFFLINE restore for the exact target root.
+ * Reject unexpected names, inode witnesses, or concurrent target mutations.
+ */
+export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}) {
+  if (typeof targetRoot !== 'string' || !targetRoot) {
+    throw new StateMigrationError('targetRoot is required for restore recovery');
+  }
+  if (confirmOffline !== true) {
+    throw new StateMigrationError('Explicit offline confirmation is required for restore recovery');
+  }
+  const root = path.resolve(targetRoot);
+  const parent = path.dirname(root);
+  const journalPath = restoreJournalPath(root);
+  if (!fs.existsSync(journalPath)) return Object.freeze({ recovered: false });
+  const tx = readJson(journalPath, 'Legacy restore journal');
+  const expectedStage = '.dk-legacy-restore-stage-' + tx.transactionId;
+  const stage = path.join(parent, expectedStage);
+  const displaced = stage + '-original';
+  if (!/^[a-f0-9]{32}$/.test(tx.transactionId || '') ||
+    tx.targetRoot !== root || tx.schemaVersion !== '1.0.0' ||
+    tx.stageName !== expectedStage || tx.existed !== true && tx.existed !== false ||
+    !Number.isSafeInteger(tx.stageDev) || !Number.isSafeInteger(tx.stageIno) ||
+    (tx.existed && (!Number.isSafeInteger(tx.originalDev) || !Number.isSafeInteger(tx.originalIno)))) {
+    throw new StateMigrationError('Legacy restore journal contains an invalid transaction witness');
+  }
+  // The recovery runs in an explicitly quiescent trusted workspace. All
+  // location/inode witnesses are rechecked before any cleanup.
+  const inspect = file => {
+    try { return fs.lstatSync(file); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+  };
+  const atRoot = inspect(root);
+  const inStage = inspect(stage);
+  const inDisplaced = inspect(displaced);
+  const equal = (stat, dev, ino) => stat && stat.isDirectory() && !stat.isSymbolicLink() &&
+    stat.dev === dev && stat.ino === ino;
+  if (inStage && !equal(inStage, tx.stageDev, tx.stageIno)) {
+    throw new StateMigrationError('Unrecognized staged restore directory; refusing recovery');
+  }
+  if (inDisplaced && (!tx.existed || !equal(inDisplaced, tx.originalDev, tx.originalIno))) {
+    throw new StateMigrationError('Displaced restore directory differs from original witness');
+  }
+
+  let outcome;
+  if (inDisplaced && !atRoot) {
+    fs.renameSync(displaced, root); // crash after displacing root, before promotion
+    outcome = 'rolled-back-original';
+  } else if (inDisplaced && equal(atRoot, tx.stageDev, tx.stageIno)) {
+    // Promotion completed; preserve original in displaced directory for
+    // explicit/manual audit rather than silently deleting recovery evidence.
+    outcome = 'promoted-original-retained';
+  } else if (!inDisplaced && (!atRoot && !tx.existed ||
+    (tx.existed && equal(atRoot, tx.originalDev, tx.originalIno)))) {
+    outcome = 'uncommitted-original-unchanged';
+  } else if (!tx.existed && equal(atRoot, tx.stageDev, tx.stageIno)) {
+    outcome = 'promoted-new-root';
+  } else {
+    throw new StateMigrationError('Ambiguous restore journal state; refusing automatic mutation');
+  }
+
+  if (inStage) fs.rmSync(stage, { recursive: true, force: true });
+  // Keep any promoted displaced original as a recovery asset: never auto-delete.
+  fs.unlinkSync(journalPath);
+  syncRestoreParent(parent);
+  return Object.freeze({ recovered: true, outcome, displacedOriginal: outcome === 'promoted-original-retained' ? displaced : null });
+}
+
 export function restoreLegacyBackup({
   backupPath,
   targetRoot,
   overwrite = false,
+  confirmOffline = false,
 } = {}) {
   if (typeof backupPath !== 'string' || !backupPath) throw new StateMigrationError('backupPath is required');
   if (typeof targetRoot !== 'string' || !targetRoot) throw new StateMigrationError('targetRoot is required');
+  if (confirmOffline !== true) {
+    throw new StateMigrationError('Legacy backup restoration requires explicit offline confirmation and an exclusively controlled local workspace');
+  }
+  if (fs.existsSync(restoreJournalPath(targetRoot))) {
+    throw new StateMigrationError('Incomplete legacy restore exists; run recoverLegacyRestore with offline confirmation first');
+  }
   const bundle = readJson(backupPath, 'Legacy backup');
   validateBackupBundle(bundle);
 
@@ -598,7 +695,9 @@ export function restoreLegacyBackup({
   if (rootStat && (!rootStat.isDirectory() || rootStat.isSymbolicLink())) {
     throw new StateMigrationError('Legacy backup restore root must be an ordinary directory');
   }
-  const stage = fs.mkdtempSync(path.join(parent, '.dk-legacy-restore-stage-'));
+  const transactionId = crypto.randomBytes(16).toString('hex');
+  const stage = path.join(parent, '.dk-legacy-restore-stage-' + transactionId);
+  fs.mkdirSync(stage, { mode: 0o700 });
   const displaced = stage + '-original';
   let promoted = false;
   let displacedOriginal = false;
@@ -641,11 +740,28 @@ export function restoreLegacyBackup({
       fs.utimesSync(stage, rootStat.atime, rootStat.mtime);
     }
 
+    // Durable journal precedes *both* root-directory renames. A crash after
+    // either rename is recoverable by an explicit offline recovery invocation.
+    const stageStat = fs.lstatSync(stage);
+    const journal = restoreJournalPath(resolvedRoot);
+    createRestoreJournal(journal, {
+      schemaVersion: '1.0.0',
+      transactionId,
+      stageName: path.basename(stage),
+      targetRoot: resolvedRoot,
+      existed: originalRootExists,
+      originalDev: rootStat?.dev ?? null,
+      originalIno: rootStat?.ino ?? null,
+      stageDev: stageStat.dev,
+      stageIno: stageStat.ino,
+    });
+
     // Moving the existing root out of the way does not follow a symlink.
     // Verify that the directory moved is still the original preflighted inode
     // before publishing the staged replacement.
     if (originalRootExists) {
       fs.renameSync(resolvedRoot, displaced);
+      syncRestoreParent(parent);
       displacedOriginal = true;
       const moved = fs.lstatSync(displaced);
       if (moved.dev !== rootStat.dev || moved.ino !== rootStat.ino) {
@@ -653,9 +769,13 @@ export function restoreLegacyBackup({
       }
     }
     fs.renameSync(stage, resolvedRoot);
+    syncRestoreParent(parent);
     promoted = true;
     displacedOriginal = false;
-    if (originalRootExists) fs.rmSync(displaced, { recursive: true, force: true });
+    // Preserve original root as a retained rollback asset. Only after the
+    // new root is durably visible should the journal be acknowledged.
+    fs.unlinkSync(journal);
+    syncRestoreParent(parent);
     return Object.freeze({
       restoredFiles: restored.sort(),
       sourceFingerprint: bundle.sourceFingerprint,
@@ -663,7 +783,10 @@ export function restoreLegacyBackup({
   } finally {
     if (displacedOriginal) {
       try {
-        if (!fs.existsSync(resolvedRoot)) fs.renameSync(displaced, resolvedRoot);
+        if (!fs.existsSync(resolvedRoot)) {
+          fs.renameSync(displaced, resolvedRoot);
+          syncRestoreParent(parent);
+        }
       } catch {}
     }
     if (!promoted) {
