@@ -54,6 +54,7 @@
 * [Commands Index](03-reference/commands/README.md)
 * [Command Selection Matrix](03-reference/commands/command-selection-matrix.md)
 * [Workflow Sequences](03-reference/commands/workflow-sequences.md)
+* [dk-audit](03-reference/commands/dk-audit.md)
 * [dk-autopilot](03-reference/commands/dk-autopilot.md)
 * [dk-build-auto](03-reference/commands/dk-build-auto.md)
 * [dk-build](03-reference/commands/dk-build.md)
@@ -181,6 +182,7 @@
 * [test-driven-development](03-reference/evaluations/test-driven-development.md)
 
 ### Scripts & Configuration
+* [audit-baseline](03-reference/scripts/audit-baseline.md)
 * [Scripts Index](03-reference/scripts/README.md)
 * [autopilot](03-reference/scripts/autopilot.md)
 * [bootstrap](03-reference/scripts/bootstrap.md)
