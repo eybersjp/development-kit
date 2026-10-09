@@ -516,3 +516,31 @@ test('T04-H06 restore refuses a final-file symlink even when overwrite is explic
   );
   assert.equal(fs.readFileSync(filename, 'utf8'), 'SAFE');
 });
+
+
+test('T04-H13 backup restore rejects a hard-linked overwrite destination', (t) => {
+  const rootDir = tempProject(t, 'dk-hardlink-source-');
+  writeLegacyAutopilot(rootDir, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir });
+  const restoreRoot = tempProject(t, 'dk-hardlink-target-');
+  const outside = tempProject(t, 'dk-hardlink-outside-');
+  const external = path.join(outside, 'protected.json');
+  fs.writeFileSync(external, 'PROTECTED', 'utf8');
+  const destinationDir = path.join(restoreRoot, '.development-kit', 'autopilot', 'state');
+  fs.mkdirSync(destinationDir, { recursive: true });
+  const destination = path.join(destinationDir, 'revision-000001.json');
+  try {
+    fs.linkSync(external, destination);
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOTSUP', 'EXDEV'].includes(error.code)) {
+      t.skip('Filesystem disallows hard-link fixture');
+      return;
+    }
+    throw error;
+  }
+  assert.throws(
+    () => restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot: restoreRoot, overwrite: true }),
+    /hard.?link|multiple links/i,
+  );
+  assert.equal(fs.readFileSync(external, 'utf8'), 'PROTECTED');
+});
