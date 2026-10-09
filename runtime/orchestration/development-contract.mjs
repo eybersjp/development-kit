@@ -304,11 +304,16 @@ export function normalizeAcceptanceCriteria(criteria = []) {
     }
 
     const requirementId = typeof value.requirementId === 'string' && value.requirementId.trim() ? value.requirementId.trim() : null;
+    // Multi-requirement mapping is explicit, audited source authority: a
+    // single acceptance criterion can verify several distinct requirements.
+    const requirementIds = normalizeStringArray(value.requirementIds ??
+      (requirementId ? [requirementId] : []));
 
     return {
       id,
       statement,
       requirementId,
+      requirementIds,
       source,
       verificationType,
       requiredEvidence: value.requiredEvidence !== false,
