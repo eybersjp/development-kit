@@ -88,7 +88,7 @@
     "cost-observatory:test": "node scripts/phase03-cost-observatory-contract.mjs && node --test scripts/cost-observatory.test.mjs",
     "workspace-targets:test": "node scripts/phase04-workspace-target-engine-contract.mjs && node --test scripts/workspace-targets.test.mjs",
     "execution-capsule:test": "node scripts/phase05-execution-capsule-contract.mjs && node --test scripts/context-cache.test.mjs scripts/execution-capsule.test.mjs",
-    "state-engine-v2:test": "node scripts/phase06-state-engine-v2-contract.mjs && node --test scripts/state-engine-v2.test.mjs scripts/state-engine-v2-migration.test.mjs"
+    "state-engine-v2:test": "node scripts/phase06-state-engine-v2-contract.mjs && node --test scripts/state-engine-v2.test.mjs scripts/state-engine-v2-migration.test.mjs scripts/state-engine-v2-hardening.test.mjs"
   },
   "engines": {
     "node": ">=18.0.0"
