@@ -13,6 +13,7 @@ import {
   loadCanonicalEvents,
   loadStateSnapshot,
   verifyStateEngineIntegrity,
+  recoverAbandonedStateLock,
 } from '../runtime/orchestration/state-engine-v2.mjs';
 
 function tempProject(t) {
@@ -402,4 +403,43 @@ test('T04-H22 event append refuses a symlink swapped into place immediately befo
   }
   if (!injected) return;
   assert.equal(fs.readFileSync(victim, 'utf8'), 'EXTERNAL-SENTINEL');
+});
+
+
+test('T04-H26 abandoned recovery guard is recovered only by explicit offline confirmation', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const guard = paths.lock + '.reclaim';
+  fs.mkdirSync(guard, { mode: 0o700 });
+  fs.writeFileSync(paths.lock, JSON.stringify({
+    owner: 'dead-lock-owner', pid: 2147483647,
+    hostname: os.hostname(), acquiredAt: '2026-10-08T00:00:00.000Z',
+  }));
+  const ago = new Date(Date.now() - 120_000);
+  fs.utimesSync(paths.lock, ago, ago);
+  fs.utimesSync(guard, ago, ago);
+  assert.throws(() => recoverAbandonedStateLock({ rootDir }), /offline confirmation/i);
+  assert.equal(fs.existsSync(guard), true);
+  const recovered = recoverAbandonedStateLock({ rootDir, confirmOffline: true });
+  assert.equal(recovered.recovered, true);
+  assert.equal(fs.existsSync(guard), false);
+  appendMetadataEvent({ rootDir, eventType: 'AFTER_ORPHAN_RECOVERY', payload: { value: 2 } });
+  assert.equal(loadCanonicalEvents(rootDir).length, 2);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
+
+test('T04-H27 offline orphan guard recovery refuses a live owner', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const guard = paths.lock + '.reclaim';
+  fs.mkdirSync(guard, { mode: 0o700 });
+  fs.writeFileSync(path.join(guard, 'owner.json'), JSON.stringify({
+    owner: 'still-running', pid: process.pid, hostname: os.hostname(),
+  }));
+  const ago = new Date(Date.now() - 120_000);
+  fs.utimesSync(guard, ago, ago);
+  assert.throws(() => recoverAbandonedStateLock({ rootDir, confirmOffline: true }), /live State Engine recovery guard/i);
+  assert.equal(fs.existsSync(guard), true);
 });
