@@ -823,3 +823,33 @@ test('T04-H33 backup with duplicate normalized destinations is refused before st
   );
   assert.equal(fs.existsSync(pathA), false);
 });
+
+
+test('T04-H34 backup case aliases fail closed even on a case-sensitive test filesystem', async (t) => {
+  const source = tempProject(t, 'dk-restore-case-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const targetRoot = tempProject(t, 'dk-restore-case-target-');
+  const backup = JSON.parse(fs.readFileSync(migrated.backupPath, 'utf8'));
+  const first = backup.files[0];
+  const alias = { ...first, path: first.path.toUpperCase() };
+  assert.notEqual(alias.path, first.path);
+  backup.files.push(alias);
+  backup.fileCount = backup.files.length;
+  const manifest = backup.files.map(e => ({ path: e.path, fingerprint: e.fingerprint, bytes: e.bytes }));
+  const { createHash } = await import('node:crypto');
+  function stable(value) {
+    if (Array.isArray(value)) return value.map(stable);
+    if (value && typeof value === 'object') return Object.fromEntries(
+      Object.keys(value).sort().map(key => [key, stable(value[key])]));
+    return value;
+  }
+  backup.sourceFingerprint = 'sha256:' + createHash('sha256').update(JSON.stringify(stable(manifest))).digest('hex');
+  const aliasBackup = path.join(source, 'case-alias-backup.json');
+  fs.writeFileSync(aliasBackup, JSON.stringify(backup));
+  assert.throws(
+    () => restoreLegacyBackup({backupPath:aliasBackup,targetRoot,confirmOffline:true}),
+    /duplicate normalized/i,
+  );
+  assert.deepEqual(fs.readdirSync(targetRoot), []);
+});
