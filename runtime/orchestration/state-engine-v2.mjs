@@ -18,6 +18,9 @@ const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const EVENT_TYPE_PATTERN = /^[A-Z][A-Z0-9_]{1,95}$/;
 const ENTITY_TYPE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const MAX_ENTITY_ID_LENGTH = 512;
+// Bounded blocking sleeps avoid starving a contended local state writer.
+const STATE_LOCK_SLEEP = new Int32Array(new SharedArrayBuffer(4));
+function waitStateLock(ms = 25) { Atomics.wait(STATE_LOCK_SLEEP, 0, 0, ms); }
 
 export class StateEngineError extends Error {
   constructor(message, details = null) {
@@ -177,7 +180,7 @@ function atomicWrite(filePath, content) {
   return filePath;
 }
 
-function acquireStateLock(rootDir, timeoutMs = 5000) {
+function acquireStateLock(rootDir, timeoutMs = 12000) {
   const paths = statePaths(rootDir);
   fs.mkdirSync(paths.stateRoot, { recursive: true });
   assertStateRootRealpathSafe(paths);
@@ -207,8 +210,7 @@ function acquireStateLock(rootDir, timeoutMs = 5000) {
         if (process.platform !== 'win32' || !['EPERM', 'EACCES'].includes(error.code)) {
           throw new StateEngineError('Unable to acquire State Engine lock: ' + error.message);
         }
-        const transientWaitStart = Date.now();
-        while (Date.now() - transientWaitStart < 25) {}
+        waitStateLock(25);
         continue;
       }
       let stat;
@@ -289,8 +291,7 @@ function acquireStateLock(rootDir, timeoutMs = 5000) {
         }
       }
       // Use bounded, synchronous waiting so Node >=18 and current callers remain compatible.
-      const waitStart = Date.now();
-      while (Date.now() - waitStart < 25) {}
+      waitStateLock(25);
     }
   }
   throw new StateEngineError('State Engine lock acquisition timed out');
