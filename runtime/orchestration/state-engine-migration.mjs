@@ -609,20 +609,20 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
   if (!/^[a-f0-9]{32}$/.test(tx.transactionId || '') ||
     tx.targetRoot !== root || tx.schemaVersion !== '1.0.0' ||
     tx.stageName !== expectedStage || tx.existed !== true && tx.existed !== false ||
-    !Number.isSafeInteger(tx.stageDev) || !Number.isSafeInteger(tx.stageIno) ||
-    (tx.existed && (!Number.isSafeInteger(tx.originalDev) || !Number.isSafeInteger(tx.originalIno)))) {
+    !/^\d+$/.test(tx.stageDev || '') || !/^\d+$/.test(tx.stageIno || '') ||
+    (tx.existed && (!/^\d+$/.test(tx.originalDev || '') || !/^\d+$/.test(tx.originalIno || '')))) {
     throw new StateMigrationError('Legacy restore journal contains an invalid transaction witness');
   }
   // The recovery runs in an explicitly quiescent trusted workspace. All
   // location/inode witnesses are rechecked before any cleanup.
   const inspect = file => {
-    try { return fs.lstatSync(file); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+    try { return fs.lstatSync(file, { bigint: true }); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
   };
   const atRoot = inspect(root);
   const inStage = inspect(stage);
   const inDisplaced = inspect(displaced);
   const equal = (stat, dev, ino) => stat && stat.isDirectory() && !stat.isSymbolicLink() &&
-    stat.dev === dev && stat.ino === ino;
+    stat.dev.toString() === dev && stat.ino.toString() === ino;
   if (inStage && !equal(inStage, tx.stageDev, tx.stageIno)) {
     throw new StateMigrationError('Unrecognized staged restore directory; refusing recovery');
   }
@@ -692,6 +692,7 @@ export function restoreLegacyBackup({
   const parent = path.dirname(resolvedRoot);
   const originalRootExists = fs.existsSync(resolvedRoot);
   const rootStat = originalRootExists ? fs.lstatSync(resolvedRoot) : null;
+  const rootIdentity = originalRootExists ? fs.lstatSync(resolvedRoot, { bigint: true }) : null;
   if (rootStat && (!rootStat.isDirectory() || rootStat.isSymbolicLink())) {
     throw new StateMigrationError('Legacy backup restore root must be an ordinary directory');
   }
@@ -742,7 +743,7 @@ export function restoreLegacyBackup({
 
     // Durable journal precedes *both* root-directory renames. A crash after
     // either rename is recoverable by an explicit offline recovery invocation.
-    const stageStat = fs.lstatSync(stage);
+    const stageStat = fs.lstatSync(stage, { bigint: true });
     const journal = restoreJournalPath(resolvedRoot);
     createRestoreJournal(journal, {
       schemaVersion: '1.0.0',
@@ -750,10 +751,10 @@ export function restoreLegacyBackup({
       stageName: path.basename(stage),
       targetRoot: resolvedRoot,
       existed: originalRootExists,
-      originalDev: rootStat?.dev ?? null,
-      originalIno: rootStat?.ino ?? null,
-      stageDev: stageStat.dev,
-      stageIno: stageStat.ino,
+      originalDev: rootIdentity?.dev.toString() ?? null,
+      originalIno: rootIdentity?.ino.toString() ?? null,
+      stageDev: stageStat.dev.toString(),
+      stageIno: stageStat.ino.toString(),
     });
 
     // Moving the existing root out of the way does not follow a symlink.
