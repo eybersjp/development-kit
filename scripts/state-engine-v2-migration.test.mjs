@@ -853,3 +853,33 @@ test('T04-H34 backup case aliases fail closed even on a case-sensitive test file
   );
   assert.deepEqual(fs.readdirSync(targetRoot), []);
 });
+
+
+test('T04-H35 backup with distinct unpaired surrogates cannot overwrite one filesystem name', async (t) => {
+  const source = tempProject(t, 'dk-unicode-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const targetRoot = tempProject(t, 'dk-unicode-target-');
+  const backup = JSON.parse(fs.readFileSync(migrated.backupPath, 'utf8'));
+  const sourceEntry = backup.files[0];
+  backup.files.push({ ...sourceEntry, path: 'suspicious-\uD800.json' });
+  backup.files.push({ ...sourceEntry, path: 'suspicious-\uD801.json' });
+  backup.fileCount = backup.files.length;
+  const entries = backup.files.map(e => ({path:e.path, fingerprint:e.fingerprint, bytes:e.bytes}));
+  const { createHash } = await import('node:crypto');
+  function stable(value) {
+    if (Array.isArray(value)) return value.map(stable);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.keys(value).sort().map(k => [k, stable(value[k])]));
+    }
+    return value;
+  }
+  backup.sourceFingerprint = 'sha256:' + createHash('sha256').update(JSON.stringify(stable(entries))).digest('hex');
+  const hostileBackup = path.join(source, 'ill-formed-unicode.json');
+  fs.writeFileSync(hostileBackup, JSON.stringify(backup));
+  assert.throws(
+    () => restoreLegacyBackup({ backupPath: hostileBackup, targetRoot, confirmOffline: true }),
+    /ill-formed Unicode/i,
+  );
+  assert.deepEqual(fs.readdirSync(targetRoot), []);
+});
