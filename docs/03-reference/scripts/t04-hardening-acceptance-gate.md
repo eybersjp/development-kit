@@ -2,9 +2,7 @@
 
 ## Purpose
 
-Runs the established DKF `decideAcceptance` engine for the T04 State Engine V2 hardening increment **only in GitHub Actions** after the full CI verification and exact `npm run release:validate` step has passed.
-
-This is an audit/acceptance evidence gate, not a replacement for independent review. It checks the Git blob identifiers of each independently reviewed State Engine source, both new regression suites and the approved offline recovery boundary. If a reviewed file changes, execution fails closed until new review evidence is established.
+Runs the existing DKF risk-3 `decideAcceptance` engine for the T04 State Engine V2 hardening increment. It runs **only inside GitHub Actions** after Windows and Ubuntu validation and the exact `npm run release:validate` command have passed on the source being reviewed. It is an acceptance-evidence gate, not a substitute for independent review.
 
 ## Usage
 
@@ -12,26 +10,20 @@ This is an audit/acceptance evidence gate, not a replacement for independent rev
 node scripts/t04-hardening-acceptance-gate.mjs
 ```
 
-The command **must be executed in trusted CI**, with the repository and pull request context available. It cannot report acceptance from an arbitrary local working tree.
+The command requires trusted GitHub Actions repository, pull-request, workflow and job identities, an authenticated GitHub review-read token and three genuine external role-specific reviews of the **exact immutable source commit**. It cannot issue a local or implementation-authored PASS.
 
-## Evidence
+## Evidence and failure conditions
 
-The gate loads the T04 Development Contract `INC-DKF120-T04` from the prior T04 validator; assembles verification for AC-012, AC-013, AC-014, AC-015 and AC-034; and checks the original role-specific T04 review document together with the independently completed source-level Codex review at exact source commit `9a6ad4712b3dc62dd9b758e0e6745e27576bbdc5`.
+The gate loads the approved T04 Development Contract `INC-DKF120-T04`; derives verification for `AC-012`, `AC-013`, `AC-014`, `AC-015` and `AC-034`; verifies full source-tree provenance against the recorded reviewed commit; and checks authenticated GitHub code, architecture and security reviewer receipts. Review requests must bind precisely one role each. The final review receipt document is `docs/04-architecture/dkf-t04-independent-review-receipts.json`.
 
-It exercises the actual runtime control-coverage and acceptance engines and records:
+It also checks **every review thread is resolved**. `scripts/t04-review-thread-blockers.mjs` rejects unresolved P1/P2 and lower-priority or unclassified threads alike, as the contract requires zero outstanding review comments. Regression tests are included in `npm run state-engine-v2:test`.
 
-- `verification.json` with typed evidence and source fingerprints;
-- `control-security.json` with full security control coverage;
-- `acceptance.json` with the computed verdict, complete blocker/pending arrays, reviewed file witnesses and provenance.
+The command records `verification.json`, `control-security.json` and `acceptance.json`, containing the source fingerprints, typed evidence, blocker/pending lists, review provenance and deterministic verdict in the T04 run directory. CI uploads the artifacts when available. Missing, edited, stale, unauthenticated or finding-bearing review evidence fails closed.
 
-Acceptance requires **zero blockers and zero pending gates**; any unmet requirement fails the CI step rather than being silently promoted.
+**Passing CI alone is not acceptance.** The receipt file may remain `PENDING_INDEPENDENT_REVIEWS` until authentic reviews have completed; no reviewer receipts may be fabricated or self-certified.
 
-CI uploads the artifacts from `.development-kit/runs/INC-DKF120-T04/T04-HARDENING-REVIEWED-20261009/`.
+## Scope and release limitations
 
-## Review authority and limitations
+The Product Owner deferred stronger protection against malicious concurrent same-account filesystem writers to future Issue [#72](https://github.com/eybersjp/development-kit/issues/72). T04 supports the explicitly documented trusted/exclusive local-runtime limitation, without claiming to prevent hostile same-UID path replacement. Restricted offline restoration has its own operator confirmation and recovery boundary. Security reviewers still assess all in-scope integrity and durability defects.
 
-The final review must remain attributable to independent source inspection; test success cannot itself replace review. The original T04 code, architecture and security role reviews are recorded in `docs/04-architecture/dkf-state-engine-v2-t04-review.md`. The hardening changes were independently re-reviewed in PR #70; no new unresolved P1/P2 issues were reported on the reviewed production source. Reviewer records consolidate these known reviews, and do not represent separate newly executed reviewer-agent jobs.
-
-The supported legacy backup restoration operation remains exclusively controlled, trusted, offline maintenance; no arbitrary same-UID hostile process isolation is claimed. Windows custom ACLs require separate host-native validation where nonstandard ACLs apply.
-
-Only the stacked T04 feature branch may integrate PR #70 once all gates pass. This does **not** authorize merging cumulative PR #69 to `main`, publishing v0.12, deleting legacy data or starting T05 without its own approved contract.
+Only after all exact-source tests, independent review, applicable approvals and the deterministic `ACCEPTED` state may PR #70 be promoted into its approved T04 base. This does not independently authorize merging the cumulative PR #69 into `main`, commencing T05, deleting retained legacy state, or publishing v0.12.0.
