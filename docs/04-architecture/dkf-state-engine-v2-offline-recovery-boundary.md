@@ -48,9 +48,9 @@ Automated tests H24–H28 validate offline confirmation, journal recovery after 
 **Formal acceptance decision must record:** whether the explicitly narrower *trusted offline operator* boundary is acceptable to the product owner/security authority for the T04 legacy restore capability. Automated tests cannot confer that authorization; independent risk-3 review must confirm that the code matches this scope, no in-scope Critical/Major findings remain, and the deterministic DKF governance evidence is persisted.
 
 
-## Supported runtime threat model (T04 candidate proposal)
+## Supported runtime threat model (T04 scoped Product Owner decision)
 
-State Engine V2 automatic append and recovery support a **trusted, exclusive local runtime** (candidate model proposed per PR #70 review #6133051558, subject to formal recorded PO/security authorization). Hostile concurrent mutation by a process holding the same OS credentials (same-UID write authority) is **out of scope**: Node.js `lstat`/`fstat`/`rename`/`unlink`, `/proc/self/fd` and cooperative project locks cannot atomically protect two directory entries against such an actor, and `0700` modes or `confirmOffline` flags do not isolate it. This candidate scope is separate from, and does not extend, the offline-only restore exception above.
+State Engine V2 automatic append and recovery support a **trusted, exclusive local runtime**. The Product Owner explicitly deferred stronger same-account OS isolation to a future revision (tracked in [Issue #72](https://github.com/eybersjp/development-kit/issues/72), with the decision recorded on [PR #70](https://github.com/eybersjp/development-kit/pull/70#issuecomment-6134158112)); this scoped operating limitation still requires independent risk-3 security and architecture review before T04 acceptance. Hostile concurrent mutation by a process holding the same OS credentials (same-UID write authority) is **out of scope**: Node.js `lstat`/`fstat`/`rename`/`unlink`, `/proc/self/fd` and cooperative project locks cannot atomically protect two directory entries against such an actor, and `0700` modes or `confirmOffline` flags do not isolate it. This supported operating scope is separate from, and does not extend, the offline-only restore exception above.
 
 Guarantees that remain:
 
