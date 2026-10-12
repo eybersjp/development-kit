@@ -28,3 +28,5 @@ See [validation-architecture.md](../../04-architecture/validation-architecture.m
 - **State Engine V2 endurance:** `npm run state-engine-v2:benchmark` — 300-transition disposable fixture on the Windows/Ubuntu CI matrix. See [state-engine-v2-benchmark.md](state-engine-v2-benchmark.md). The resulting timings are observations, not release performance acceptance.
 
 - **T04 risk-3 runtime acceptance:** `node scripts/t04-hardening-acceptance-gate.mjs` — GitHub Actions-only, after exact release gates; validates immutable reviewed source, creates persisted DKF verification/security/acceptance records and uploads CI evidence. See [t04-hardening-acceptance-gate.md](t04-hardening-acceptance-gate.md).
+
+- **T04 reviewer-thread safety:** `node --test scripts/t04-review-thread-blockers.test.mjs` — proves every unresolved code-review thread, including P2 and unclassified findings, blocks independent acceptance. See [t04-review-thread-blockers.md](t04-review-thread-blockers.md).
