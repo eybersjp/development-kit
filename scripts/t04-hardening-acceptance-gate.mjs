@@ -255,9 +255,9 @@ for (const entry of receipts.reviews) {
       const body = t.comments?.nodes?.[0]?.body || '';
       return body.includes('P1 Badge') ||
         body.includes('![P1 Badge]') ||
-        /\b\[P1\]\b/i.test(body) ||
-        /\bP1:\b/i.test(body) ||
-        /\bPriority:\s*P1\b/i.test(body);
+        /\[P1\]/i.test(body) ||
+        /\bP1\s*:/i.test(body) ||
+        /\bPriority\s*:\s*P1\b/i.test(body);
     });
     assert.equal(unresolvedP1Threads.length, 0,
       'Unresolved blocking P1 review threads remain on PR #70; refusing clean reaction');
