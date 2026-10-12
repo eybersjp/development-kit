@@ -603,10 +603,10 @@ test('T04-H38 pending journal unlink fails closed when state directory is swappe
     if (typeof target === 'string' && target.includes('pending-commit.json.tmp-')) {
       journalCreated = true;
     }
-    // Trigger swap before pinnedUnlinkAndSync opens the directory descriptor for cleanup
-    if (journalCreated && !swapped && target === paths.stateRoot && flags === 'r') {
+    // Trigger swap after journal file is opened/written but before unlink
+    if (journalCreated && !swapped && target === paths.events && typeof flags === 'number') {
       fs.renameSync(paths.stateRoot, moved);
-      // Create a brand new ordinary directory at paths.stateRoot with a dummy pending-commit.json
+      // Create a brand new ordinary directory at paths.stateRoot with a decoy pending-commit.json
       fs.mkdirSync(paths.stateRoot, { recursive: true });
       fs.writeFileSync(paths.pending, 'DECOY-JOURNAL', 'utf8');
       swapped = true;
@@ -617,7 +617,7 @@ test('T04-H38 pending journal unlink fails closed when state directory is swappe
   try {
     assert.throws(
       () => appendMetadataEvent({ rootDir, eventType: 'SECOND_MUST_FAIL_CLEANUP', payload: {} }),
-      /directory|changed|replaced|initial transaction pinning/i,
+      /directory|changed|replaced/i,
     );
   } finally {
     fs.openSync = originalOpen;

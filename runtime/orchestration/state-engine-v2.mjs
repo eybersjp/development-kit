@@ -165,19 +165,17 @@ function fsyncParentDirectory(directory) {
   }
 }
 
-function pinnedUnlinkAndSync(filePath, expectedDirIdentity = null) {
+function pinnedUnlinkAndSync(filePath, pinnedDirFd = null) {
   const directory = path.dirname(filePath);
   const file = path.basename(filePath);
-  const dirFd = fs.openSync(directory, 'r');
+  const ownsDirFd = !pinnedDirFd;
+  const dirFd = pinnedDirFd ?? fs.openSync(directory, 'r');
   try {
     const pinned = fs.fstatSync(dirFd);
     const observed = fs.lstatSync(directory);
     if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
       pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
       throw new StateEngineError('State Engine directory changed before journal cleanup');
-    }
-    if (expectedDirIdentity && (pinned.dev !== expectedDirIdentity.dev || pinned.ino !== expectedDirIdentity.ino)) {
-      throw new StateEngineError('State Engine directory identity differs from initial transaction pinning');
     }
     const rootDir = path.dirname(path.dirname(directory));
     assertStateRootRealpathSafe({ root: rootDir, stateRoot: directory });
@@ -195,18 +193,19 @@ function pinnedUnlinkAndSync(filePath, expectedDirIdentity = null) {
     fs.unlinkSync(target);
     if (process.platform !== 'win32') fs.fsyncSync(dirFd);
   } finally {
-    fs.closeSync(dirFd);
+    if (ownsDirFd) fs.closeSync(dirFd);
   }
 }
 
-function atomicWrite(filePath, content) {
+function atomicWrite(filePath, content, pinnedDirFd = null) {
   const directory = path.dirname(filePath);
   fs.mkdirSync(directory, { recursive: true });
   // Pin the already-validated State Engine directory before creating a
   // journal, snapshot or index. Linux exposes descriptor-relative paths via
   // /proc/self/fd; renames there cannot follow a subsequently swapped
   // workspace directory symlink into an external target.
-  const dirFd = fs.openSync(directory, 'r');
+  const ownsDirFd = !pinnedDirFd;
+  const dirFd = pinnedDirFd ?? fs.openSync(directory, 'r');
   const file = path.basename(filePath);
   const pinnedDir = process.platform === 'linux' ? '/proc/self/fd/' + dirFd : directory;
   const tempPath = path.join(pinnedDir, file + '.tmp-' + process.pid + '-' + crypto.randomUUID());
@@ -245,7 +244,7 @@ function atomicWrite(filePath, content) {
     if (!published) {
       try { fs.unlinkSync(tempPath); } catch {}
     }
-    fs.closeSync(dirFd);
+    if (ownsDirFd) fs.closeSync(dirFd);
   }
 }
 
@@ -1045,91 +1044,101 @@ function appendDurably(filePath, appendedText, expectedIdentity = null) {
 
 function recoverPendingCommitLocked(rootDir) {
   const paths = ensureStateEngineLayout(rootDir);
-  const pinnedDirIdentity = fs.lstatSync(paths.stateRoot);
-  if (!fs.existsSync(paths.pending)) return;
-  let pending;
+  const dirFd = fs.openSync(paths.stateRoot, 'r');
   try {
-    pending = JSON.parse(fs.readFileSync(paths.pending, 'utf8'));
-  } catch (error) {
-    throw new StateEngineError('Pending State Engine commit is invalid: ' + error.message);
-  }
-  if (
-    pending.schemaVersion !== '1.0.0'
-    || !Number.isSafeInteger(pending.previousByteLength)
-    || pending.previousByteLength < 0
-    || !SHA256_PATTERN.test(pending.previousHash)
-    || typeof pending.suffix !== 'string'
-    || !pending.suffix.endsWith('\n')
-  ) {
-    throw new StateEngineError('Pending State Engine commit metadata is invalid');
-  }
-  // Bind every recovery operation to the same verified canonical descriptor.
-  // Pathname truncation can otherwise modify a hardlinked external file when
-  // an attacker replaces events.jsonl after the prefix has been inspected.
-  const flags = fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW ?? 0);
-  const fd = fs.openSync(paths.events, flags);
-  let canonical;
-  try {
-    const opened = fs.fstatSync(fd);
-    const entry = fs.lstatSync(paths.events);
-    if (!opened.isFile() || !entry.isFile() || entry.isSymbolicLink() ||
-      opened.nlink !== 1 || entry.nlink !== 1 ||
-      opened.dev !== entry.dev || opened.ino !== entry.ino) {
-      throw new StateEngineError('Recovery canonical ledger inode/symlink/hardlink integrity failed');
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(paths.stateRoot);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed before recovery preparation');
     }
-    const bytes = Buffer.alloc(opened.size);
-    let read = 0;
-    while (read < bytes.length) {
-      const amount = fs.readSync(fd, bytes, read, bytes.length - read, read);
-      if (amount <= 0) throw new StateEngineError('Canonical ledger changed while recovering pending commit');
-      read += amount;
+    if (!fs.existsSync(paths.pending)) return;
+    let pending;
+    try {
+      pending = JSON.parse(fs.readFileSync(paths.pending, 'utf8'));
+    } catch (error) {
+      throw new StateEngineError('Pending State Engine commit is invalid: ' + error.message);
     }
-    if (bytes.length < pending.previousByteLength) {
-      throw new StateEngineError('Canonical state history was truncated during a pending commit');
+    if (
+      pending.schemaVersion !== '1.0.0'
+      || !Number.isSafeInteger(pending.previousByteLength)
+      || pending.previousByteLength < 0
+      || !SHA256_PATTERN.test(pending.previousHash)
+      || typeof pending.suffix !== 'string'
+      || !pending.suffix.endsWith('\n')
+    ) {
+      throw new StateEngineError('Pending State Engine commit metadata is invalid');
     }
-    if (sha256(bytes.subarray(0, pending.previousByteLength)) !== pending.previousHash) {
-      throw new StateEngineError('Canonical state prefix differs from pending commit integrity witness');
-    }
-    const existingSuffix = bytes.subarray(pending.previousByteLength);
-    const expectedSuffix = Buffer.from(pending.suffix, 'utf8');
-    if (!expectedSuffix.subarray(0, existingSuffix.length).equals(existingSuffix)) {
-      throw new StateEngineError('Canonical state suffix conflicts with pending commit; refusing recovery');
-    }
-    if (existingSuffix.length < expectedSuffix.length) {
-      // Truncate and repair through this FD, never a separately resolved path.
-      fs.ftruncateSync(fd, pending.previousByteLength);
-      let written = 0;
-      while (written < expectedSuffix.length) {
-        const amount = fs.writeSync(fd, expectedSuffix, written,
-          expectedSuffix.length - written, pending.previousByteLength + written);
-        if (amount <= 0) throw new StateEngineError('Pending recovery append made no forward progress');
-        written += amount;
+    // Bind every recovery operation to the same verified canonical descriptor.
+    // Pathname truncation can otherwise modify a hardlinked external file when
+    // an attacker replaces events.jsonl after the prefix has been inspected.
+    const flags = fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW ?? 0);
+    const fd = fs.openSync(paths.events, flags);
+    let canonical;
+    try {
+      const opened = fs.fstatSync(fd);
+      const entry = fs.lstatSync(paths.events);
+      if (!opened.isFile() || !entry.isFile() || entry.isSymbolicLink() ||
+        opened.nlink !== 1 || entry.nlink !== 1 ||
+        opened.dev !== entry.dev || opened.ino !== entry.ino) {
+        throw new StateEngineError('Recovery canonical ledger inode/symlink/hardlink integrity failed');
       }
-      fs.fsyncSync(fd);
+      const bytes = Buffer.alloc(opened.size);
+      let read = 0;
+      while (read < bytes.length) {
+        const amount = fs.readSync(fd, bytes, read, bytes.length - read, read);
+        if (amount <= 0) throw new StateEngineError('Canonical ledger changed while recovering pending commit');
+        read += amount;
+      }
+      if (bytes.length < pending.previousByteLength) {
+        throw new StateEngineError('Canonical state history was truncated during a pending commit');
+      }
+      if (sha256(bytes.subarray(0, pending.previousByteLength)) !== pending.previousHash) {
+        throw new StateEngineError('Canonical state prefix differs from pending commit integrity witness');
+      }
+      const existingSuffix = bytes.subarray(pending.previousByteLength);
+      const expectedSuffix = Buffer.from(pending.suffix, 'utf8');
+      if (!expectedSuffix.subarray(0, existingSuffix.length).equals(existingSuffix)) {
+        throw new StateEngineError('Canonical state suffix conflicts with pending commit; refusing recovery');
+      }
+      if (existingSuffix.length < expectedSuffix.length) {
+        // Truncate and repair through this FD, never a separately resolved path.
+        fs.ftruncateSync(fd, pending.previousByteLength);
+        let written = 0;
+        while (written < expectedSuffix.length) {
+          const amount = fs.writeSync(fd, expectedSuffix, written,
+            expectedSuffix.length - written, pending.previousByteLength + written);
+          if (amount <= 0) throw new StateEngineError('Pending recovery append made no forward progress');
+          written += amount;
+        }
+        fs.fsyncSync(fd);
+      }
+      canonical = rebuildSnapshotFromEvents(
+        parseLedger(Buffer.concat([bytes.subarray(0, pending.previousByteLength), expectedSuffix]).toString('utf8')),
+      );
+    } finally {
+      fs.closeSync(fd);
     }
-    canonical = rebuildSnapshotFromEvents(
-      parseLedger(Buffer.concat([bytes.subarray(0, pending.previousByteLength), expectedSuffix]).toString('utf8')),
-    );
+    // Reconstruct both derived views before acknowledging the durable commit.
+    let witness = null;
+    try {
+      witness = JSON.parse(fs.readFileSync(paths.snapshot, 'utf8'));
+      validateStateSnapshot(witness);
+    } catch {
+      witness = null;
+    }
+    if (witness && witness.lastEventSequence > canonical.lastEventSequence) {
+      throw new StateEngineError('Cannot recover a pending commit over a later snapshot integrity witness');
+    }
+    if (witness && witness.lastEventSequence === canonical.lastEventSequence
+      && witness.lastEventHash !== canonical.lastEventHash) {
+      throw new StateEngineError('Pending recovery conflicts with snapshot integrity witness');
+    }
+    persistDerived(canonical, rootDir);
+    pinnedUnlinkAndSync(paths.pending, dirFd);
   } finally {
-    fs.closeSync(fd);
+    fs.closeSync(dirFd);
   }
-  // Reconstruct both derived views before acknowledging the durable commit.
-  let witness = null;
-  try {
-    witness = JSON.parse(fs.readFileSync(paths.snapshot, 'utf8'));
-    validateStateSnapshot(witness);
-  } catch {
-    witness = null;
-  }
-  if (witness && witness.lastEventSequence > canonical.lastEventSequence) {
-    throw new StateEngineError('Cannot recover a pending commit over a later snapshot integrity witness');
-  }
-  if (witness && witness.lastEventSequence === canonical.lastEventSequence
-    && witness.lastEventHash !== canonical.lastEventHash) {
-    throw new StateEngineError('Pending recovery conflicts with snapshot integrity witness');
-  }
-  persistDerived(canonical, rootDir);
-  pinnedUnlinkAndSync(paths.pending, pinnedDirIdentity);
 }
 
 const ACTIVE_STATE_LOCKS = new Set();
@@ -1175,14 +1184,24 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
     previousHash: sha256(Buffer.from(existingContent, 'utf8')),
     suffix,
   };
-  const pinnedDirIdentity = fs.lstatSync(paths.stateRoot);
-  atomicWrite(paths.pending, stablePretty(pending));
-  // Physical append avoids O(history) rewrites; the pending journal permits
-  // deterministic repair after a torn write or interrupted snapshot persist.
-  appendDurably(paths.events, suffix, expectedIdentity);
-  const { index } = persistDerived(nextSnapshot, rootDir);
-  pinnedUnlinkAndSync(paths.pending, pinnedDirIdentity);
-  return { events: newEvents, snapshot: nextSnapshot, index };
+  const dirFd = fs.openSync(paths.stateRoot, 'r');
+  try {
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(paths.stateRoot);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed before durable write preparation');
+    }
+    atomicWrite(paths.pending, stablePretty(pending), dirFd);
+    // Physical append avoids O(history) rewrites; the pending journal permits
+    // deterministic repair after a torn write or interrupted snapshot persist.
+    appendDurably(paths.events, suffix, expectedIdentity);
+    const { index } = persistDerived(nextSnapshot, rootDir);
+    pinnedUnlinkAndSync(paths.pending, dirFd);
+    return { events: newEvents, snapshot: nextSnapshot, index };
+  } finally {
+    fs.closeSync(dirFd);
+  }
 }
 
 function nextEventContext(rootDir) {
