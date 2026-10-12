@@ -171,6 +171,53 @@ for (const entry of receipts.reviews) {
   assert.ok(request.body.includes(REVIEWED_SOURCE),
     'Reviewer scope request must bind the inspected immutable source commit');
 
+  // Reject any receipt if unresolved blocking findings remain on PR #70
+  const query = `query($owner: String!, $repo: String!, $pr: Int!, $cursor: String) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $pr) {
+        reviewThreads(first: 100, after: $cursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            id
+            isResolved
+            comments(first: 1) {
+              nodes {
+                id
+                body
+                author { login }
+              }
+            }
+          }
+        }
+      }
+    }
+  }`;
+  const threads = [];
+  let cursor = null;
+  for (;;) {
+    const data = await githubGraphql(query, {
+      owner: 'eybersjp',
+      repo: 'development-kit',
+      pr: 70,
+      cursor,
+    });
+    const page = data.repository.pullRequest.reviewThreads;
+    threads.push(...(page.nodes || []));
+    if (!page.pageInfo.hasNextPage) break;
+    cursor = page.pageInfo.endCursor;
+  }
+  const unresolvedP1Threads = threads.filter(t => {
+    if (t.isResolved) return false;
+    const body = t.comments?.nodes?.[0]?.body || '';
+    return body.includes('P1 Badge') ||
+      body.includes('![P1 Badge]') ||
+      /\[P1\]/i.test(body) ||
+      /\bP1\s*:/i.test(body) ||
+      /\bPriority\s*:\s*P1\b/i.test(body);
+  });
+  assert.equal(unresolvedP1Threads.length, 0,
+    'Unresolved blocking P1 review threads remain on PR #70; refusing review receipt');
+
   let reviewDate;
   let reviewUrl;
   let reviewIdentity;
@@ -214,53 +261,6 @@ for (const entry of receipts.reviews) {
       'Scope request was edited; an edited request cannot authenticate an independent reviewer role');
     assert.ok(Date.parse(reaction.created_at) > Date.parse(request.created_at),
       'Review completion reaction must postdate its immutable role-scoped request');
-
-    // Reject clean reaction if any unresolved blocking findings remain on PR #70
-    const query = `query($owner: String!, $repo: String!, $pr: Int!, $cursor: String) {
-      repository(owner: $owner, name: $repo) {
-        pullRequest(number: $pr) {
-          reviewThreads(first: 100, after: $cursor) {
-            pageInfo { hasNextPage endCursor }
-            nodes {
-              id
-              isResolved
-              comments(first: 1) {
-                nodes {
-                  id
-                  body
-                  author { login }
-                }
-              }
-            }
-          }
-        }
-      }
-    }`;
-    const threads = [];
-    let cursor = null;
-    for (;;) {
-      const data = await githubGraphql(query, {
-        owner: 'eybersjp',
-        repo: 'development-kit',
-        pr: 70,
-        cursor,
-      });
-      const page = data.repository.pullRequest.reviewThreads;
-      threads.push(...(page.nodes || []));
-      if (!page.pageInfo.hasNextPage) break;
-      cursor = page.pageInfo.endCursor;
-    }
-    const unresolvedP1Threads = threads.filter(t => {
-      if (t.isResolved) return false;
-      const body = t.comments?.nodes?.[0]?.body || '';
-      return body.includes('P1 Badge') ||
-        body.includes('![P1 Badge]') ||
-        /\[P1\]/i.test(body) ||
-        /\bP1\s*:/i.test(body) ||
-        /\bPriority\s*:\s*P1\b/i.test(body);
-    });
-    assert.equal(unresolvedP1Threads.length, 0,
-      'Unresolved blocking P1 review threads remain on PR #70; refusing clean reaction');
 
     // The bot's independently authored +1 *on this exact, single-role,
     // immutable-source scope request* is its clean-review signal. We never

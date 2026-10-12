@@ -1011,7 +1011,7 @@ function buildEvent({
   return event;
 }
 
-function appendDurably(filePath, appendedText, expectedIdentity = null, pinnedDirFd = null) {
+function appendDurably(filePath, appendedText, expectedIdentity = null, pinnedDirFd = null, heldLedgerFd = null) {
   const directory = path.dirname(filePath);
   const file = path.basename(filePath);
   const ownsDirFd = !pinnedDirFd;
@@ -1038,6 +1038,12 @@ function appendDurably(filePath, appendedText, expectedIdentity = null, pinnedDi
         !entry.isFile() || entry.nlink !== 1 ||
         entry.dev !== stat.dev || entry.ino !== stat.ino) {
         throw new StateEngineError('Canonical event file symlink/inode mismatch or multiple hard links');
+      }
+      if (heldLedgerFd !== null) {
+        const heldStat = fs.fstatSync(heldLedgerFd);
+        if (heldStat.dev !== stat.dev || heldStat.ino !== stat.ino) {
+          throw new StateEngineError('Canonical ledger inode changed while holding preparation descriptor');
+        }
       }
       if (expectedIdentity && (stat.dev !== expectedIdentity.dev ||
         stat.ino !== expectedIdentity.ino || stat.size !== expectedIdentity.size)) {
@@ -1214,6 +1220,8 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
 
     // Open ledger with descriptor-bound flags and read through this descriptor
     // so preparation and identity witness come from the exact same descriptor.
+    // Retain this descriptor open across atomicWrite and appendDurably so the inode
+    // cannot be unlinked and recycled while the commit is in flight (PRRT_kwDOTd-YNM6ri6bH).
     const readFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0);
     const readFd = fs.openSync(ledgerPath, readFlags);
     let existingContent;
@@ -1238,37 +1246,37 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
         read += amount;
       }
       existingContent = bytes.toString('utf8');
+
+      const existing = parseLedger(existingContent);
+      let previous = existing.at(-1) ?? null;
+      for (const event of newEvents) {
+        validateStateEvent(event, previous);
+        previous = event;
+      }
+      const allEvents = [...existing, ...newEvents];
+      // Validate and reconstruct before beginning a durable state mutation.
+      const nextSnapshot = rebuildSnapshotFromEvents(allEvents);
+      // A valid last event may lack the optional terminating newline. Preserve
+      // record separation when appending, including in the crash-recovery journal.
+      const separator = existingContent.length > 0 && !existingContent.endsWith('\n') ? '\n' : '';
+      const suffix = separator + newEvents.map((event) => JSON.stringify(stable(event))).join('\n') + '\n';
+      const pending = {
+        schemaVersion: '1.0.0',
+        previousByteLength: Buffer.byteLength(existingContent, 'utf8'),
+        previousHash: sha256(Buffer.from(existingContent, 'utf8')),
+        suffix,
+      };
+
+      atomicWrite(paths.pending, stablePretty(pending), dirFd);
+      // Physical append avoids O(history) rewrites; the pending journal permits
+      // deterministic repair after a torn write or interrupted snapshot persist.
+      appendDurably(paths.events, suffix, expectedIdentity, dirFd, readFd);
+      const { index } = persistDerived(nextSnapshot, rootDir, dirFd);
+      pinnedUnlinkAndSync(paths.pending, dirFd);
+      return { events: newEvents, snapshot: nextSnapshot, index };
     } finally {
       fs.closeSync(readFd);
     }
-
-    const existing = parseLedger(existingContent);
-    let previous = existing.at(-1) ?? null;
-    for (const event of newEvents) {
-      validateStateEvent(event, previous);
-      previous = event;
-    }
-    const allEvents = [...existing, ...newEvents];
-    // Validate and reconstruct before beginning a durable state mutation.
-    const nextSnapshot = rebuildSnapshotFromEvents(allEvents);
-    // A valid last event may lack the optional terminating newline. Preserve
-    // record separation when appending, including in the crash-recovery journal.
-    const separator = existingContent.length > 0 && !existingContent.endsWith('\n') ? '\n' : '';
-    const suffix = separator + newEvents.map((event) => JSON.stringify(stable(event))).join('\n') + '\n';
-    const pending = {
-      schemaVersion: '1.0.0',
-      previousByteLength: Buffer.byteLength(existingContent, 'utf8'),
-      previousHash: sha256(Buffer.from(existingContent, 'utf8')),
-      suffix,
-    };
-
-    atomicWrite(paths.pending, stablePretty(pending), dirFd);
-    // Physical append avoids O(history) rewrites; the pending journal permits
-    // deterministic repair after a torn write or interrupted snapshot persist.
-    appendDurably(paths.events, suffix, expectedIdentity, dirFd);
-    const { index } = persistDerived(nextSnapshot, rootDir, dirFd);
-    pinnedUnlinkAndSync(paths.pending, dirFd);
-    return { events: newEvents, snapshot: nextSnapshot, index };
   } finally {
     fs.closeSync(dirFd);
   }

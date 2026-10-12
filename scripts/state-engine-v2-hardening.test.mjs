@@ -510,7 +510,15 @@ test('T04-H36 pending journal cannot overwrite external file after state-directo
   fs.openSync = function swapRootAtJournalTempOpen(target, flags, ...rest) {
     if (!swapped && typeof target === 'string' &&
       target.includes('pending-commit.json.tmp-') && flags === 'wx') {
-      fs.renameSync(paths.stateRoot, moved);
+      try {
+        fs.renameSync(paths.stateRoot, moved);
+      } catch (err) {
+        if (process.platform === 'win32' && err.code === 'EPERM') {
+          t.skip('Windows locks directory handles against renaming while pinned open');
+          return originalOpen.call(this, target, flags, ...rest);
+        }
+        throw err;
+      }
       try {
         fs.symlinkSync(outside, paths.stateRoot, process.platform === 'win32' ? 'junction' : 'dir');
       } catch (error) {
