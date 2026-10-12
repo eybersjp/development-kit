@@ -694,3 +694,43 @@ test('T04-H40 durable transaction writes fail closed when state directory is rep
   }
 });
 
+test('T04-H41 recovery resolves pending journal, events, and snapshot relative to pinned directory descriptor', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const before = fs.readFileSync(paths.events, 'utf8');
+  appendMetadataEvent({ rootDir, eventType: 'FOLLOWUP_EVENT', payload: { value: 2 } });
+  const expected = fs.readFileSync(paths.events, 'utf8');
+  const suffix = expected.slice(before.length);
+  // Simulate torn append with pending journal
+  fs.writeFileSync(paths.events, before + suffix.slice(0, 10), 'utf8');
+  fs.writeFileSync(paths.pending, JSON.stringify({
+    schemaVersion: '1.0.0',
+    previousByteLength: Buffer.byteLength(before),
+    previousHash: 'sha256:' + createHash('sha256').update(before).digest('hex'),
+    suffix,
+  }), 'utf8');
+
+  const openedTargets = [];
+  const originalOpen = fs.openSync;
+  fs.openSync = function trackOpen(target, flags, ...rest) {
+    if (typeof target === 'string') {
+      openedTargets.push(target);
+    }
+    return originalOpen.call(this, target, flags, ...rest);
+  };
+
+  try {
+    const recovered = loadStateSnapshot(rootDir, { rebuildIfNeeded: true });
+    assert.ok(recovered);
+    assert.equal(recovered.lastEventSequence, 2);
+    if (process.platform === 'linux') {
+      const procFdEvents = openedTargets.find(p => p.includes('/proc/self/fd/') && p.endsWith('events.jsonl'));
+      assert.ok(procFdEvents, 'Linux recovery must open events ledger through /proc/self/fd/ descriptor path');
+    }
+  } finally {
+    fs.openSync = originalOpen;
+  }
+});
+
+

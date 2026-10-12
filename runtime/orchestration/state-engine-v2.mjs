@@ -1076,10 +1076,20 @@ function recoverPendingCommitLocked(rootDir) {
       pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
       throw new StateEngineError('State Engine directory changed before recovery preparation');
     }
-    if (!fs.existsSync(paths.pending)) return;
+    const pendingTarget = process.platform === 'linux'
+      ? path.join('/proc/self/fd/' + dirFd, path.basename(paths.pending))
+      : paths.pending;
+    const eventsTarget = process.platform === 'linux'
+      ? path.join('/proc/self/fd/' + dirFd, path.basename(paths.events))
+      : paths.events;
+    const snapshotTarget = process.platform === 'linux'
+      ? path.join('/proc/self/fd/' + dirFd, path.basename(paths.snapshot))
+      : paths.snapshot;
+
+    if (!fs.existsSync(pendingTarget)) return;
     let pending;
     try {
-      pending = JSON.parse(fs.readFileSync(paths.pending, 'utf8'));
+      pending = JSON.parse(fs.readFileSync(pendingTarget, 'utf8'));
     } catch (error) {
       throw new StateEngineError('Pending State Engine commit is invalid: ' + error.message);
     }
@@ -1097,11 +1107,11 @@ function recoverPendingCommitLocked(rootDir) {
     // Pathname truncation can otherwise modify a hardlinked external file when
     // an attacker replaces events.jsonl after the prefix has been inspected.
     const flags = fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW ?? 0);
-    const fd = fs.openSync(paths.events, flags);
+    const fd = fs.openSync(eventsTarget, flags);
     let canonical;
     try {
       const opened = fs.fstatSync(fd);
-      const entry = fs.lstatSync(paths.events);
+      const entry = fs.lstatSync(eventsTarget);
       if (!opened.isFile() || !entry.isFile() || entry.isSymbolicLink() ||
         opened.nlink !== 1 || entry.nlink !== 1 ||
         opened.dev !== entry.dev || opened.ino !== entry.ino) {
@@ -1146,7 +1156,7 @@ function recoverPendingCommitLocked(rootDir) {
     // Reconstruct both derived views before acknowledging the durable commit.
     let witness = null;
     try {
-      witness = JSON.parse(fs.readFileSync(paths.snapshot, 'utf8'));
+      witness = JSON.parse(fs.readFileSync(snapshotTarget, 'utf8'));
       validateStateSnapshot(witness);
     } catch {
       witness = null;
