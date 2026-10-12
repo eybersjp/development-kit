@@ -84,6 +84,22 @@ async function githubApi(endpoint) {
   if (!response.ok) throw new Error('Independent GitHub evidence unavailable (' + response.status + '): ' + endpoint);
   return response.json();
 }
+
+async function githubGraphql(query, variables = {}) {
+  const response = await fetch('https://api.github.com/graphql', {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + process.env.GITHUB_TOKEN,
+      'Content-Type': 'application/json',
+      'User-Agent': 'dkf-t04-independent-review-validator',
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+  if (!response.ok) throw new Error('GitHub GraphQL evidence unavailable (' + response.status + ')');
+  const result = await response.json();
+  if (result.errors?.length) throw new Error('GitHub GraphQL query failed: ' + result.errors[0].message);
+  return result.data;
+}
 const tree = await githubApi('git/trees/' + REVIEWED_SOURCE + '?recursive=1');
 assert.ok(!tree.truncated && Array.isArray(tree.tree), 'Reviewed commit tree unavailable or truncated');
 const treeFiles = new Map(tree.tree.filter(item => item.type === 'blob')
@@ -200,19 +216,46 @@ for (const entry of receipts.reviews) {
       'Review completion reaction must postdate its immutable role-scoped request');
 
     // Reject clean reaction if any unresolved blocking findings remain on PR #70
-    const prComments = [];
-    for (let page = 1; ; page++) {
-      const pageItems = await githubApi('pulls/70/comments?per_page=100&page=' + page);
-      if (!Array.isArray(pageItems) || pageItems.length === 0) break;
-      prComments.push(...pageItems);
-      if (pageItems.length < 100) break;
+    const query = `query($owner: String!, $repo: String!, $pr: Int!, $cursor: String) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $pr) {
+          reviewThreads(first: 100, after: $cursor) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              id
+              isResolved
+              comments(first: 1) {
+                nodes {
+                  id
+                  body
+                  author { login }
+                }
+              }
+            }
+          }
+        }
+      }
+    }`;
+    const threads = [];
+    let cursor = null;
+    for (;;) {
+      const data = await githubGraphql(query, {
+        owner: 'eybersjp',
+        repo: 'development-kit',
+        pr: 70,
+        cursor,
+      });
+      const page = data.repository.pullRequest.reviewThreads;
+      threads.push(...(page.nodes || []));
+      if (!page.pageInfo.hasNextPage) break;
+      cursor = page.pageInfo.endCursor;
     }
-    const blockingComments = prComments.filter(c =>
-      c.user?.login === 'chatgpt-codex-connector[bot]' &&
-      !c.in_reply_to_id &&
-      (c.body?.includes('P1 Badge') || c.body?.includes('![P1 Badge]'))
+    const unresolvedP1Threads = threads.filter(t =>
+      !t.isResolved &&
+      t.comments?.nodes?.[0]?.author?.login === 'chatgpt-codex-connector' &&
+      (t.comments.nodes[0].body.includes('P1 Badge') || t.comments.nodes[0].body.includes('![P1 Badge]'))
     );
-    assert.equal(blockingComments.length, 0,
+    assert.equal(unresolvedP1Threads.length, 0,
       'Independent reviewer has unresolved blocking P1 review threads on PR #70; refusing clean reaction');
 
     // The bot's independently authored +1 *on this exact, single-role,
