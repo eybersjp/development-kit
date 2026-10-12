@@ -165,7 +165,7 @@ function fsyncParentDirectory(directory) {
   }
 }
 
-function pinnedUnlinkAndSync(filePath, pinnedDirFd = null) {
+function pinnedUnlinkAndSync(filePath, pinnedDirFd = null, expectedLedger = null) {
   const directory = path.dirname(filePath);
   const file = path.basename(filePath);
   const ownsDirFd = !pinnedDirFd;
@@ -183,6 +183,14 @@ function pinnedUnlinkAndSync(filePath, pinnedDirFd = null) {
     const preStat = fs.lstatSync(target);
     if (preStat.isSymbolicLink() || !preStat.isFile() || preStat.nlink > 1) {
       throw new StateEngineError('Target journal file is not a regular unlinked file');
+    }
+    if (expectedLedger) {
+      const ledgerEntry = fs.lstatSync(expectedLedger.path);
+      const ledgerStat = fs.fstatSync(expectedLedger.fd);
+      if (!ledgerEntry.isFile() || ledgerEntry.isSymbolicLink() || ledgerEntry.nlink !== 1 ||
+        ledgerEntry.dev !== ledgerStat.dev || ledgerEntry.ino !== ledgerStat.ino) {
+        throw new StateEngineError('Canonical ledger directory entry was displaced; refusing to unlink pending journal');
+      }
     }
     // Recheck directory immediately before unlink on platforms without descriptor-relative paths
     const latest = fs.lstatSync(directory);
@@ -1175,31 +1183,26 @@ function recoverPendingCommitLocked(rootDir) {
       canonical = rebuildSnapshotFromEvents(
         parseLedger(Buffer.concat([bytes.subarray(0, pending.previousByteLength), expectedSuffix]).toString('utf8')),
       );
+      // Reconstruct both derived views before acknowledging the durable commit.
+      let witness = null;
+      try {
+        witness = JSON.parse(fs.readFileSync(snapshotTarget, 'utf8'));
+        validateStateSnapshot(witness);
+      } catch {
+        witness = null;
+      }
+      if (witness && witness.lastEventSequence > canonical.lastEventSequence) {
+        throw new StateEngineError('Cannot recover a pending commit over a later snapshot integrity witness');
+      }
+      if (witness && witness.lastEventSequence === canonical.lastEventSequence
+        && witness.lastEventHash !== canonical.lastEventHash) {
+        throw new StateEngineError('Pending recovery conflicts with snapshot integrity witness');
+      }
+      persistDerived(canonical, rootDir, dirFd);
+      pinnedUnlinkAndSync(paths.pending, dirFd, { path: eventsTarget, fd });
     } finally {
       fs.closeSync(fd);
     }
-    // Reconstruct both derived views before acknowledging the durable commit.
-    let witness = null;
-    try {
-      witness = JSON.parse(fs.readFileSync(snapshotTarget, 'utf8'));
-      validateStateSnapshot(witness);
-    } catch {
-      witness = null;
-    }
-    if (witness && witness.lastEventSequence > canonical.lastEventSequence) {
-      throw new StateEngineError('Cannot recover a pending commit over a later snapshot integrity witness');
-    }
-    if (witness && witness.lastEventSequence === canonical.lastEventSequence
-      && witness.lastEventHash !== canonical.lastEventHash) {
-      throw new StateEngineError('Pending recovery conflicts with snapshot integrity witness');
-    }
-    persistDerived(canonical, rootDir, dirFd);
-    const verifyEntry = fs.lstatSync(eventsTarget);
-    if (!verifyEntry.isFile() || verifyEntry.isSymbolicLink() || verifyEntry.nlink !== 1 ||
-      verifyEntry.dev !== canonicalStat.dev || verifyEntry.ino !== canonicalStat.ino) {
-      throw new StateEngineError('Canonical ledger directory entry was displaced; preserving pending journal in recovery');
-    }
-    pinnedUnlinkAndSync(paths.pending, dirFd);
   } finally {
     fs.closeSync(dirFd);
   }
@@ -1296,15 +1299,7 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
       // deterministic repair after a torn write or interrupted snapshot persist.
       appendDurably(paths.events, suffix, expectedIdentity, dirFd, readFd);
       const { index } = persistDerived(nextSnapshot, rootDir, dirFd);
-      // Double check canonical ledger entry immediately before removing pending journal.
-      // If the ledger entry was unlinked or displaced, fail closed without unlinking pending.json
-      const verifyEntry = fs.lstatSync(ledgerPath);
-      const verifyStat = fs.fstatSync(readFd);
-      if (!verifyEntry.isFile() || verifyEntry.isSymbolicLink() || verifyEntry.nlink !== 1 ||
-        verifyEntry.dev !== verifyStat.dev || verifyEntry.ino !== verifyStat.ino) {
-        throw new StateEngineError('Canonical ledger directory entry was displaced; preserving pending journal');
-      }
-      pinnedUnlinkAndSync(paths.pending, dirFd);
+      pinnedUnlinkAndSync(paths.pending, dirFd, { path: ledgerPath, fd: readFd });
       return { events: newEvents, snapshot: nextSnapshot, index };
     } finally {
       fs.closeSync(readFd);
