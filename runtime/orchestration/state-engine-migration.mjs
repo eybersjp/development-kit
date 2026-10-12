@@ -666,6 +666,9 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
   let outcome;
   if (inDisplaced && !atRoot) {
     fs.renameSync(displaced, root); // crash after displacing root, before promotion
+    // The restored root directory entry must be durable before removing the
+    // only journal that permits redoing this rollback after another power loss.
+    syncRestoreParent(parent);
     outcome = 'rolled-back-original';
   } else if (inDisplaced && equal(atRoot, tx.stageDev, tx.stageIno)) {
     // Promotion completed; preserve original in displaced directory for
