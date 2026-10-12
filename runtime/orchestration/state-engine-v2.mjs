@@ -1063,6 +1063,15 @@ function appendDurably(filePath, appendedText, expectedIdentity = null, pinnedDi
         written += amount;
       }
       fs.fsyncSync(fd);
+      // Re-verify the directory entry after fsync to guarantee the canonical
+      // path still references this exact inode and was not unlinked or swapped
+      // during write (PRRC_kwDOTd-YNM79WYGR).
+      const finalEntry = fs.lstatSync(target);
+      const finalStat = fs.fstatSync(fd);
+      if (!finalEntry.isFile() || finalEntry.isSymbolicLink() || finalEntry.nlink !== 1 ||
+        finalEntry.dev !== finalStat.dev || finalEntry.ino !== finalStat.ino) {
+        throw new StateEngineError('Canonical ledger directory entry was displaced during durable append');
+      }
     } finally {
       fs.closeSync(fd);
     }

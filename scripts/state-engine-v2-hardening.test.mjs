@@ -741,4 +741,44 @@ test('T04-H41 recovery resolves pending journal, events, and snapshot relative t
   }
 });
 
+test('T04-H42 appendDurably fails closed if canonical ledger entry is displaced during write', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'INITIAL_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const displaced = path.join(paths.stateRoot, 'displaced-events.jsonl');
+
+  const originalWriteSync = fs.writeSync;
+  let swapped = false;
+  fs.writeSync = function hookedWrite(fd, buffer, offset, length, position) {
+    if (!swapped) {
+      try {
+        fs.renameSync(paths.events, displaced);
+        fs.writeFileSync(paths.events, 'MUTATED_NEW_FILE\n', 'utf8');
+        swapped = true;
+      } catch (err) {
+        if (process.platform === 'win32' && err.code === 'EPERM') {
+          t.skip('Windows locks open files against renaming');
+          return originalWriteSync.call(this, fd, buffer, offset, length, position);
+        }
+        throw err;
+      }
+    }
+    return originalWriteSync.call(this, fd, buffer, offset, length, position);
+  };
+
+  try {
+    assert.throws(
+      () => appendMetadataEvent({ rootDir, eventType: 'MUST_FAIL_EVENT', payload: { value: 2 } }),
+      /displaced|changed|mismatch/i,
+    );
+  } finally {
+    fs.writeSync = originalWriteSync;
+    if (swapped) {
+      fs.rmSync(paths.events, { force: true });
+      fs.renameSync(displaced, paths.events);
+    }
+  }
+});
+
+
 
