@@ -241,6 +241,31 @@ test('ORCH-001 runtime validation rejects malformed or broadened persisted contr
   const unexpectedProperty = structuredClone(contract);
   unexpectedProperty.executionOverride = 'allow-everything';
   assert.throws(() => validateDevelopmentContract(unexpectedProperty), ContractValidationError);
+
+  // P2 regression: malformed requirementIds or malformed requirements structure must throw ContractValidationError, not TypeError
+  const invalidRequirementIds = structuredClone(contract);
+  invalidRequirementIds.acceptanceCriteria[0].requirementIds = 'not-an-array';
+  assert.throws(() => validateDevelopmentContract(invalidRequirementIds), (err) => {
+    return err instanceof ContractValidationError && err.details.some((e) => e.includes('requirementIds must be an array'));
+  });
+
+  const nullRequirementIds = structuredClone(contract);
+  nullRequirementIds.acceptanceCriteria[0].requirementIds = null;
+  assert.throws(() => validateDevelopmentContract(nullRequirementIds), (err) => {
+    return err instanceof ContractValidationError && err.details.some((e) => e.includes('requirementIds must be an array'));
+  });
+
+  const malformedRequirements = structuredClone(contract);
+  malformedRequirements.requirements = 'not-an-array';
+  assert.throws(() => validateDevelopmentContract(malformedRequirements), (err) => {
+    return err instanceof ContractValidationError && err.details.some((e) => e.includes('requirements must be an array'));
+  });
+
+  const primitiveItemsInRequirements = structuredClone(contract);
+  primitiveItemsInRequirements.requirements = [123, null, 'REQ-01'];
+  assert.throws(() => validateDevelopmentContract(primitiveItemsInRequirements), (err) => {
+    return err instanceof ContractValidationError && err.details.some((e) => e.includes('requirements entries must be strings or plain objects'));
+  });
 });
 
 test('ORCH-001 loader fails closed when contract.json is manually corrupted', (t) => {

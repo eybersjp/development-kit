@@ -484,7 +484,12 @@ export function ensureStateEngineLayout(rootDir = process.cwd()) {
     atomicWrite(paths.schema, expectedSchema);
   }
 
-  if (!fs.existsSync(paths.events)) atomicWrite(paths.events, '');
+  if (!fs.existsSync(paths.events)) {
+    if (fs.existsSync(paths.pending)) {
+      throw new StateEngineError('State Engine events.jsonl is missing while pending-commit.json is present; state integrity compromised');
+    }
+    atomicWrite(paths.events, '');
+  }
   if (!fs.existsSync(paths.snapshot)) atomicWrite(paths.snapshot, stablePretty(emptySnapshot()));
   if (!fs.existsSync(paths.index)) atomicWrite(paths.index, stablePretty(buildStateIndex(emptySnapshot())));
 
@@ -601,7 +606,12 @@ function parseLedger(content) {
 
 export function loadCanonicalEvents(rootDir = process.cwd()) {
   const paths = statePaths(rootDir);
-  if (!fs.existsSync(paths.events)) return [];
+  if (!fs.existsSync(paths.events)) {
+    if (fs.existsSync(paths.pending)) {
+      throw new StateEngineError('State Engine events.jsonl is missing while pending-commit.json is present; state integrity compromised');
+    }
+    return [];
+  }
   if (fs.existsSync(paths.pending)) {
     return withStateLock(rootDir, () => parseLedger(fs.readFileSync(paths.events, 'utf8')));
   }
@@ -898,7 +908,12 @@ export function rebuildStateSnapshot(rootDir = process.cwd()) {
 
 export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = true } = {}) {
   const paths = statePaths(rootDir);
-  if (!fs.existsSync(paths.events)) return null;
+  if (!fs.existsSync(paths.events)) {
+    if (fs.existsSync(paths.pending)) {
+      throw new StateEngineError('State Engine events.jsonl is missing while pending-commit.json is present; state integrity compromised');
+    }
+    return null;
+  }
   const canonical = rebuildSnapshotFromEvents(loadCanonicalEvents(rootDir));
 
   if (!fs.existsSync(paths.snapshot)) {
@@ -1107,6 +1122,9 @@ function recoverPendingCommitLocked(rootDir) {
       : paths.snapshot;
 
     if (!fs.existsSync(pendingTarget)) return;
+    if (!fs.existsSync(eventsTarget)) {
+      throw new StateEngineError('Cannot recover pending commit: canonical ledger events.jsonl is missing');
+    }
     let pending;
     try {
       pending = JSON.parse(fs.readFileSync(pendingTarget, 'utf8'));

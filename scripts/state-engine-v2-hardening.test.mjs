@@ -14,6 +14,7 @@ import {
   loadStateSnapshot,
   verifyStateEngineIntegrity,
   recoverAbandonedStateLock,
+  ensureStateEngineLayout,
 } from '../runtime/orchestration/state-engine-v2.mjs';
 
 function tempProject(t) {
@@ -788,10 +789,6 @@ function swapLedgerBeforeJournalUnlink(t, paths, replacementContent) {
   const displaced = path.join(paths.stateRoot, 'displaced-events.jsonl');
   const state = { swapped: false, skipped: false, displaced, restore() {
     fs.unlinkSync = originalUnlink;
-    if (state.swapped) {
-      fs.rmSync(paths.events, { force: true });
-      fs.renameSync(displaced, paths.events);
-    }
   } };
   fs.unlinkSync = function swapBetweenFinalLstatAndUnlink(target, ...rest) {
     if (!state.swapped && typeof target === 'string' && target.endsWith('pending-commit.json')) {
@@ -826,12 +823,14 @@ test('T04-H43 ledger swap between final lstat and journal unlink is detected fai
   }
   if (state.skipped) return;
   assert.equal(state.swapped, true);
-  // Post-condition witnesses: canonical authority is the replacement ledger,
-  // the journal is gone, derived state is ahead of the canonical ledger.
+  // Post-condition witnesses: canonical authority is the replaced ledger left directly in place by the hook,
+  // the pending journal was removed, and derived state is ahead of the replaced ledger.
   assert.equal(fs.existsSync(paths.pending), false);
-  assert.equal(fs.readFileSync(paths.events, 'utf8').split('\n').filter(Boolean).length, 2,
-    'displaced ledger restored holds both events');
-  fs.writeFileSync(paths.events, preLedger, 'utf8');
+  assert.equal(fs.existsSync(state.displaced), true);
+  assert.equal(fs.readFileSync(state.displaced, 'utf8').split('\n').filter(Boolean).length, 2,
+    'displaced ledger holds both committed events');
+  assert.equal(fs.readFileSync(paths.events, 'utf8'), preLedger,
+    'events.jsonl contains the authentic swapped preLedger without synthetic post-operation rewrite');
   assert.equal(loadCanonicalEvents(rootDir).length, 1);
   assert.throws(() => loadStateSnapshot(rootDir, { rebuildIfNeeded: false }), /truncated|differs|materialized/i);
   assert.throws(() => verifyStateEngineIntegrity(rootDir), /truncated|differs|materialized|equivalent/i);
@@ -860,6 +859,50 @@ test('T04-H44 ledger swap between final lstat and journal unlink is detected fai
   if (state.skipped) return;
   assert.equal(state.swapped, true);
   assert.equal(fs.existsSync(paths.pending), false);
-  fs.writeFileSync(paths.events, before, 'utf8');
+  assert.equal(fs.existsSync(state.displaced), true);
+  assert.equal(fs.readFileSync(paths.events, 'utf8'), before,
+    'events.jsonl contains the authentic swapped before ledger without synthetic rewrite');
   assert.throws(() => loadStateSnapshot(rootDir, { rebuildIfNeeded: false }), /truncated|differs|materialized/i);
+  assert.throws(() => verifyStateEngineIntegrity(rootDir), /truncated|differs|materialized|equivalent/i);
+});
+
+test('T04-H45 missing events.jsonl with pending journal present fails closed across all accessors', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+
+  // Setup pending commit marker
+  fs.writeFileSync(paths.pending, JSON.stringify({
+    schemaVersion: '1.0.0',
+    previousByteLength: 0,
+    previousHash: 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    suffix: '{"schemaVersion":"1.0.0"}\n',
+  }), 'utf8');
+
+  // Remove the canonical events ledger
+  fs.unlinkSync(paths.events);
+
+  // Verify loadCanonicalEvents fails closed
+  assert.throws(
+    () => loadCanonicalEvents(rootDir),
+    /events\.jsonl is missing while pending-commit\.json is present/i,
+  );
+
+  // Verify loadStateSnapshot fails closed
+  assert.throws(
+    () => loadStateSnapshot(rootDir, { rebuildIfNeeded: false }),
+    /events\.jsonl is missing while pending-commit\.json is present/i,
+  );
+
+  // Verify ensureStateEngineLayout fails closed rather than wiping/creating an empty ledger
+  assert.throws(
+    () => ensureStateEngineLayout(rootDir),
+    /events\.jsonl is missing while pending-commit\.json is present/i,
+  );
+
+  // Verify verifyStateEngineIntegrity fails closed
+  assert.throws(
+    () => verifyStateEngineIntegrity(rootDir),
+    /events\.jsonl is missing while pending-commit\.json is present/i,
+  );
 });

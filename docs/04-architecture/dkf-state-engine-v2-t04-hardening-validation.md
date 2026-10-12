@@ -105,3 +105,30 @@ Independent PR #70 reviews discovered that copying could rewrite unrelated relat
 - **Fail-closed behavior:** missing, stale, inauthentic or finding-bearing review evidence never grants T04 acceptance.
 
 **Promotion boundary:** A persisted deterministic ACCEPTED result with zero runtime blockers, authenticated code/architecture/security reviewer roles and full matrix success is required. Earlier synthetic acceptance outputs are explicitly superseded. No main-branch merge, release or T05 authority is implied.
+
+## Seventh review cycle — H42–H45, P1/P2 resolution and skipped-test audit
+
+Following engineering review #6133448943 on PR #70:
+
+- **P1 missing canonical ledger with pending journal:** in `runtime/orchestration/state-engine-v2.mjs`, when `events.jsonl` is missing while `pending-commit.json` is present, `loadCanonicalEvents()`, `loadStateSnapshot()`, `ensureStateEngineLayout()`, and `recoverPendingCommitLocked()` fail closed with a descriptive `StateEngineError` rather than treating state as uninitialized or creating an empty ledger. Verified by new regression fixture `T04-H45`.
+- **P2 contract requirement validation shape guards:** in `runtime/orchestration/development-contract.mjs`, `validateDevelopmentContract()` guards `criterion.requirementIds` and `contract.requirements` arrays before iteration or `.some()` calls, ensuring malformed non-array or null values aggregate into `ContractValidationError` without throwing raw `TypeError`. Verified by new fixtures in `scripts/orchestration-contract.test.mjs`.
+- **H43/H44 test hardening:** removed synthetic post-operation file overwrites; tests now inspect and assert the authentic swapped filesystem state directly.
+- **Threat model provenance:** updated `docs/04-architecture/dkf-state-engine-v2-offline-recovery-boundary.md` to accurately define the exclusive local runtime as a candidate engineering proposal subject to recorded PO/security authorization.
+
+### Audit of skipped tests on Windows (11 tests in `scripts/state-engine-v2-hardening.test.mjs`)
+
+All 11 skipped tests are designed to execute on Linux (`ubuntu-latest` CI) where the underlying OS primitives exist:
+
+1. **`T04-H06`** (*Host does not permit file symlink creation*): Non-elevated Windows environments prohibit creating unprivileged file symlinks without Developer Mode enabled.
+2. **`T04-H09`** (*Host does not permit file symlink creation*): Tests internal canonical events file redirection rejection via symlinks; requires file symlink capability.
+3. **`T04-H22`** (*Host denies file symlink fixture*): Tests symlink swap immediately before open; requires file symlink support.
+4. **`T04-H23`** (*POSIX mode/uid semantics are not portable to Windows*): Validates exact POSIX `0755`/`0700` octal modes and numerical UID/GID preservation during staged restore. Windows NTFS ACLs do not map 1:1 to POSIX mode bits.
+5. **`T04-H30`** (*POSIX ownership and mode semantics require a POSIX host*): Validates recursive descendant UID/GID preservation in staged restore.
+6. **`T04-H31`** (*POSIX access-time semantics require a POSIX host*): Tests historical 2001 `atime` preservation without scan drift; Windows timestamp precision and update rules differ.
+7. **`T04-H32`** (*Relative symlink unavailable*): Tests preservation of relative target strings in restored symlinks; requires unprivileged symlink creation.
+8. **`T04-H36`** (*Windows locks directory handles against renaming while pinned open*): Renaming an open directory handle returns `EPERM` on Windows NTFS. On Linux, `/proc/self/fd` directory pinning allows directory renames.
+9. **`T04-H37`** (*Windows locks directory handles against renaming while pinned open*): Directory swap test during commit; Windows kernel file locks prevent renaming the pinned state directory.
+10. **`T04-H38`** (*Windows locks directory handles against renaming while pinned open*): Directory replacement with ordinary directory; Windows kernel locks prevent open directory renaming.
+11. **`T04-H40`** (*Windows locks directory handles against renaming while pinned open*): Directory replacement before append; Windows kernel locks prevent open directory renaming.
+
+These 11 tests run unconditionally and provide full regression coverage on the `ubuntu-latest` GitHub Actions CI matrix runner.

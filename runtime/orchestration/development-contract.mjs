@@ -506,9 +506,17 @@ export function validateDevelopmentContract(contract) {
       assertNoExtraKeys(criterion, criterionKeys, 'acceptance criterion', errors);
       if (criterion.requirementIds !== undefined) {
         validateStringArray(criterion.requirementIds, 'acceptance criterion requirementIds', errors);
-        for (const req of criterion.requirementIds || []) {
-          if (!contract.requirements.some(item => (typeof item === 'string' ? item : item.id) === req)) {
-            errors.push('Acceptance criterion references unknown requirement: ' + req);
+        if (Array.isArray(criterion.requirementIds) && Array.isArray(contract.requirements)) {
+          for (const req of criterion.requirementIds) {
+            if (typeof req !== 'string' || !req.trim()) continue;
+            const matches = contract.requirements.some(item => {
+              if (typeof item === 'string') return item === req;
+              if (isPlainObject(item) && typeof item.id === 'string') return item.id === req;
+              return false;
+            });
+            if (!matches) {
+              errors.push('Acceptance criterion references unknown requirement: ' + req);
+            }
           }
         }
       }
