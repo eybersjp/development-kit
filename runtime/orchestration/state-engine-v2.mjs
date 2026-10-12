@@ -1185,8 +1185,11 @@ function recoverPendingCommitLocked(rootDir) {
           if (amount <= 0) throw new StateEngineError('Pending recovery append made no forward progress');
           written += amount;
         }
-        fs.fsyncSync(fd);
       }
+      // Recovery can observe a fully written suffix that was never fsynced by
+      // the interrupted writer. Flush the canonical ledger unconditionally
+      // before publishing derived views or acknowledging the pending journal.
+      fs.fsyncSync(fd);
       // Re-verify the directory entry after fsync to ensure the canonical path
       // still names the repaired inode before publishing derived views (PRRC_kwDOTd-YNM79WYGR).
       const finalEntry = fs.lstatSync(eventsTarget);
