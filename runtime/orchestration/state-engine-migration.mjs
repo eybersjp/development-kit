@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import { validateWorkflowState } from '../autopilot/validators.mjs';
 import { validateOrchestrationRun } from './orchestration-run.mjs';
@@ -588,6 +590,32 @@ function syncRestoreParent(parent) {
   try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
 }
 
+// Node.js fs.renameSync does not expose Windows' MOVEFILE_WRITE_THROUGH flag.
+// Use the OS-native rename for journaled rollback; any unavailable helper or
+// failed native call leaves the restore journal intact and recovery fails closed.
+function durableRestoreRollbackRename(from, to) {
+  if (process.platform !== 'win32') {
+    fs.renameSync(from, to);
+    syncRestoreParent(path.dirname(to));
+    return;
+  }
+  const systemRoot = process.env.SystemRoot || process.env.WINDIR;
+  if (!systemRoot || !path.isAbsolute(systemRoot)) {
+    throw new StateMigrationError('Windows durable rollback unavailable: SystemRoot is not available; journal retained');
+  }
+  const powershell = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const script = fileURLToPath(new URL('../../scripts/windows-durable-rename.ps1', import.meta.url));
+  try {
+    execFileSync(powershell, [
+      '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+      '-File', script, '-From', path.toNamespacedPath(from), '-To', path.toNamespacedPath(to),
+    ], { encoding: 'utf8', windowsHide: true, timeout: 60000 });
+  } catch (error) {
+    throw new StateMigrationError('Windows write-through rollback failed; recovery journal retained: ' +
+      (error.stderr?.toString().trim() || error.message));
+  }
+}
+
 /**
  * Sync the staged file bytes and (on POSIX) every containing directory before
  * the promotion journal becomes durable. A rename alone does not durably
@@ -665,10 +693,9 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
 
   let outcome;
   if (inDisplaced && !atRoot) {
-    fs.renameSync(displaced, root); // crash after displacing root, before promotion
     // The restored root directory entry must be durable before removing the
     // only journal that permits redoing this rollback after another power loss.
-    syncRestoreParent(parent);
+    durableRestoreRollbackRename(displaced, root); // crash after displacement
     outcome = 'rolled-back-original';
   } else if (inDisplaced && equal(atRoot, tx.stageDev, tx.stageIno)) {
     // Promotion completed; preserve original in displaced directory for
@@ -887,8 +914,7 @@ export function restoreLegacyBackup({
     if (displacedOriginal) {
       try {
         if (!fs.existsSync(resolvedRoot)) {
-          fs.renameSync(displaced, resolvedRoot);
-          syncRestoreParent(parent);
+          durableRestoreRollbackRename(displaced, resolvedRoot);
         }
       } catch {}
     }
