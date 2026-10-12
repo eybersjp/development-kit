@@ -132,3 +132,15 @@ All 11 skipped tests are designed to execute on Linux (`ubuntu-latest` CI) where
 11. **`T04-H40`** (*Windows locks directory handles against renaming while pinned open*): Directory replacement before append; Windows kernel locks prevent open directory renaming.
 
 These 11 tests run unconditionally and provide full regression coverage on the `ubuntu-latest` GitHub Actions CI matrix runner.
+
+## Eighth corrective cycle — recovered suffix durability, rollback durability and review-thread acceptance
+
+Independent source review at `cf0fd8208cd262da29dfe0d91576c4808efa6873` surfaced three additional P1 findings, tracked on PR #70. This increment implements corrections pending cross-platform CI and new independent approval:
+
+- **T04-H46:** automatic pending-commit recovery must `fsync` the opened canonical ledger even if all expected suffix bytes are already present, because the interrupted writer may have stopped between its last `write` and `fsync`. The new regression guards journal unlink until the ledger descriptor has actually been flushed.
+- **T04-H47:** offline restore recovery must durably sync the parent directory immediately after rolling back a displaced root and before unlinking the restore journal. The POSIX regression uses a real child-process exit and asserts the ordering. Windows parent-directory `fsync` has different/unsupported portable semantics and is not claimed by this fixture.
+- **Independent review acceptance:** `t04-review-thread-blockers.mjs` now rejects all unresolved review threads regardless of P1/P2 label. Three pure regression tests are included in `state-engine-v2:test`; reviewer replies and authenticated receipts are still mandatory.
+
+The Product Owner's decision defers hostile same-account concurrent-filesystem isolation to future [Issue #72](https://github.com/eybersjp/development-kit/issues/72). For v0.12.0 the runtime boundary is an exclusively controlled trusted local workspace. The stronger attack case remains an explicitly unsupported risk; independent security review must confirm this boundary is accurately enforced and disclosed. The restricted offline recovery trust boundary is separate.
+
+**Evidence status:** these new corrections have been committed on the T04 hardening branch, but do not constitute an independent accepted finding or authorize T05. Only a complete Windows/Ubuntu validation run at the final immutable head, three authentic source-bound role reviews, zero unresolved in-scope findings and a deterministic `ACCEPTED` record can close T04.
