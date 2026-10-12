@@ -23,7 +23,11 @@ import {
 import { createReviewResult } from '../runtime/orchestration/review-result.mjs';
 import { detectArchitectureDrift } from '../runtime/orchestration/architecture-drift.mjs';
 import { decideAcceptance, validateAcceptanceRecord } from '../runtime/orchestration/acceptance-engine.mjs';
-import { unresolvedReviewThreads } from './t04-review-thread-blockers.mjs';
+import {
+  unresolvedReviewThreads,
+  requireCanonicalReviewRequestCommit,
+  parseReviewThreadPage,
+} from './t04-review-thread-blockers.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RUN = 'T04-HARDENING-REVIEWED-20261009';
@@ -169,8 +173,7 @@ for (const entry of receipts.reviews) {
   assert.deepEqual(REQUIRED_ROLES.filter(role =>
     request.body.includes('Independent role: ' + role)), [entry.role],
     'A scope request cannot authenticate multiple reviewer roles');
-  assert.ok(request.body.includes(REVIEWED_SOURCE),
-    'Reviewer scope request must bind the inspected immutable source commit');
+  requireCanonicalReviewRequestCommit(request.body, REVIEWED_SOURCE);
 
   // Reject any receipt if unresolved blocking findings remain on PR #70
   const query = `query($owner: String!, $repo: String!, $pr: Int!, $cursor: String) {
@@ -202,10 +205,12 @@ for (const entry of receipts.reviews) {
       pr: 70,
       cursor,
     });
-    const page = data.repository.pullRequest.reviewThreads;
-    threads.push(...(page.nodes || []));
-    if (!page.pageInfo.hasNextPage) break;
-    cursor = page.pageInfo.endCursor;
+    const page = parseReviewThreadPage(data?.repository?.pullRequest?.reviewThreads);
+    threads.push(...page.nodes);
+    if (!page.hasNextPage) break;
+    assert.notEqual(page.endCursor, cursor,
+      'Authenticated GitHub review-thread pagination cursor did not advance');
+    cursor = page.endCursor;
   }
   // A P2 is no less an unresolved finding for the documented zero-open-
   // comments policy. Fail closed for ALL unresolved threads (including
