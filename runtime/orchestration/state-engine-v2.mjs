@@ -1187,27 +1187,6 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
   }
 
   const paths = ensureStateEngineLayout(rootDir);
-  const expectedIdentity = fs.lstatSync(paths.events);
-  const existingContent = fs.readFileSync(paths.events, 'utf8');
-  const existing = parseLedger(existingContent);
-  let previous = existing.at(-1) ?? null;
-  for (const event of newEvents) {
-    validateStateEvent(event, previous);
-    previous = event;
-  }
-  const allEvents = [...existing, ...newEvents];
-  // Validate and reconstruct before beginning a durable state mutation.
-  const nextSnapshot = rebuildSnapshotFromEvents(allEvents);
-  // A valid last event may lack the optional terminating newline. Preserve
-  // record separation when appending, including in the crash-recovery journal.
-  const separator = existingContent.length > 0 && !existingContent.endsWith('\n') ? '\n' : '';
-  const suffix = separator + newEvents.map((event) => JSON.stringify(stable(event))).join('\n') + '\n';
-  const pending = {
-    schemaVersion: '1.0.0',
-    previousByteLength: Buffer.byteLength(existingContent, 'utf8'),
-    previousHash: sha256(Buffer.from(existingContent, 'utf8')),
-    suffix,
-  };
   const dirFd = fs.openSync(paths.stateRoot, 'r');
   try {
     const pinned = fs.fstatSync(dirFd);
@@ -1216,6 +1195,34 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
       pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
       throw new StateEngineError('State Engine directory changed before durable write preparation');
     }
+    const rootDirParent = path.dirname(path.dirname(paths.stateRoot));
+    assertStateRootRealpathSafe({ root: rootDirParent, stateRoot: paths.stateRoot });
+
+    const ledgerPath = process.platform === 'linux'
+      ? path.join('/proc/self/fd/' + dirFd, path.basename(paths.events))
+      : paths.events;
+    const expectedIdentity = fs.lstatSync(ledgerPath);
+    const existingContent = fs.readFileSync(ledgerPath, 'utf8');
+    const existing = parseLedger(existingContent);
+    let previous = existing.at(-1) ?? null;
+    for (const event of newEvents) {
+      validateStateEvent(event, previous);
+      previous = event;
+    }
+    const allEvents = [...existing, ...newEvents];
+    // Validate and reconstruct before beginning a durable state mutation.
+    const nextSnapshot = rebuildSnapshotFromEvents(allEvents);
+    // A valid last event may lack the optional terminating newline. Preserve
+    // record separation when appending, including in the crash-recovery journal.
+    const separator = existingContent.length > 0 && !existingContent.endsWith('\n') ? '\n' : '';
+    const suffix = separator + newEvents.map((event) => JSON.stringify(stable(event))).join('\n') + '\n';
+    const pending = {
+      schemaVersion: '1.0.0',
+      previousByteLength: Buffer.byteLength(existingContent, 'utf8'),
+      previousHash: sha256(Buffer.from(existingContent, 'utf8')),
+      suffix,
+    };
+
     atomicWrite(paths.pending, stablePretty(pending), dirFd);
     // Physical append avoids O(history) rewrites; the pending journal permits
     // deterministic repair after a torn write or interrupted snapshot persist.
