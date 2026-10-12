@@ -23,6 +23,7 @@ import {
 import { createReviewResult } from '../runtime/orchestration/review-result.mjs';
 import { detectArchitectureDrift } from '../runtime/orchestration/architecture-drift.mjs';
 import { decideAcceptance, validateAcceptanceRecord } from '../runtime/orchestration/acceptance-engine.mjs';
+import { unresolvedReviewThreads } from './t04-review-thread-blockers.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RUN = 'T04-HARDENING-REVIEWED-20261009';
@@ -206,17 +207,12 @@ for (const entry of receipts.reviews) {
     if (!page.pageInfo.hasNextPage) break;
     cursor = page.pageInfo.endCursor;
   }
-  const unresolvedP1Threads = threads.filter(t => {
-    if (t.isResolved) return false;
-    const body = t.comments?.nodes?.[0]?.body || '';
-    return body.includes('P1 Badge') ||
-      body.includes('![P1 Badge]') ||
-      /\[P1\]/i.test(body) ||
-      /\bP1\s*:/i.test(body) ||
-      /\bPriority\s*:\s*P1\b/i.test(body);
-  });
-  assert.equal(unresolvedP1Threads.length, 0,
-    'Unresolved blocking P1 review threads remain on PR #70; refusing review receipt');
+  // A P2 is no less an unresolved finding for the documented zero-open-
+  // comments policy. Fail closed for ALL unresolved threads (including
+  // malformed/unknown priority), not just those carrying a P1 badge.
+  const unresolvedThreads = unresolvedReviewThreads(threads);
+  assert.equal(unresolvedThreads.length, 0,
+    'Unresolved review threads (including P2) remain on PR #70; refusing review receipt');
 
   let reviewDate;
   let reviewUrl;
