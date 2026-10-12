@@ -1162,6 +1162,14 @@ function recoverPendingCommitLocked(rootDir) {
         }
         fs.fsyncSync(fd);
       }
+      // Re-verify the directory entry after fsync to ensure the canonical path
+      // still names the repaired inode before publishing derived views (PRRC_kwDOTd-YNM79WYGR).
+      const finalEntry = fs.lstatSync(eventsTarget);
+      const finalStat = fs.fstatSync(fd);
+      if (!finalEntry.isFile() || finalEntry.isSymbolicLink() || finalEntry.nlink !== 1 ||
+        finalEntry.dev !== finalStat.dev || finalEntry.ino !== finalStat.ino) {
+        throw new StateEngineError('Canonical ledger directory entry was displaced during pending recovery');
+      }
       canonical = rebuildSnapshotFromEvents(
         parseLedger(Buffer.concat([bytes.subarray(0, pending.previousByteLength), expectedSuffix]).toString('utf8')),
       );
