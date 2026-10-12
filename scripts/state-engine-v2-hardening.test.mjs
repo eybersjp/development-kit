@@ -782,3 +782,84 @@ test('T04-H42 appendDurably fails closed if canonical ledger entry is displaced 
 
 
 
+
+function swapLedgerBeforeJournalUnlink(t, paths, replacementContent) {
+  const originalUnlink = fs.unlinkSync;
+  const displaced = path.join(paths.stateRoot, 'displaced-events.jsonl');
+  const state = { swapped: false, skipped: false, displaced, restore() {
+    fs.unlinkSync = originalUnlink;
+    if (state.swapped) {
+      fs.rmSync(paths.events, { force: true });
+      fs.renameSync(displaced, paths.events);
+    }
+  } };
+  fs.unlinkSync = function swapBetweenFinalLstatAndUnlink(target, ...rest) {
+    if (!state.swapped && typeof target === 'string' && target.endsWith('pending-commit.json')) {
+      try {
+        fs.renameSync(paths.events, displaced);
+        fs.writeFileSync(paths.events, replacementContent, 'utf8');
+        state.swapped = true;
+      } catch (err) {
+        if (process.platform === 'win32' && ['EPERM', 'EBUSY', 'EACCES'].includes(err.code)) {
+          state.skipped = true;
+          t.skip('Windows denies renaming the open ledger; Ubuntu CI provides the inode-swap evidence');
+        } else {
+          throw err;
+        }
+      }
+    }
+    return originalUnlink.call(this, target, ...rest);
+  };
+  return state;
+}
+
+test('T04-H43 ledger swap between final lstat and journal unlink is detected fail-closed on next load (append)', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const preLedger = fs.readFileSync(paths.events, 'utf8');
+  const state = swapLedgerBeforeJournalUnlink(t, paths, preLedger);
+  try {
+    appendMetadataEvent({ rootDir, eventType: 'AMBIGUOUS_EVENT', payload: { value: 2 } });
+  } finally {
+    state.restore();
+  }
+  if (state.skipped) return;
+  assert.equal(state.swapped, true);
+  // Post-condition witnesses: canonical authority is the replacement ledger,
+  // the journal is gone, derived state is ahead of the canonical ledger.
+  assert.equal(fs.existsSync(paths.pending), false);
+  assert.equal(fs.readFileSync(paths.events, 'utf8').split('\n').filter(Boolean).length, 2,
+    'displaced ledger restored holds both events');
+  fs.writeFileSync(paths.events, preLedger, 'utf8');
+  assert.equal(loadCanonicalEvents(rootDir).length, 1);
+  assert.throws(() => loadStateSnapshot(rootDir, { rebuildIfNeeded: false }), /truncated|differs|materialized/i);
+  assert.throws(() => verifyStateEngineIntegrity(rootDir), /truncated|differs|materialized|equivalent/i);
+});
+
+test('T04-H44 ledger swap between final lstat and journal unlink is detected fail-closed on next load (recovery)', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const before = fs.readFileSync(paths.events, 'utf8');
+  appendMetadataEvent({ rootDir, eventType: 'FOLLOWUP_EVENT', payload: { value: 2 } });
+  const suffix = fs.readFileSync(paths.events, 'utf8').slice(before.length);
+  fs.writeFileSync(paths.events, before + suffix.slice(0, 10), 'utf8');
+  fs.writeFileSync(paths.pending, JSON.stringify({
+    schemaVersion: '1.0.0',
+    previousByteLength: Buffer.byteLength(before),
+    previousHash: 'sha256:' + createHash('sha256').update(before).digest('hex'),
+    suffix,
+  }), 'utf8');
+  const state = swapLedgerBeforeJournalUnlink(t, paths, before);
+  try {
+    assert.throws(() => loadStateSnapshot(rootDir, { rebuildIfNeeded: true }), /truncated|differs|materialized/i);
+  } finally {
+    state.restore();
+  }
+  if (state.skipped) return;
+  assert.equal(state.swapped, true);
+  assert.equal(fs.existsSync(paths.pending), false);
+  fs.writeFileSync(paths.events, before, 'utf8');
+  assert.throws(() => loadStateSnapshot(rootDir, { rebuildIfNeeded: false }), /truncated|differs|materialized/i);
+});

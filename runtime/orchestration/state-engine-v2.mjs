@@ -165,7 +165,7 @@ function fsyncParentDirectory(directory) {
   }
 }
 
-function pinnedUnlinkAndSync(filePath, pinnedDirFd = null, expectedLedger = null) {
+function pinnedUnlinkAndSync(filePath, pinnedDirFd = null) {
   const directory = path.dirname(filePath);
   const file = path.basename(filePath);
   const ownsDirFd = !pinnedDirFd;
@@ -184,14 +184,11 @@ function pinnedUnlinkAndSync(filePath, pinnedDirFd = null, expectedLedger = null
     if (preStat.isSymbolicLink() || !preStat.isFile() || preStat.nlink > 1) {
       throw new StateEngineError('Target journal file is not a regular unlinked file');
     }
-    if (expectedLedger) {
-      const ledgerEntry = fs.lstatSync(expectedLedger.path);
-      const ledgerStat = fs.fstatSync(expectedLedger.fd);
-      if (!ledgerEntry.isFile() || ledgerEntry.isSymbolicLink() || ledgerEntry.nlink !== 1 ||
-        ledgerEntry.dev !== ledgerStat.dev || ledgerEntry.ino !== ledgerStat.ino) {
-        throw new StateEngineError('Canonical ledger directory entry was displaced; refusing to unlink pending journal');
-      }
-    }
+    // Trust model (T04, trusted/exclusive local runtime): two directory entries
+    // cannot be checked-and-unlinked atomically against a hostile same-UID
+    // process, so no ledger-binding check is attempted here. Ledger authority is
+    // enforced instead on every load, which rejects any snapshot/index that is
+    // inconsistent with canonical history (see loadStateSnapshot).
     // Recheck directory immediately before unlink on platforms without descriptor-relative paths
     const latest = fs.lstatSync(directory);
     if (!latest.isDirectory() || latest.isSymbolicLink() ||
@@ -1199,7 +1196,7 @@ function recoverPendingCommitLocked(rootDir) {
         throw new StateEngineError('Pending recovery conflicts with snapshot integrity witness');
       }
       persistDerived(canonical, rootDir, dirFd);
-      pinnedUnlinkAndSync(paths.pending, dirFd, { path: eventsTarget, fd });
+      pinnedUnlinkAndSync(paths.pending, dirFd);
     } finally {
       fs.closeSync(fd);
     }
@@ -1299,7 +1296,7 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
       // deterministic repair after a torn write or interrupted snapshot persist.
       appendDurably(paths.events, suffix, expectedIdentity, dirFd, readFd);
       const { index } = persistDerived(nextSnapshot, rootDir, dirFd);
-      pinnedUnlinkAndSync(paths.pending, dirFd, { path: ledgerPath, fd: readFd });
+      pinnedUnlinkAndSync(paths.pending, dirFd);
       return { events: newEvents, snapshot: nextSnapshot, index };
     } finally {
       fs.closeSync(readFd);

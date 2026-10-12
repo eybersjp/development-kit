@@ -46,3 +46,19 @@ Normal State Engine writers never discard an uncertain `state.lock.reclaim` guar
 Automated tests H24–H28 validate offline confirmation, journal recovery after an injected failure and a real child-process termination, and operator-recoverable orphan guards. Earlier H01–H23 cover ledger integrity, concurrent writers, symlinks/hardlinks, snapshot recovery and permission preservation.
 
 **Formal acceptance decision must record:** whether the explicitly narrower *trusted offline operator* boundary is acceptable to the product owner/security authority for the T04 legacy restore capability. Automated tests cannot confer that authorization; independent risk-3 review must confirm that the code matches this scope, no in-scope Critical/Major findings remain, and the deterministic DKF governance evidence is persisted.
+
+
+## Supported runtime threat model (T04, approved decision)
+
+State Engine V2 automatic append and recovery support a **trusted, exclusive local runtime**. Hostile concurrent mutation by a process holding the same OS credentials (same-UID write authority) is **out of scope**: Node.js `lstat`/`fstat`/`rename`/`unlink`, `/proc/self/fd` and cooperative project locks cannot atomically protect two directory entries against such an actor, and `0700` modes or `confirmOffline` flags do not isolate it. This decision is separate from, and does not extend, the offline-only restore exception above.
+
+Guarantees that remain:
+
+- The canonical ledger (`events.jsonl`) is the sole authority. Snapshot and index are derived and verified against ledger contents on every load; a snapshot ahead of, or hash-divergent from, the ledger fails closed (`loadStateSnapshot`, `verifyStateEngineIntegrity`).
+- An append is acknowledged only after the ledger append is fsynced, derived state is published and the pending journal is removed.
+- A commit that cannot be proven (for example the ledger entry was replaced mid-commit) is *ambiguous*: it is detected as ledger/derived inconsistency on the next load rather than prevented. No after-the-fact check claims to prevent a concurrent authorized adversary.
+- Directory/descriptor pinning, symlink/hardlink/inode checks and held ledger descriptors remain as defence-in-depth against accidental and non-concurrent tampering.
+
+Supporting hostile same-UID mutation would require an OS-enforced boundary (separate credentials/ACLs or a native helper service) proven on every supported platform and is not part of v0.12.
+
+Regression evidence: `T04-H43` (append) and `T04-H44` (recovery) replace the ledger entry between the final check and the journal `unlink`, capture ledger/journal/snapshot witnesses and assert fail-closed detection on next load. The Windows fixture is skipped when the host denies renaming an open file; Ubuntu CI provides the inode-swap evidence and the skip is not claimed as cross-platform resistance.
