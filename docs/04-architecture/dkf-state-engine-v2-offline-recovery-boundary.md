@@ -26,6 +26,8 @@ A future capability supporting actively hostile same-UID processes across all pl
 
 **Recovery:** If a crash interrupts promotion, new `restoreLegacyBackup` calls refuse to run while the journal exists. A trusted operator explicitly calls `recoverLegacyRestore({targetRoot, confirmOffline:true})`. Recovery verifies the exact same target, transaction name, and persisted inode witnesses; restores a displaced original if the target is absent; or acknowledges an already promoted candidate. Ambiguous, swapped or malformed states fail closed without guessing.
 
+**Windows namespace-durability review:** The recovery rollback of a displaced original now requests `MoveFileExW(MOVEFILE_WRITE_THROUGH)` through the bundled `windows-durable-rename.ps1` helper and fails closed without deleting the journal when the native call cannot complete. A Windows-only H48 fixture exercises this path. The normal staged promotion/journal-publication sequence still needs independent evaluation of Windows power-loss ordering: Node's portable `fs.renameSync` does not provide a directory metadata fsync, and a functional CI run is not a simulated power failure. See blocking Issue [#73](https://github.com/eybersjp/development-kit/issues/73). Do not claim T04 Windows recovery durability is universally proven or waive the issue as part of the unrelated hostile same-account deferral.
+
 ## 3. State lock guard failure recovery
 
 Normal State Engine writers never discard an uncertain `state.lock.reclaim` guard. The guard contains local PID, hostname, unique owner token and creation timestamp. A guard can be left behind by a crash or host termination.
