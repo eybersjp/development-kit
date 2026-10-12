@@ -1211,8 +1211,37 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
     const ledgerPath = process.platform === 'linux'
       ? path.join('/proc/self/fd/' + dirFd, path.basename(paths.events))
       : paths.events;
-    const expectedIdentity = fs.lstatSync(ledgerPath);
-    const existingContent = fs.readFileSync(ledgerPath, 'utf8');
+
+    // Open ledger with descriptor-bound flags and read through this descriptor
+    // so preparation and identity witness come from the exact same descriptor.
+    const readFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0);
+    const readFd = fs.openSync(ledgerPath, readFlags);
+    let existingContent;
+    let expectedIdentity;
+    try {
+      const openedStat = fs.fstatSync(readFd);
+      const entryStat = fs.lstatSync(ledgerPath);
+      if (!openedStat.isFile() || openedStat.nlink !== 1 || entryStat.isSymbolicLink() ||
+        !entryStat.isFile() || entryStat.nlink !== 1 ||
+        openedStat.dev !== entryStat.dev || openedStat.ino !== entryStat.ino) {
+        throw new StateEngineError('Canonical event file symlink/inode mismatch or multiple hard links');
+      }
+      expectedIdentity = { dev: openedStat.dev, ino: openedStat.ino, size: openedStat.size };
+      const bytes = Buffer.alloc(openedStat.size);
+      let read = 0;
+      while (read < bytes.length) {
+        const amount = fs.readSync(readFd, bytes, read, bytes.length - read, read);
+        if (amount <= 0 && read < bytes.length) {
+          throw new StateEngineError('Canonical ledger changed while reading during preparation');
+        }
+        if (amount <= 0) break;
+        read += amount;
+      }
+      existingContent = bytes.toString('utf8');
+    } finally {
+      fs.closeSync(readFd);
+    }
+
     const existing = parseLedger(existingContent);
     let previous = existing.at(-1) ?? null;
     for (const event of newEvents) {
