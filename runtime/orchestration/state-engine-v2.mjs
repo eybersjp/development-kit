@@ -1124,8 +1124,10 @@ function recoverPendingCommitLocked(rootDir) {
     const flags = fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW ?? 0);
     const fd = fs.openSync(eventsTarget, flags);
     let canonical;
+    let canonicalStat;
     try {
       const opened = fs.fstatSync(fd);
+      canonicalStat = opened;
       const entry = fs.lstatSync(eventsTarget);
       if (!opened.isFile() || !entry.isFile() || entry.isSymbolicLink() ||
         opened.nlink !== 1 || entry.nlink !== 1 ||
@@ -1192,6 +1194,11 @@ function recoverPendingCommitLocked(rootDir) {
       throw new StateEngineError('Pending recovery conflicts with snapshot integrity witness');
     }
     persistDerived(canonical, rootDir, dirFd);
+    const verifyEntry = fs.lstatSync(eventsTarget);
+    if (!verifyEntry.isFile() || verifyEntry.isSymbolicLink() || verifyEntry.nlink !== 1 ||
+      verifyEntry.dev !== canonicalStat.dev || verifyEntry.ino !== canonicalStat.ino) {
+      throw new StateEngineError('Canonical ledger directory entry was displaced; preserving pending journal in recovery');
+    }
     pinnedUnlinkAndSync(paths.pending, dirFd);
   } finally {
     fs.closeSync(dirFd);
@@ -1289,6 +1296,14 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
       // deterministic repair after a torn write or interrupted snapshot persist.
       appendDurably(paths.events, suffix, expectedIdentity, dirFd, readFd);
       const { index } = persistDerived(nextSnapshot, rootDir, dirFd);
+      // Double check canonical ledger entry immediately before removing pending journal.
+      // If the ledger entry was unlinked or displaced, fail closed without unlinking pending.json
+      const verifyEntry = fs.lstatSync(ledgerPath);
+      const verifyStat = fs.fstatSync(readFd);
+      if (!verifyEntry.isFile() || verifyEntry.isSymbolicLink() || verifyEntry.nlink !== 1 ||
+        verifyEntry.dev !== verifyStat.dev || verifyEntry.ino !== verifyStat.ino) {
+        throw new StateEngineError('Canonical ledger directory entry was displaced; preserving pending journal');
+      }
       pinnedUnlinkAndSync(paths.pending, dirFd);
       return { events: newEvents, snapshot: nextSnapshot, index };
     } finally {
