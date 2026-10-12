@@ -733,6 +733,80 @@ test('T04-H28 restore journals preserve original after a simulated process death
 });
 
 
+test('T04-H47 recovery fsyncs the restored parent entry before deleting its rollback journal', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('POSIX parent-directory fsync durability semantics are not available on Windows');
+    return;
+  }
+  const source = tempProject(t, 'dk-rollback-fsync-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const root = tempProject(t, 'dk-rollback-fsync-target-');
+  const sentinel = path.join(root, 'original.txt');
+  fs.writeFileSync(sentinel, 'ROLLBACK-ORIGINAL', 'utf8');
+
+  // A real process exit avoids running the normal in-process finally rollback.
+  const script = [
+    'import fs from "node:fs";',
+    'import {restoreLegacyBackup} from ' +
+      JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href) + ';',
+    'const backup=process.argv[1],root=process.argv[2],rename=fs.renameSync;',
+    'fs.renameSync=function(a,b,...rest){',
+    ' if(a===root && String(b).endsWith("-original")) {rename.call(this,a,b,...rest);process.exit(91);}',
+    ' return rename.call(this,a,b,...rest);',
+    '};',
+    'restoreLegacyBackup({backupPath:backup,targetRoot:root,confirmOffline:true});',
+  ].join('\n');
+  const result = requireSpawnSync(process.execPath,
+    ['--input-type=module', '-e', script, migrated.backupPath, root]);
+  assert.equal(result.status, 91, result.stderr);
+  assert.equal(fs.existsSync(root), false);
+
+  const parent = path.dirname(root);
+  const parentStat = fs.statSync(parent);
+  const originalRename = fs.renameSync;
+  const originalFsync = fs.fsyncSync;
+  const originalUnlink = fs.unlinkSync;
+  let rollbackRenamed = false;
+  let parentSyncedAfterRollback = false;
+  let journalRemoved = false;
+  fs.renameSync = function watchRollback(from, to, ...args) {
+    const returned = originalRename.call(this, from, to, ...args);
+    if (typeof from === 'string' && from.endsWith('-original') && to === root) {
+      rollbackRenamed = true;
+    }
+    return returned;
+  };
+  fs.fsyncSync = function watchParentDurability(fd) {
+    const stat = fs.fstatSync(fd);
+    if (rollbackRenamed && stat.isDirectory() &&
+      stat.dev === parentStat.dev && stat.ino === parentStat.ino) {
+      parentSyncedAfterRollback = true;
+    }
+    return originalFsync.call(this, fd);
+  };
+  fs.unlinkSync = function guardJournalRemoval(target, ...args) {
+    if (typeof target === 'string' &&
+      path.basename(target).startsWith('.dk-restore-journal-')) {
+      journalRemoved = true;
+      assert.equal(rollbackRenamed, true, 'Recovery must restore the displaced root');
+      assert.equal(parentSyncedAfterRollback, true,
+        'Rollback directory rename must be fsynced before deleting the journal');
+    }
+    return originalUnlink.call(this, target, ...args);
+  };
+  try {
+    const recovery = recoverLegacyRestore({ targetRoot: root, confirmOffline: true });
+    assert.equal(recovery.outcome, 'rolled-back-original');
+    assert.ok(journalRemoved);
+    assert.equal(fs.readFileSync(sentinel, 'utf8'), 'ROLLBACK-ORIGINAL');
+  } finally {
+    fs.renameSync = originalRename;
+    fs.fsyncSync = originalFsync;
+    fs.unlinkSync = originalUnlink;
+  }
+});
+
 test('T04-H30 offline staged restore preserves descendant file identity and POSIX permission metadata', (t) => {
   if (process.platform === 'win32') {
     t.skip('POSIX ownership and mode semantics require a POSIX host'); return;
