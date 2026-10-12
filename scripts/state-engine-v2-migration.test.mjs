@@ -807,6 +807,66 @@ test('T04-H47 recovery fsyncs the restored parent entry before deleting its roll
   }
 });
 
+test('T04-H48 Windows crash rollback uses native write-through move before journal unlink', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('Windows-native MoveFileExW write-through semantics');
+    return;
+  }
+  const helper = fs.readFileSync(new URL('./windows-durable-rename.ps1', import.meta.url), 'utf8');
+  assert.match(helper, /MoveFileExW/);
+  assert.match(helper, /MOVEFILE_WRITE_THROUGH/);
+
+  const source = tempProject(t, 'dk-win-rollback-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const root = tempProject(t, 'dk-win-rollback-target-');
+  const sentinel = path.join(root, 'original.txt');
+  fs.writeFileSync(sentinel, 'WINDOWS-ORIGINAL', 'utf8');
+
+  const script = [
+    'import fs from "node:fs";',
+    'import {restoreLegacyBackup} from ' +
+      JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href) + ';',
+    'const backup=process.argv[1],root=process.argv[2],rename=fs.renameSync;',
+    'fs.renameSync=function(a,b,...rest){',
+    ' if(a===root && String(b).endsWith("-original")) {rename.call(this,a,b,...rest);process.exit(91);}',
+    ' return rename.call(this,a,b,...rest);',
+    '};',
+    'restoreLegacyBackup({backupPath:backup,targetRoot:root,confirmOffline:true});',
+  ].join('\n');
+  const result = requireSpawnSync(process.execPath,
+    ['--input-type=module', '-e', script, migrated.backupPath, root]);
+  assert.equal(result.status, 91, result.stderr);
+  assert.equal(fs.existsSync(root), false);
+
+  const originalRename = fs.renameSync;
+  const originalUnlink = fs.unlinkSync;
+  let journalRemoved = false;
+  fs.renameSync = function forbidUnflushedRollback(from, to, ...args) {
+    if (typeof from === 'string' && from.endsWith('-original') && to === root) {
+      throw new Error('Windows restore rollback must use the native write-through API');
+    }
+    return originalRename.call(this, from, to, ...args);
+  };
+  fs.unlinkSync = function guardJournalRemoval(target, ...args) {
+    if (typeof target === 'string' &&
+      path.basename(target).startsWith('.dk-restore-journal-')) {
+      journalRemoved = true;
+      assert.equal(fs.readFileSync(sentinel, 'utf8'), 'WINDOWS-ORIGINAL');
+    }
+    return originalUnlink.call(this, target, ...args);
+  };
+  try {
+    const recovered = recoverLegacyRestore({ targetRoot: root, confirmOffline: true });
+    assert.equal(recovered.outcome, 'rolled-back-original');
+    assert.ok(journalRemoved);
+    assert.equal(fs.readFileSync(sentinel, 'utf8'), 'WINDOWS-ORIGINAL');
+  } finally {
+    fs.renameSync = originalRename;
+    fs.unlinkSync = originalUnlink;
+  }
+});
+
 test('T04-H30 offline staged restore preserves descendant file identity and POSIX permission metadata', (t) => {
   if (process.platform === 'win32') {
     t.skip('POSIX ownership and mode semantics require a POSIX host'); return;
