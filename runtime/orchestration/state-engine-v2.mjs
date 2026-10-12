@@ -855,7 +855,7 @@ export function validateStateIndex(index, snapshot = null) {
 
 function persistDerived(snapshot, rootDir, pinnedDirFd = null) {
   validateStateSnapshot(snapshot);
-  const paths = ensureStateEngineLayout(rootDir);
+  const paths = pinnedDirFd ? statePaths(rootDir) : ensureStateEngineLayout(rootDir);
   const index = buildStateIndex(snapshot);
   atomicWrite(paths.snapshot, stablePretty(snapshot), pinnedDirFd);
   atomicWrite(paths.index, stablePretty(index), pinnedDirFd);
