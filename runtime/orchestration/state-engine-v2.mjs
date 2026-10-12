@@ -853,12 +853,12 @@ export function validateStateIndex(index, snapshot = null) {
   return true;
 }
 
-function persistDerived(snapshot, rootDir) {
+function persistDerived(snapshot, rootDir, pinnedDirFd = null) {
   validateStateSnapshot(snapshot);
   const paths = ensureStateEngineLayout(rootDir);
   const index = buildStateIndex(snapshot);
-  atomicWrite(paths.snapshot, stablePretty(snapshot));
-  atomicWrite(paths.index, stablePretty(index));
+  atomicWrite(paths.snapshot, stablePretty(snapshot), pinnedDirFd);
+  atomicWrite(paths.index, stablePretty(index), pinnedDirFd);
   return { snapshot, index };
 }
 
@@ -1011,34 +1011,58 @@ function buildEvent({
   return event;
 }
 
-function appendDurably(filePath, appendedText, expectedIdentity = null) {
-  // O_NOFOLLOW rejects a final-component symlink on supported POSIX hosts.
-  // On Windows, verify the opened inode and current directory entry before
-  // writing because path-only preflight cannot prevent a replacement race.
-  const flags = fs.constants.O_WRONLY | fs.constants.O_APPEND | (fs.constants.O_NOFOLLOW ?? 0);
-  const fd = fs.openSync(filePath, flags);
+function appendDurably(filePath, appendedText, expectedIdentity = null, pinnedDirFd = null) {
+  const directory = path.dirname(filePath);
+  const file = path.basename(filePath);
+  const ownsDirFd = !pinnedDirFd;
+  const dirFd = pinnedDirFd ?? fs.openSync(directory, 'r');
   try {
-    const stat = fs.fstatSync(fd);
-    const entry = fs.lstatSync(filePath);
-    if (!stat.isFile() || stat.nlink !== 1 || entry.isSymbolicLink() ||
-      !entry.isFile() || entry.nlink !== 1 ||
-      entry.dev !== stat.dev || entry.ino !== stat.ino) {
-      throw new StateEngineError('Canonical event file symlink/inode mismatch or multiple hard links');
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(directory);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed before durable append');
     }
-    if (expectedIdentity && (stat.dev !== expectedIdentity.dev ||
-      stat.ino !== expectedIdentity.ino || stat.size !== expectedIdentity.size)) {
-      throw new StateEngineError('Canonical event inode changed between event preparation and append');
+    const rootDir = path.dirname(path.dirname(directory));
+    assertStateRootRealpathSafe({ root: rootDir, stateRoot: directory });
+    const target = process.platform === 'linux' ? path.join('/proc/self/fd/' + dirFd, file) : filePath;
+    // O_NOFOLLOW rejects a final-component symlink on supported POSIX hosts.
+    // On Windows, verify the opened inode and current directory entry before
+    // writing because path-only preflight cannot prevent a replacement race.
+    const flags = fs.constants.O_WRONLY | fs.constants.O_APPEND | (fs.constants.O_NOFOLLOW ?? 0);
+    const fd = fs.openSync(target, flags);
+    try {
+      const stat = fs.fstatSync(fd);
+      const entry = fs.lstatSync(target);
+      if (!stat.isFile() || stat.nlink !== 1 || entry.isSymbolicLink() ||
+        !entry.isFile() || entry.nlink !== 1 ||
+        entry.dev !== stat.dev || entry.ino !== stat.ino) {
+        throw new StateEngineError('Canonical event file symlink/inode mismatch or multiple hard links');
+      }
+      if (expectedIdentity && (stat.dev !== expectedIdentity.dev ||
+        stat.ino !== expectedIdentity.ino || stat.size !== expectedIdentity.size)) {
+        throw new StateEngineError('Canonical event inode changed between event preparation and append');
+      }
+      // Recheck directory immediately before write on platforms without descriptor-relative paths
+      const latest = fs.lstatSync(directory);
+      if (!latest.isDirectory() || latest.isSymbolicLink() ||
+        latest.dev !== pinned.dev || latest.ino !== pinned.ino) {
+        throw new StateEngineError('State Engine directory was replaced before durable append');
+      }
+      const bytes = Buffer.from(appendedText, 'utf8');
+      let written = 0;
+      while (written < bytes.length) {
+        const amount = fs.writeSync(fd, bytes, written, bytes.length - written);
+        if (amount <= 0) throw new StateEngineError('Canonical event append made no forward progress');
+        written += amount;
+      }
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
     }
-    const bytes = Buffer.from(appendedText, 'utf8');
-    let written = 0;
-    while (written < bytes.length) {
-      const amount = fs.writeSync(fd, bytes, written, bytes.length - written);
-      if (amount <= 0) throw new StateEngineError('Canonical event append made no forward progress');
-      written += amount;
-    }
-    fs.fsyncSync(fd);
+    if (process.platform !== 'win32') fs.fsyncSync(dirFd);
   } finally {
-    fs.closeSync(fd);
+    if (ownsDirFd) fs.closeSync(dirFd);
   }
 }
 
@@ -1134,7 +1158,7 @@ function recoverPendingCommitLocked(rootDir) {
       && witness.lastEventHash !== canonical.lastEventHash) {
       throw new StateEngineError('Pending recovery conflicts with snapshot integrity witness');
     }
-    persistDerived(canonical, rootDir);
+    persistDerived(canonical, rootDir, dirFd);
     pinnedUnlinkAndSync(paths.pending, dirFd);
   } finally {
     fs.closeSync(dirFd);
@@ -1195,8 +1219,8 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
     atomicWrite(paths.pending, stablePretty(pending), dirFd);
     // Physical append avoids O(history) rewrites; the pending journal permits
     // deterministic repair after a torn write or interrupted snapshot persist.
-    appendDurably(paths.events, suffix, expectedIdentity);
-    const { index } = persistDerived(nextSnapshot, rootDir);
+    appendDurably(paths.events, suffix, expectedIdentity, dirFd);
+    const { index } = persistDerived(nextSnapshot, rootDir, dirFd);
     pinnedUnlinkAndSync(paths.pending, dirFd);
     return { events: newEvents, snapshot: nextSnapshot, index };
   } finally {

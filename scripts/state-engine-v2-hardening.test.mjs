@@ -550,25 +550,34 @@ test('T04-H37 pending journal unlink fails closed when state directory is replac
   const originalOpen = fs.openSync;
   let swapped = false;
 
-  // Intercept openSync on the stateRoot directory when performing pinnedUnlinkAndSync
+  // Intercept before unlink or atomic write
   let journalCreated = false;
   fs.openSync = function swapRootAtJournalUnlinkOpen(target, flags, ...rest) {
     if (typeof target === 'string' && target.includes('pending-commit.json.tmp-')) {
       journalCreated = true;
     }
-    if (journalCreated && !swapped && target === paths.stateRoot && flags === 'r') {
-      fs.renameSync(paths.stateRoot, moved);
+    if (journalCreated && !swapped && typeof target === 'string' && (target.includes('snapshot.json') || target === paths.snapshot) && typeof flags === 'string' && flags.includes('w')) {
       try {
-        fs.symlinkSync(outside, paths.stateRoot, process.platform === 'win32' ? 'junction' : 'dir');
-      } catch (error) {
-        fs.renameSync(moved, paths.stateRoot);
-        if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
-          t.skip('Host does not permit test directory symlinks/junctions');
+        fs.renameSync(paths.stateRoot, moved);
+        try {
+          fs.symlinkSync(outside, paths.stateRoot, process.platform === 'win32' ? 'junction' : 'dir');
+        } catch (error) {
+          fs.renameSync(moved, paths.stateRoot);
+          if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+            t.skip('Host does not permit test directory symlinks/junctions');
+            return originalOpen.call(this, target, flags, ...rest);
+          }
+          throw error;
+        }
+        swapped = true;
+      } catch (err) {
+        if (process.platform === 'win32' && err.code === 'EPERM') {
+          // Open directory descriptors prevent renaming the directory on Windows
+          t.skip('Windows locks directory handles against renaming while pinned open');
           return originalOpen.call(this, target, flags, ...rest);
         }
-        throw error;
+        throw err;
       }
-      swapped = true;
     }
     return originalOpen.call(this, target, flags, ...rest);
   };
@@ -605,11 +614,19 @@ test('T04-H38 pending journal unlink fails closed when state directory is swappe
     }
     // Trigger swap after journal file is opened/written but before unlink
     if (journalCreated && !swapped && target === paths.events && typeof flags === 'number') {
-      fs.renameSync(paths.stateRoot, moved);
-      // Create a brand new ordinary directory at paths.stateRoot with a decoy pending-commit.json
-      fs.mkdirSync(paths.stateRoot, { recursive: true });
-      fs.writeFileSync(paths.pending, 'DECOY-JOURNAL', 'utf8');
-      swapped = true;
+      try {
+        fs.renameSync(paths.stateRoot, moved);
+        // Create a brand new ordinary directory at paths.stateRoot with a decoy pending-commit.json
+        fs.mkdirSync(paths.stateRoot, { recursive: true });
+        fs.writeFileSync(paths.pending, 'DECOY-JOURNAL', 'utf8');
+        swapped = true;
+      } catch (err) {
+        if (process.platform === 'win32' && err.code === 'EPERM') {
+          t.skip('Windows locks directory handles against renaming while pinned open');
+          return originalOpen.call(this, target, flags, ...rest);
+        }
+        throw err;
+      }
     }
     return originalOpen.call(this, target, flags, ...rest);
   };
@@ -617,6 +634,51 @@ test('T04-H38 pending journal unlink fails closed when state directory is swappe
   try {
     assert.throws(
       () => appendMetadataEvent({ rootDir, eventType: 'SECOND_MUST_FAIL_CLEANUP', payload: {} }),
+      /directory|changed|replaced/i,
+    );
+  } finally {
+    fs.openSync = originalOpen;
+    if (swapped) {
+      fs.rmSync(paths.stateRoot, { recursive: true, force: true });
+      fs.renameSync(moved, paths.stateRoot);
+    }
+  }
+});
+
+test('T04-H40 durable transaction writes fail closed when state directory is replaced before append or derived writes', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'FIRST', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const moved = paths.stateRoot + '-held-for-swap';
+  const originalOpen = fs.openSync;
+  let swapped = false;
+  let journalCreated = false;
+
+  fs.openSync = function swapRootBeforeAppend(target, flags, ...rest) {
+    if (typeof target === 'string' && target.includes('pending-commit.json.tmp-')) {
+      journalCreated = true;
+    }
+    // Swap state directory right before appendDurably opens paths.events
+    if (journalCreated && !swapped && (target === paths.events || (typeof target === 'string' && target.endsWith('/events.jsonl')))) {
+      try {
+        fs.renameSync(paths.stateRoot, moved);
+        fs.mkdirSync(paths.stateRoot, { recursive: true });
+        fs.writeFileSync(paths.events, fs.readFileSync(path.join(moved, 'events.jsonl')));
+        swapped = true;
+      } catch (err) {
+        if (process.platform === 'win32' && err.code === 'EPERM') {
+          t.skip('Windows locks directory handles against renaming while pinned open');
+          return originalOpen.call(this, target, flags, ...rest);
+        }
+        throw err;
+      }
+    }
+    return originalOpen.call(this, target, flags, ...rest);
+  };
+
+  try {
+    assert.throws(
+      () => appendMetadataEvent({ rootDir, eventType: 'SECOND_MUST_FAIL_APPEND', payload: {} }),
       /directory|changed|replaced/i,
     );
   } finally {
