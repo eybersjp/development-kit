@@ -30,3 +30,5 @@ See [validation-architecture.md](../../04-architecture/validation-architecture.m
 - **T04 risk-3 runtime acceptance:** `node scripts/t04-hardening-acceptance-gate.mjs` — GitHub Actions-only, after exact release gates; validates immutable reviewed source, creates persisted DKF verification/security/acceptance records and uploads CI evidence. See [t04-hardening-acceptance-gate.md](t04-hardening-acceptance-gate.md).
 
 - **T04 reviewer-thread safety:** `node --test scripts/t04-review-thread-blockers.test.mjs` — proves every unresolved code-review thread, including P2 and unclassified findings, blocks independent acceptance. See [t04-review-thread-blockers.md](t04-review-thread-blockers.md).
+
+- **Windows restore rollback:** `scripts/windows-durable-rename.ps1` — native Win32 write-through directory move used for recovery, with explicit platform guarantees and review limitations. See [windows-durable-rename.md](windows-durable-rename.md).
