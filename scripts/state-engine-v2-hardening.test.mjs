@@ -385,6 +385,7 @@ test('T04-H22 event append refuses a symlink swapped into place immediately befo
         fs.renameSync(displaced, paths.events);
         if (['EPERM','EACCES','ENOTSUP'].includes(err.code)) {
           t.skip('Host denies file symlink fixture');
+          skipped = true;
           return originalOpen.call(this, file, flags, ...args);
         }
         throw err;
@@ -393,15 +394,21 @@ test('T04-H22 event append refuses a symlink swapped into place immediately befo
     }
     return originalOpen.call(this, file, flags, ...args);
   };
+  let skipped = false;
   try {
-    assert.throws(
-      () => appendMetadataEvent({ rootDir, eventType: 'MUST_NOT_ESCAPE', payload: {} }),
-      /symlink|symbolic|inode|link|ELOOP|outside|State Engine/i,
-    );
+    try {
+      appendMetadataEvent({ rootDir, eventType: 'MUST_NOT_ESCAPE', payload: {} });
+      if (!skipped) {
+        assert.fail('Missing expected exception');
+      }
+    } catch (err) {
+      if (skipped) return;
+      assert.match(String(err), /symlink|symbolic|inode|link|ELOOP|outside|State Engine/i);
+    }
   } finally {
     fs.openSync = originalOpen;
   }
-  if (!injected) return;
+  if (!injected || skipped) return;
   assert.equal(fs.readFileSync(victim, 'utf8'), 'EXTERNAL-SENTINEL');
 });
 
@@ -531,3 +538,55 @@ test('T04-H36 pending journal cannot overwrite external file after state-directo
   assert.equal(fs.readFileSync(protectedFile, 'utf8'), 'EXTERNAL-DATA-MUST-STAY');
   assert.equal(loadCanonicalEvents(rootDir).length, 1);
 });
+
+test('T04-H37 pending journal unlink fails closed when state directory is replaced during commit', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'FIRST', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const outside = tempProject(t);
+  const protectedFile = path.join(outside, 'pending-commit.json');
+  fs.writeFileSync(protectedFile, 'EXTERNAL-SENTINEL-DO-NOT-DELETE', 'utf8');
+  const moved = paths.stateRoot + '-held-for-unlink-test';
+  const originalOpen = fs.openSync;
+  let swapped = false;
+
+  // Intercept openSync on the stateRoot directory when performing pinnedUnlinkAndSync
+  let journalCreated = false;
+  fs.openSync = function swapRootAtJournalUnlinkOpen(target, flags, ...rest) {
+    if (typeof target === 'string' && target.includes('pending-commit.json.tmp-')) {
+      journalCreated = true;
+    }
+    if (journalCreated && !swapped && target === paths.stateRoot && flags === 'r') {
+      fs.renameSync(paths.stateRoot, moved);
+      try {
+        fs.symlinkSync(outside, paths.stateRoot, process.platform === 'win32' ? 'junction' : 'dir');
+      } catch (error) {
+        fs.renameSync(moved, paths.stateRoot);
+        if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+          t.skip('Host does not permit test directory symlinks/junctions');
+          return originalOpen.call(this, target, flags, ...rest);
+        }
+        throw error;
+      }
+      swapped = true;
+    }
+    return originalOpen.call(this, target, flags, ...rest);
+  };
+
+  try {
+    assert.throws(
+      () => appendMetadataEvent({ rootDir, eventType: 'SECOND_MUST_FAIL_CLEANUP', payload: {} }),
+      /directory|symbolic|changed|replaced|journal cleanup|mismatch/i,
+    );
+  } finally {
+    fs.openSync = originalOpen;
+    if (swapped) {
+      fs.unlinkSync(paths.stateRoot);
+      fs.renameSync(moved, paths.stateRoot);
+    }
+  }
+
+  assert.equal(fs.readFileSync(protectedFile, 'utf8'), 'EXTERNAL-SENTINEL-DO-NOT-DELETE',
+    'External victim pending-commit.json must not be unlinked');
+});
+

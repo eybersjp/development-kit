@@ -175,10 +175,10 @@ for (const entry of receipts.reviews) {
       review.body.includes('Review role: ' + entry.role) &&
       /\bPASS\b/.test(review.body),
       'GitHub reviewer did not expressly attest the requested role and PASS verdict');
+    assert.equal(request.created_at, request.updated_at,
+      'Scope request was edited; an edited request cannot authenticate an independent reviewer role');
     assert.ok(Date.parse(review.submitted_at) > Date.parse(request.created_at),
-      'Reviewer submission predates its role-scoped request');
-    assert.ok(Date.parse(request.updated_at) <= Date.parse(review.submitted_at),
-      'Review scope was edited after the independently submitted review');
+      'Reviewer submission must postdate its immutable role-scoped request');
     const comments = await githubApi('pulls/70/reviews/' + review.id + '/comments?per_page=1');
     assert.ok(Array.isArray(comments) && comments.length === 0,
       'Independent reviewer reported findings; fix and request new current-source review');
@@ -194,10 +194,10 @@ for (const entry of receipts.reviews) {
     assert.equal(reaction.user?.login, 'chatgpt-codex-connector[bot]',
       'Review completion reaction must originate from the independent bot');
     assert.equal(reaction.content, '+1', 'Pending or negative reaction is not a PASS verdict');
+    assert.equal(request.created_at, request.updated_at,
+      'Scope request was edited; an edited request cannot authenticate an independent reviewer role');
     assert.ok(Date.parse(reaction.created_at) > Date.parse(request.created_at),
-      'Review completion predates the requested role');
-    assert.ok(Date.parse(request.updated_at) <= Date.parse(reaction.created_at),
-      'Scope request was edited after external review attestation; a previous +1 cannot validate changed authority');
+      'Review completion reaction must postdate its immutable role-scoped request');
     // The bot's independently authored +1 *on this exact, single-role,
     // immutable-source scope request* is its clean-review signal. We never
     // infer that a generic COMMENTED review completed another role.

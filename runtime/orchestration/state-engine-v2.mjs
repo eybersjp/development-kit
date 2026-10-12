@@ -165,6 +165,37 @@ function fsyncParentDirectory(directory) {
   }
 }
 
+function pinnedUnlinkAndSync(filePath) {
+  const directory = path.dirname(filePath);
+  const file = path.basename(filePath);
+  const dirFd = fs.openSync(directory, 'r');
+  try {
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(directory);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed before journal cleanup');
+    }
+    const rootDir = path.dirname(path.dirname(directory));
+    assertStateRootRealpathSafe({ root: rootDir, stateRoot: directory });
+    const target = process.platform === 'linux' ? path.join('/proc/self/fd/' + dirFd, file) : filePath;
+    const preStat = fs.lstatSync(target);
+    if (preStat.isSymbolicLink() || !preStat.isFile() || preStat.nlink > 1) {
+      throw new StateEngineError('Target journal file is not a regular unlinked file');
+    }
+    // Recheck directory immediately before unlink on platforms without descriptor-relative paths
+    const latest = fs.lstatSync(directory);
+    if (!latest.isDirectory() || latest.isSymbolicLink() ||
+      latest.dev !== pinned.dev || latest.ino !== pinned.ino) {
+      throw new StateEngineError('State Engine directory was replaced before journal cleanup');
+    }
+    fs.unlinkSync(target);
+    if (process.platform !== 'win32') fs.fsyncSync(dirFd);
+  } finally {
+    fs.closeSync(dirFd);
+  }
+}
+
 function atomicWrite(filePath, content) {
   const directory = path.dirname(filePath);
   fs.mkdirSync(directory, { recursive: true });
@@ -194,9 +225,10 @@ function atomicWrite(filePath, content) {
     } finally {
       fs.closeSync(fd);
     }
-    // On platforms without descriptor-relative paths revalidate immediately
-    // before publication; a hostile same-UID process remains outside the
-    // portable Node.js isolation guarantees on those systems.
+    // On non-Linux platforms without handle-relative filesystem primitives,
+    // revalidate the directory identity immediately before publication.
+    // Hostile same-UID concurrent processes remain unsupported outside
+    // a trusted offline maintenance environment on those hosts.
     const latest = fs.lstatSync(directory);
     if (!latest.isDirectory() || latest.isSymbolicLink() ||
       latest.dev !== pinned.dev || latest.ino !== pinned.ino) {
@@ -1093,8 +1125,7 @@ function recoverPendingCommitLocked(rootDir) {
     throw new StateEngineError('Pending recovery conflicts with snapshot integrity witness');
   }
   persistDerived(canonical, rootDir);
-  fs.unlinkSync(paths.pending);
-  fsyncParentDirectory(paths.stateRoot);
+  pinnedUnlinkAndSync(paths.pending);
 }
 
 const ACTIVE_STATE_LOCKS = new Set();
@@ -1145,8 +1176,7 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
   // deterministic repair after a torn write or interrupted snapshot persist.
   appendDurably(paths.events, suffix, expectedIdentity);
   const { index } = persistDerived(nextSnapshot, rootDir);
-  fs.unlinkSync(paths.pending);
-  fsyncParentDirectory(paths.stateRoot);
+  pinnedUnlinkAndSync(paths.pending);
   return { events: newEvents, snapshot: nextSnapshot, index };
 }
 

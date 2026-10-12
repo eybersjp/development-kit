@@ -8,11 +8,13 @@
 
 A backup restore changes an entire project directory, including its files and operating-system metadata. Node.js 18+ cannot guarantee descriptor-relative `openat2`/equivalent anti-swap semantics on every supported Windows and Unix filesystem. The framework must **not** claim that path validation, a random staging name, `0700` permissions, or `confirmOffline: true` defeats another malicious process running under the **same OS identity**.
 
+Similarly, runtime atomic publication (`atomicWrite` and `pinnedUnlinkAndSync` for journals, snapshots, and indexes) pins directory descriptors via `/proc/self/fd` on Linux. On supported non-Linux hosts (e.g. Windows and macOS), portable Node.js does not provide kernel-level descriptor-relative pathname resolution; publication revalidates directory device/inode identity immediately before publication and unlink, but cannot guarantee protection against concurrent, hostile same-UID processes manipulating paths. The framework explicitly acknowledges that protection from hostile co-tenant processes sharing the local OS account is not supported on non-Linux platforms without native OS handle primitives.
+
 **Supported T04 restore mode:** an operator-initiated, offline maintenance session with exclusive control of the target project and its parent directory. The operator must stop DKF writers, processes with access to the directory, and any untrusted process sharing the OS account before invocation. Backup bytes are validated, but the local host, operator and offline execution identity are trusted. This is a deliberate environmental scope, **not** an automatic protection enforced by a boolean option. If exclusivity cannot be established, **do not invoke the restore**. Production runtime should remain on the existing canonical state, and no provider should invoke restore autonomously.
 
 The `confirmOffline: true` parameter is a mandatory explicit caller attestation, not proof of isolation. Missing confirmation fails closed before any restore mutation. The restore operation is *not* a security sandbox for attacker-controlled local filesystem writers.
 
-A future capability supporting actively hostile same-UID processes requires a separately reviewed process/OS security boundary and handle-relative filesystem APIs. That capability is excluded from the T04 public contract.
+A future capability supporting actively hostile same-UID processes across all platforms requires a separately reviewed process/OS security boundary and handle-relative filesystem APIs. That capability is excluded from the T04 public contract.
 
 ## 2. Journaled promotion transaction
 
