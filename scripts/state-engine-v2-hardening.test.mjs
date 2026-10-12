@@ -906,3 +906,47 @@ test('T04-H45 missing events.jsonl with pending journal present fails closed acr
     /events\.jsonl is missing while pending-commit\.json is present/i,
   );
 });
+
+test('T04-H46 recovery fsyncs a fully present but unflushed suffix before acknowledging journal', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H46_INITIAL', payload: { seq: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const before = fs.readFileSync(paths.events, 'utf8');
+  appendMetadataEvent({ rootDir, eventType: 'H46_FOLLOWUP', payload: { seq: 2 } });
+  const full = fs.readFileSync(paths.events, 'utf8');
+  const suffix = full.slice(before.length);
+  // Writer died after writing the complete suffix, before fsync and journal removal.
+  fs.writeFileSync(paths.pending, JSON.stringify({
+    schemaVersion: '1.0.0',
+    previousByteLength: Buffer.byteLength(before),
+    previousHash: 'sha256:' + createHash('sha256').update(before).digest('hex'),
+    suffix,
+  }), 'utf8');
+  const ledger = fs.statSync(paths.events);
+  const originalFsync = fs.fsyncSync;
+  const originalUnlink = fs.unlinkSync;
+  let ledgerFlushed = false;
+  let observedJournalRemoval = false;
+  fs.fsyncSync = function trackLedgerFsync(fd) {
+    const stat = fs.fstatSync(fd);
+    if (stat.isFile() && stat.dev === ledger.dev && stat.ino === ledger.ino) ledgerFlushed = true;
+    return originalFsync.call(this, fd);
+  };
+  fs.unlinkSync = function guardJournalUnlink(target, ...args) {
+    if (typeof target === 'string' && target.endsWith('pending-commit.json')) {
+      observedJournalRemoval = true;
+      assert.ok(ledgerFlushed,
+        'Recovery must fsync fully present canonical suffix before removing pending journal');
+    }
+    return originalUnlink.call(this, target, ...args);
+  };
+  try {
+    assert.equal(loadStateSnapshot(rootDir, { rebuildIfNeeded: true }).lastEventSequence, 2);
+    assert.ok(observedJournalRemoval);
+    assert.equal(fs.existsSync(paths.pending), false);
+    assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+  } finally {
+    fs.fsyncSync = originalFsync;
+    fs.unlinkSync = originalUnlink;
+  }
+});
