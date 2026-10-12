@@ -165,7 +165,7 @@ function fsyncParentDirectory(directory) {
   }
 }
 
-function pinnedUnlinkAndSync(filePath) {
+function pinnedUnlinkAndSync(filePath, expectedDirIdentity = null) {
   const directory = path.dirname(filePath);
   const file = path.basename(filePath);
   const dirFd = fs.openSync(directory, 'r');
@@ -175,6 +175,9 @@ function pinnedUnlinkAndSync(filePath) {
     if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
       pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
       throw new StateEngineError('State Engine directory changed before journal cleanup');
+    }
+    if (expectedDirIdentity && (pinned.dev !== expectedDirIdentity.dev || pinned.ino !== expectedDirIdentity.ino)) {
+      throw new StateEngineError('State Engine directory identity differs from initial transaction pinning');
     }
     const rootDir = path.dirname(path.dirname(directory));
     assertStateRootRealpathSafe({ root: rootDir, stateRoot: directory });
@@ -1042,6 +1045,7 @@ function appendDurably(filePath, appendedText, expectedIdentity = null) {
 
 function recoverPendingCommitLocked(rootDir) {
   const paths = ensureStateEngineLayout(rootDir);
+  const pinnedDirIdentity = fs.lstatSync(paths.stateRoot);
   if (!fs.existsSync(paths.pending)) return;
   let pending;
   try {
@@ -1125,7 +1129,7 @@ function recoverPendingCommitLocked(rootDir) {
     throw new StateEngineError('Pending recovery conflicts with snapshot integrity witness');
   }
   persistDerived(canonical, rootDir);
-  pinnedUnlinkAndSync(paths.pending);
+  pinnedUnlinkAndSync(paths.pending, pinnedDirIdentity);
 }
 
 const ACTIVE_STATE_LOCKS = new Set();
@@ -1171,12 +1175,13 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
     previousHash: sha256(Buffer.from(existingContent, 'utf8')),
     suffix,
   };
+  const pinnedDirIdentity = fs.lstatSync(paths.stateRoot);
   atomicWrite(paths.pending, stablePretty(pending));
   // Physical append avoids O(history) rewrites; the pending journal permits
   // deterministic repair after a torn write or interrupted snapshot persist.
   appendDurably(paths.events, suffix, expectedIdentity);
   const { index } = persistDerived(nextSnapshot, rootDir);
-  pinnedUnlinkAndSync(paths.pending);
+  pinnedUnlinkAndSync(paths.pending, pinnedDirIdentity);
   return { events: newEvents, snapshot: nextSnapshot, index };
 }
 

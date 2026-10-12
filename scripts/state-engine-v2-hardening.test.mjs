@@ -590,3 +590,41 @@ test('T04-H37 pending journal unlink fails closed when state directory is replac
     'External victim pending-commit.json must not be unlinked');
 });
 
+test('T04-H38 pending journal unlink fails closed when state directory is swapped with an ordinary directory across transaction', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'FIRST', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const moved = paths.stateRoot + '-held-for-ordinary-dir-swap';
+  const originalOpen = fs.openSync;
+  let swapped = false;
+  let journalCreated = false;
+
+  fs.openSync = function swapRootWithOrdinaryDirectory(target, flags, ...rest) {
+    if (typeof target === 'string' && target.includes('pending-commit.json.tmp-')) {
+      journalCreated = true;
+    }
+    // Trigger swap before pinnedUnlinkAndSync opens the directory descriptor for cleanup
+    if (journalCreated && !swapped && target === paths.stateRoot && flags === 'r') {
+      fs.renameSync(paths.stateRoot, moved);
+      // Create a brand new ordinary directory at paths.stateRoot with a dummy pending-commit.json
+      fs.mkdirSync(paths.stateRoot, { recursive: true });
+      fs.writeFileSync(paths.pending, 'DECOY-JOURNAL', 'utf8');
+      swapped = true;
+    }
+    return originalOpen.call(this, target, flags, ...rest);
+  };
+
+  try {
+    assert.throws(
+      () => appendMetadataEvent({ rootDir, eventType: 'SECOND_MUST_FAIL_CLEANUP', payload: {} }),
+      /directory|changed|replaced|initial transaction pinning/i,
+    );
+  } finally {
+    fs.openSync = originalOpen;
+    if (swapped) {
+      fs.rmSync(paths.stateRoot, { recursive: true, force: true });
+      fs.renameSync(moved, paths.stateRoot);
+    }
+  }
+});
+

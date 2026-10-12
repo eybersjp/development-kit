@@ -198,6 +198,23 @@ for (const entry of receipts.reviews) {
       'Scope request was edited; an edited request cannot authenticate an independent reviewer role');
     assert.ok(Date.parse(reaction.created_at) > Date.parse(request.created_at),
       'Review completion reaction must postdate its immutable role-scoped request');
+
+    // Reject clean reaction if any unresolved blocking findings remain on PR #70
+    const prComments = [];
+    for (let page = 1; ; page++) {
+      const pageItems = await githubApi('pulls/70/comments?per_page=100&page=' + page);
+      if (!Array.isArray(pageItems) || pageItems.length === 0) break;
+      prComments.push(...pageItems);
+      if (pageItems.length < 100) break;
+    }
+    const blockingComments = prComments.filter(c =>
+      c.user?.login === 'chatgpt-codex-connector[bot]' &&
+      !c.in_reply_to_id &&
+      (c.body?.includes('P1 Badge') || c.body?.includes('![P1 Badge]'))
+    );
+    assert.equal(blockingComments.length, 0,
+      'Independent reviewer has unresolved blocking P1 review threads on PR #70; refusing clean reaction');
+
     // The bot's independently authored +1 *on this exact, single-role,
     // immutable-source scope request* is its clean-review signal. We never
     // infer that a generic COMMENTED review completed another role.

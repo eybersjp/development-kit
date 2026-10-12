@@ -167,6 +167,10 @@ function validateBackupBundle(bundle) {
     if (Buffer.from(entry.path, 'utf8').toString('utf8') !== entry.path) {
       throw new StateMigrationError('Legacy backup path contains ill-formed Unicode');
     }
+    const pathParts = entry.path.split(/[/\\]+/).filter(Boolean);
+    if (pathParts.some((part) => part !== '.' && part !== '..' && (part.endsWith('.') || part.endsWith(' ')))) {
+      throw new StateMigrationError('Legacy backup path contains trailing dot or space: ' + entry.path);
+    }
     const content = Buffer.from(entry.contentBase64, 'base64');
     if (content.length !== entry.bytes || stateSha256(content) !== entry.fingerprint) {
       throw new StateMigrationError(`Legacy backup entry integrity failed: ${entry.path}`);
@@ -533,7 +537,7 @@ function resolveSafeRestoreDestination(targetRoot, relativePath, { createMissing
   }
   const rootReal = fs.realpathSync(root);
   const components = path.relative(root, destination).split(path.sep);
-  if (components.some((part) => !part || part === '.' || part === '..')) {
+  if (components.some((part) => !part || part === '.' || part === '..' || part.endsWith('.') || part.endsWith(' '))) {
     throw new StateMigrationError('Invalid legacy backup restore path');
   }
   let current = root;
@@ -755,11 +759,16 @@ export function restoreLegacyBackup({
   }));
   const normalizedDestinations = new Set();
   for (const { entry, destination } of destinations) {
-    // Conservative case/Unicode folding prevents duplicate-target aliases on
-    // APFS/HFS+, NTFS and case-insensitive mounts on otherwise POSIX hosts.
-    // Refusing distinct-case names on a case-sensitive mount is intentional:
+    // Conservative case/Unicode folding and Win32 trailing-dot/space removal
+    // prevents duplicate-target aliases on APFS/HFS+, NTFS, and FAT.
+    // Refusing distinct-case or aliased names on a case-sensitive mount is intentional:
     // restore cannot safely assume a particular target filesystem policy.
-    const key = destination.normalize('NFC').toLowerCase();
+    const key = destination
+      .normalize('NFC')
+      .toLowerCase()
+      .split(/[\\/]+/)
+      .map((part) => part.replace(/[. ]+$/, ''))
+      .join('/');
     if (normalizedDestinations.has(key)) {
       throw new StateMigrationError('Duplicate normalized backup restore destination: ' + entry.path);
     }
