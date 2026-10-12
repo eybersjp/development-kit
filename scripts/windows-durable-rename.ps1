@@ -10,12 +10,8 @@ $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($From) -or [string]::IsNullOrWhiteSpace($To)) {
     throw 'Both directory paths are required'
 }
-if (-not [System.IO.Directory]::Exists($From)) {
-    throw 'Source directory for durable restore rename does not exist'
-}
-if ([System.IO.Directory]::Exists($To) -or [System.IO.File]::Exists($To)) {
-    throw 'Destination already exists; refusing overwrite'
-}
+# The native API checks that the source exists and the destination does not.
+# Avoid .NET file-path normalization of extended-length (\\?\) Win32 paths.
 
 $source = @'
 using System;
@@ -30,5 +26,5 @@ Add-Type -TypeDefinition $source -ErrorAction Stop
 $MOVEFILE_WRITE_THROUGH = [uint32]8
 if (-not [DkfWindowsDurableRename]::MoveFileEx($From, $To, $MOVEFILE_WRITE_THROUGH)) {
     $win32Error = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
-    throw (New-Object System.ComponentModel.Win32Exception($win32Error))
+    throw ([System.ComponentModel.Win32Exception]::new($win32Error))
 }
