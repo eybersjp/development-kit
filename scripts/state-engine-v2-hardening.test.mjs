@@ -376,7 +376,9 @@ test('T04-H22 event append refuses a symlink swapped into place immediately befo
   fs.openSync = function swapCanonicalPathAtAppendOpen(file, flags, ...args) {
     const isAppend = flags === 'a' ||
       (typeof flags === 'number' && (flags & fs.constants.O_APPEND) !== 0);
-    if (!injected && file === paths.events && isAppend) {
+    const isTargetLedger = file === paths.events ||
+      (typeof file === 'string' && file.includes('/proc/self/fd/') && file.endsWith('/events.jsonl'));
+    if (!injected && isTargetLedger && isAppend) {
       const displaced = path.join(paths.stateRoot, 'original-ledger-for-test.jsonl');
       fs.renameSync(paths.events, displaced);
       try {
@@ -613,7 +615,9 @@ test('T04-H38 pending journal unlink fails closed when state directory is swappe
       journalCreated = true;
     }
     // Trigger swap after journal file is opened/written but before unlink
-    if (journalCreated && !swapped && target === paths.events && typeof flags === 'number') {
+    const isTargetLedger = target === paths.events ||
+      (typeof target === 'string' && target.includes('/proc/self/fd/') && target.endsWith('/events.jsonl'));
+    if (journalCreated && !swapped && isTargetLedger && typeof flags === 'number') {
       try {
         fs.renameSync(paths.stateRoot, moved);
         // Create a brand new ordinary directory at paths.stateRoot with a decoy pending-commit.json
