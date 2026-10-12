@@ -252,11 +252,10 @@ for (const entry of receipts.reviews) {
     }
     const unresolvedP1Threads = threads.filter(t =>
       !t.isResolved &&
-      t.comments?.nodes?.[0]?.author?.login === 'chatgpt-codex-connector' &&
-      (t.comments.nodes[0].body.includes('P1 Badge') || t.comments.nodes[0].body.includes('![P1 Badge]'))
+      (t.comments?.nodes?.[0]?.body.includes('P1 Badge') || t.comments?.nodes?.[0]?.body.includes('![P1 Badge]'))
     );
     assert.equal(unresolvedP1Threads.length, 0,
-      'Independent reviewer has unresolved blocking P1 review threads on PR #70; refusing clean reaction');
+      'Unresolved blocking P1 review threads remain on PR #70; refusing clean reaction');
 
     // The bot's independently authored +1 *on this exact, single-role,
     // immutable-source scope request* is its clean-review signal. We never
