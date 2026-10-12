@@ -198,6 +198,7 @@
 * [state-engine-v2-benchmark](03-reference/scripts/state-engine-v2-benchmark.md)
 * [t04-hardening-acceptance-gate](03-reference/scripts/t04-hardening-acceptance-gate.md)
 * [t04-review-thread-blockers](03-reference/scripts/t04-review-thread-blockers.md)
+* [windows-durable-rename](03-reference/scripts/windows-durable-rename.md)
 * [sync-plugin](03-reference/scripts/sync-plugin.md)
 * [ui-preview](03-reference/scripts/ui-preview.md)
 * [token-audit](03-reference/scripts/token-audit.md)
