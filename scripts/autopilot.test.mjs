@@ -89,14 +89,14 @@ test('3. Immutable Revision Persistence & Reading', () => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-test('4. Corrupt Pointer Recovery', () => {
+test('4. Corrupt Materialized Snapshot Recovery', () => {
   const tmpDir = createTempDir();
   const state1 = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
   saveStateRevision(state1, tmpDir);
 
-  // Corrupt current.json
-  const currentFile = path.join(tmpDir, '.development-kit', 'autopilot', 'state', 'current.json');
-  fs.writeFileSync(currentFile, '{ "corrupt": true }', 'utf8');
+  // State Engine V2 canonical history must rebuild a corrupt derived snapshot.
+  const snapshotFile = path.join(tmpDir, '.development-kit', 'state', 'snapshot.json');
+  fs.writeFileSync(snapshotFile, '{ "corrupt": true }', 'utf8');
 
   const recovered = getCurrentState(tmpDir);
   assert.ok(recovered);

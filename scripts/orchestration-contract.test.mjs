@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  DEVELOPMENT_CONTRACT_SCHEMA_VERSION,
   ContractPersistenceError,
   ContractValidationError,
   StaleContractError,
@@ -83,7 +84,7 @@ test('ORCH-001 creates a validated contract with stable evidence boundary and ex
   assert.equal(contract.executionSafety.destructiveOperations, 'explicit-approval');
   assert.equal(contract.executionSafety.remoteMutation, 'explicit-contract');
   assert.equal(contract.acceptanceCriteria.length, 2);
-  assert.equal(contract.schemaVersion, '1.2.0');
+  assert.equal(contract.schemaVersion, DEVELOPMENT_CONTRACT_SCHEMA_VERSION);
   assert.equal(contract.developmentMode.resolved.mode, 'balanced');
   assert.equal(contract.developmentMode.source, 'backward-compatible-default');
   assert.match(contract.developmentMode.fingerprint, /^sha256:[a-f0-9]{64}$/);
@@ -240,6 +241,31 @@ test('ORCH-001 runtime validation rejects malformed or broadened persisted contr
   const unexpectedProperty = structuredClone(contract);
   unexpectedProperty.executionOverride = 'allow-everything';
   assert.throws(() => validateDevelopmentContract(unexpectedProperty), ContractValidationError);
+
+  // P2 regression: malformed requirementIds or malformed requirements structure must throw ContractValidationError, not TypeError
+  const invalidRequirementIds = structuredClone(contract);
+  invalidRequirementIds.acceptanceCriteria[0].requirementIds = 'not-an-array';
+  assert.throws(() => validateDevelopmentContract(invalidRequirementIds), (err) => {
+    return err instanceof ContractValidationError && err.details.some((e) => e.includes('requirementIds must be an array'));
+  });
+
+  const nullRequirementIds = structuredClone(contract);
+  nullRequirementIds.acceptanceCriteria[0].requirementIds = null;
+  assert.throws(() => validateDevelopmentContract(nullRequirementIds), (err) => {
+    return err instanceof ContractValidationError && err.details.some((e) => e.includes('requirementIds must be an array'));
+  });
+
+  const malformedRequirements = structuredClone(contract);
+  malformedRequirements.requirements = 'not-an-array';
+  assert.throws(() => validateDevelopmentContract(malformedRequirements), (err) => {
+    return err instanceof ContractValidationError && err.details.some((e) => e.includes('requirements must be an array'));
+  });
+
+  const primitiveItemsInRequirements = structuredClone(contract);
+  primitiveItemsInRequirements.requirements = [123, null, 'REQ-01'];
+  assert.throws(() => validateDevelopmentContract(primitiveItemsInRequirements), (err) => {
+    return err instanceof ContractValidationError && err.details.some((e) => e.includes('requirements entries must be strings or plain objects'));
+  });
 });
 
 test('ORCH-001 loader fails closed when contract.json is manually corrupted', (t) => {

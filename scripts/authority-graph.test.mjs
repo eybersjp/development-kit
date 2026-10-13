@@ -67,3 +67,46 @@ test('AuthorityGraph: buildAuthorityGraphFromContract converts contract and veri
   assert.ok(json.edges.length >= 3);
 });
 
+
+
+test('AuthorityGraph: explicitly maps multiple requirements to one existing criterion with evidence', () => {
+  const contract = {
+    contractId: 'INC-AUTH-MULTI',
+    taskId: 'TASK-MULTI',
+    status: 'approved',
+    scope: {},
+    requirements: ['Alpha requirement', 'Beta requirement', 'Gamma requirement'],
+    acceptanceCriteria: [
+      { id: 'AC-MULTI-1', requirementIds: ['Alpha requirement', 'Beta requirement'] },
+      { id: 'AC-MULTI-2', requirementIds: ['Gamma requirement'] },
+    ],
+  };
+  const verified = {
+    verdict: 'PASS',
+    criteria: [
+      { id: 'AC-MULTI-1', status: 'PASS', trustLevel: 'E3' },
+      { id: 'AC-MULTI-2', status: 'PASS', trustLevel: 'E3' },
+    ],
+  };
+  const graph = buildAuthorityGraphFromContract({contract, verification: verified});
+  assert.equal(graph.validateTraceability().complete, true);
+  assert.deepEqual(graph.getDownstream('Beta requirement'), ['TASK-MULTI', 'AC-MULTI-1']);
+  const withoutMapping = structuredClone(contract);
+  withoutMapping.acceptanceCriteria[0].requirementIds = ['Alpha requirement'];
+  const missing = buildAuthorityGraphFromContract({contract: withoutMapping, verification: verified});
+  assert.equal(missing.validateTraceability().complete, false);
+  assert.deepEqual(missing.validateTraceability().unverifiedRequirements, ['Beta requirement']);
+});
+
+test('AuthorityGraph: explicit unknown requirement mapping fails closed', () => {
+  const contract = {
+    contractId: 'INC-AUTH-INVALID',
+    taskId: 'TASK-INVALID',
+    status: 'approved',
+    scope: {},
+    requirements: ['Known requirement'],
+    acceptanceCriteria: [{ id: 'AC-INVALID', requirementIds: ['Nonexistent requirement'] }],
+  };
+  assert.throws(() => buildAuthorityGraphFromContract({contract, verification: null}),
+    /explicitly references missing requirement/i);
+});

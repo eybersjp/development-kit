@@ -30,6 +30,7 @@ import {
 } from '../runtime/orchestration/plan-validator.mjs';
 
 import {
+  DEVELOPMENT_CONTRACT_SCHEMA_VERSION,
   createDevelopmentContract,
   validateDevelopmentContract,
 } from '../runtime/orchestration/development-contract.mjs';
@@ -150,7 +151,7 @@ test('CFG-INT-02: Current Contract schema supports configurationDependencies and
     createdAt: '2026-09-01T12:00:00.000Z',
   });
 
-  assert.equal(contract.schemaVersion, '1.2.0');
+  assert.equal(contract.schemaVersion, DEVELOPMENT_CONTRACT_SCHEMA_VERSION);
   assert.equal(contract.configurationDependencies.length, 1);
   assert.equal(contract.configurationDependencies[0].name, 'STRIPE_SECRET_KEY');
   assert.equal(validateDevelopmentContract(contract), true);

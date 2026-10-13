@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://development-kit.dev/schemas/cost-record.schema.json",
+  "title": "Development Kit Cost Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operationId",
+    "lifecycleId",
+    "contractId",
+    "taskId",
+    "runId",
+    "role",
+    "contextBytes",
+    "estimatedContextTokens",
+    "contextEstimator",
+    "providerInputTokens",
+    "providerOutputTokens",
+    "providerCachedTokens",
+    "repositoryReads",
+    "repositoryScans",
+    "agentInvocations",
+    "toolCalls",
+    "verificationCommands",
+    "cacheHits",
+    "cacheMisses",
+    "startedAt",
+    "completedAt",
+    "elapsedMs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "operationId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lifecycleId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "contractId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "taskId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "runId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "role": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "contextBytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "estimatedContextTokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "contextEstimator": {
+      "const": "logical-chars-div-4-v1"
+    },
+    "providerInputTokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "providerOutputTokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "providerCachedTokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "repositoryReads": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "repositoryScans": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "agentInvocations": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "toolCalls": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "verificationCommands": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "cacheHits": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cacheMisses": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "elapsedMs": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}
