@@ -38,7 +38,7 @@ DKF is designed around that problem.
 
 It provides an agent-independent engineering runtime that binds work to explicit contracts, preserves provenance, isolates verification, computes control coverage, detects drift and stale authority, and derives acceptance from evidence.
 
-The current release line is **v0.12.0**, using the existing stable state authority; State Engine V2 is deferred to v0.13.0.
+The current release line is **v0.12.1**, using the existing stable state authority; State Engine V2 is deferred to v0.13.0.
 
 v0.11 introduces the **Secrets & Configuration Readiness Gate**, a non-bypassable runtime control-plane gate that detects when project development depends on external configuration or secrets requiring Product Owner action (API keys, database credentials, public environment variables, tenant IDs, OAuth secrets, generated application secrets, or provider consoles).
 
@@ -52,7 +52,13 @@ DKF is not a project-management dashboard and is not intended to replace enginee
 
 ---
 
-## Current release: v0.12.0
+## Current release: v0.12.1
+
+v0.12.1 repairs the Control Center's stale display: it refreshes the currently selected panel every five seconds when visible, refreshes on return to the tab, offers a manual refresh button, and shows explicit update failures. The Overview now identifies the monitored project root and state revision; the Workflow view shows recorded stages, active contract, and state authority. The v0.12 Scale & Context projection is now visible. Installation and acceptance remain distinct; incomplete state is not presented as verified. Existing project-local installations require an upgrade and restart of the Control Center process.
+
+**Launching against the intended project:** open a terminal in the application repository (not its parent folder) and run the installed project's `scripts/control-center.mjs`. The Control Center observes `.development-kit/` under the process working directory. It does not aggregate unrelated nested repositories.
+
+## Previous minor release: v0.12.0
 
 v0.12.0 adds generic scale/context controls over the existing stable versioned-snapshot runtime. **T04 State Engine V2 is explicitly excluded** and remains the first priority for v0.13.0. See the [release-scope amendment](docs/04-architecture/dkf-v0.12-release-scope-amendment.md).
 
