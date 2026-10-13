@@ -83,6 +83,11 @@ export function validateDiscoveryEvent(event) {
   if (typeof event.requiresHumanApproval !== 'boolean') {
     throw new DiscoveryError('requiresHumanApproval must be a boolean');
   }
+  const mandatoryApproval = event.classification === 'specification-invalidation' ||
+    event.classification === 'architecture-invalidation';
+  if (event.requiresHumanApproval !== mandatoryApproval) {
+    throw new DiscoveryError('Human approval requirement conflicts with authoritative discovery classification');
+  }
 
   return true;
 }
