@@ -191,6 +191,29 @@ export function renderControlCenterHtml(config = {}) {
       color: white;
     }
     .btn:hover { background: var(--primary-hover); }
+    .btn:focus-visible, .nav-item:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+    .status-note { font-size: 12px; color: var(--text-muted); }
+    .detail-row { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--card-border); }
+    .detail-row span:first-child { color: var(--text-muted); }
+    .detail-row span:last-child { overflow-wrap: anywhere; text-align: right; }
+    @media (max-width: 760px) {
+      body { font-size: 13px; }
+      aside { width: 154px; flex-shrink: 0; }
+      .brand { flex-wrap: wrap; padding: 12px; }
+      header { padding: 10px 12px; gap: 8px; flex-wrap: wrap; }
+      .project-title { font-size: 13px; overflow-wrap: anywhere; }
+      .content-area { padding: 12px; }
+      .grid { grid-template-columns: minmax(0,1fr); }
+      .card { padding: 12px; overflow-x: auto; }
+    }
+    @media (max-width: 410px) {
+      body { flex-direction: column; }
+      aside { width: 100%; }
+      .brand { padding: 8px 12px; }
+      nav { display: flex; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; padding: 4px; }
+      .nav-item { flex: 0 0 auto; width: auto; padding: 8px 10px; }
+      main { min-height: 0; }
+    }
   </style>
 </head>
 <body>
@@ -241,6 +264,27 @@ export function renderControlCenterHtml(config = {}) {
       return res.json();
     }
 
+    function card(label, value) {
+      const outer = document.createElement('div'); outer.className = 'card';
+      const heading = document.createElement('div'); heading.className = 'card-header';
+      heading.textContent = label;
+      const body = document.createElement('div'); body.className = 'card-value';
+      body.textContent = String(value ?? 'Unavailable');
+      outer.append(heading, body); return outer;
+    }
+    function detailCard(title, values) {
+      const outer = document.createElement('div'); outer.className = 'card';
+      const heading = document.createElement('div'); heading.className = 'card-header';
+      heading.textContent = title; outer.append(heading);
+      for (const [label, value] of values) {
+        const row = document.createElement('div'); row.className = 'detail-row';
+        const name = document.createElement('span'); name.textContent = label;
+        const text = document.createElement('span'); text.textContent = String(value ?? 'Unverified');
+        row.append(name, text); outer.append(row);
+      }
+      return outer;
+    }
+
     async function refreshStatus() {
       const status = await apiFetch('/v1/status');
       cachedStatus = status;
@@ -263,28 +307,26 @@ export function renderControlCenterHtml(config = {}) {
       await refreshStatus();
 
       if (currentView === 'overview') {
-        content.innerHTML = \`
-          <div class="grid">
-            <div class="card">
-              <div class="card-header">Current Lifecycle Stage</div>
-              <div class="card-value">\${cachedStatus.workflow.currentStage || 'UNDERSTAND'}</div>
-            </div>
-            <div class="card">
-              <div class="card-header">Active Memory Records</div>
-              <div class="card-value">\${cachedStatus.intelligence.activeMemoryCount}</div>
-            </div>
-            <div class="card">
-              <div class="card-header">Memory Provider</div>
-              <div class="card-value">\${cachedStatus.intelligence.defaultProvider}</div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header">Project Context</div>
-            <p><strong>Project ID:</strong> \${cachedStatus.identity.projectId}</p>
-            <p><strong>Workspace ID:</strong> \${cachedStatus.identity.workspaceId}</p>
-            <p><strong>Auto-Open Setting:</strong> \${cachedStatus.settings.controlCenter.autoOpen ? 'On' : 'Off'}</p>
-          </div>
-        \`;
+        const scale = await apiFetch('/v1/scale-context');
+        const grid = document.createElement('div'); grid.className = 'grid';
+        grid.append(
+          card('Current lifecycle stage', cachedStatus.workflow?.currentStage ?? 'No active workflow'),
+          card('State revision', cachedStatus.workflow?.revision ?? scale.state?.revision ?? 'Unavailable'),
+          card('State health', scale.stateHealth ?? 'Unavailable'),
+          card('Workflow status', cachedStatus.workflow?.workflowStatus ?? 'Unverified')
+        );
+        const context = detailCard('Active project and authority', [
+          ['Project ID', cachedStatus.identity?.projectId],
+          ['Workspace ID', cachedStatus.identity?.workspaceId],
+          ['Project root', cachedStatus.projectRoot],
+          ['Framework', cachedStatus.frameworkVersion ? 'v' + cachedStatus.frameworkVersion : 'Unknown'],
+          ['Lifecycle last changed', cachedStatus.workflow?.updatedAt],
+          ['Active task', cachedStatus.workflow?.activeTask],
+          ['Active contract', cachedStatus.workflow?.activeContractId],
+          ['State authority', scale.canonicalStateStore],
+          ['Acceptance', 'Not independently established by this view']
+        ]);
+        content.replaceChildren(grid, context);
       } else if (currentView === 'memory') {
         const memData = await apiFetch('/v1/memory');
         const rows = memData.records.map(r => \`
@@ -336,22 +378,40 @@ export function renderControlCenterHtml(config = {}) {
         \`;
       } else if (currentView === 'workflow') {
         const wfData = await apiFetch('/v1/workflow');
+        const scale = await apiFetch('/v1/scale-context');
         const stages = ['UNDERSTAND', 'DEFINE', 'DESIGN', 'PLAN', 'IMPLEMENT', 'VERIFY', 'REVIEW', 'SIMPLIFY', 'COMPLETE'];
-        const stagePills = stages.map(s => {
-          const isCurrent = wfData.state && wfData.state.currentStage === s;
-          const isDone = wfData.state && wfData.state.completedStages && wfData.state.completedStages.includes(s);
-          const color = isCurrent ? 'var(--primary)' : isDone ? 'var(--success)' : 'var(--text-muted)';
-          return \`<div class="card" style="border-left: 4px solid \${color}; margin-bottom: 8px;">
-            <strong>\${s}</strong> \${isCurrent ? '(Active)' : isDone ? '(Completed)' : ''}
-          </div>\`;
-        }).join('');
-
-        content.innerHTML = \`
-          <div class="card" style="margin-bottom: 16px;">
-            <div class="card-header">9-Stage Autopilot Lifecycle</div>
-            \${stagePills}
-          </div>
-        \`;
+        const workflow = wfData.state;
+        const panel = detailCard('Authoritative workflow state', [
+          ['Workflow ID', workflow?.workflowId],
+          ['Stage', workflow?.currentStage],
+          ['Revision', workflow?.stateRevision],
+          ['Workflow status', workflow?.workflowStatus],
+          ['Last state change', workflow?.updatedAt],
+          ['State health', scale.stateHealth],
+          ['Active contract', workflow?.orchestration?.activeContractId],
+          ['Acceptance', 'Not independently established by this view']
+        ]);
+        panel.style.marginBottom = '16px';
+        const stagesPanel = document.createElement('div');
+        const stageTitle = document.createElement('div'); stageTitle.className = 'card-header';
+        stageTitle.textContent = 'Nine-stage development lifecycle'; stagesPanel.append(stageTitle);
+        for (const stage of stages) {
+          const label = workflow?.currentStage === stage ? 'Active' :
+            workflow?.completedStages?.includes(stage) ? 'Completed (recorded)' :
+            workflow?.blockedStages?.includes(stage) ? 'Blocked (recorded)' :
+            workflow?.skippedStages?.includes(stage) ? 'Skipped (recorded)' : 'Not recorded complete';
+          const row = document.createElement('div'); row.className = 'card';
+          row.style.marginBottom = '8px';
+          row.style.borderLeft = '4px solid ' + (
+            label === 'Active' ? 'var(--primary)' :
+            label.startsWith('Completed') ? 'var(--success)' :
+            label.startsWith('Blocked') ? 'var(--danger)' : 'var(--text-muted)');
+          const heading = document.createElement('strong'); heading.textContent = stage;
+          const status = document.createElement('span'); status.className = 'status-note';
+          status.textContent = ' — ' + label;
+          row.append(heading, status); stagesPanel.append(row);
+        }
+        content.replaceChildren(panel, stagesPanel);
       } else if (currentView === 'scale-context') {
         const scale = await apiFetch('/v1/scale-context');
         const makeCard = (label, value) => {
@@ -481,7 +541,7 @@ export function renderControlCenterHtml(config = {}) {
       refreshing = true;
       try {
         await renderView();
-        document.getElementById('refresh-indicator').textContent = 'Updated ' + new Date().toLocaleTimeString();
+        document.getElementById('refresh-indicator').textContent = 'Checked ' + new Date().toLocaleTimeString();
       } catch (err) {
         console.error('Control Center refresh failed', err);
         document.getElementById('lifecycle-pill').textContent = 'STAGE: UNAVAILABLE';
