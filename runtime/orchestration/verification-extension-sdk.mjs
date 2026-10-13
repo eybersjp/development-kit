@@ -21,17 +21,29 @@ export function checkNumericTolerance({
   absoluteTolerance = null,
   relativeTolerance = null,
 } = {}) {
-  if (typeof actual !== 'number' || Number.isNaN(actual)) {
+  if (typeof actual !== 'number' || !Number.isFinite(actual)) {
     throw new VerificationExtensionError('actual must be a valid number');
   }
-  if (typeof expected !== 'number' || Number.isNaN(expected)) {
+  if (typeof expected !== 'number' || !Number.isFinite(expected)) {
     throw new VerificationExtensionError('expected must be a valid number');
   }
 
   const diff = Math.abs(actual - expected);
+  // No configured tolerance means exact numeric equality, not unconditional
+  // PASS. A non-finite subtraction also cannot be considered verified.
+  if (absoluteTolerance === null && relativeTolerance === null) {
+    return {
+      pass: actual === expected,
+      diff,
+      reason: actual === expected ? null : 'Exact numeric values differ and no tolerance was supplied',
+    };
+  }
+  if (!Number.isFinite(diff)) {
+    return { pass: false, diff, reason: 'Numeric comparison overflowed a finite result' };
+  }
 
   if (absoluteTolerance !== null) {
-    if (typeof absoluteTolerance !== 'number' || absoluteTolerance < 0) {
+    if (typeof absoluteTolerance !== 'number' || !Number.isFinite(absoluteTolerance) || absoluteTolerance < 0) {
       throw new VerificationExtensionError('absoluteTolerance must be a non-negative number');
     }
     if (diff > absoluteTolerance) {
@@ -44,7 +56,7 @@ export function checkNumericTolerance({
   }
 
   if (relativeTolerance !== null) {
-    if (typeof relativeTolerance !== 'number' || relativeTolerance < 0) {
+    if (typeof relativeTolerance !== 'number' || !Number.isFinite(relativeTolerance) || relativeTolerance < 0) {
       throw new VerificationExtensionError('relativeTolerance must be a non-negative number');
     }
     const maxAllowed = Math.abs(expected) * relativeTolerance;
