@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { validateDevelopmentContract } from './development-contract.mjs';
-import { selectRequiredGates } from './gate-selector.mjs';
+import { resolveContractGateProfiles } from './gate-profiles.mjs';
 import { selectExecutionStrategy } from './host-capabilities.mjs';
 import { getRunDirectory } from './evidence-store.mjs';
 
@@ -65,7 +65,7 @@ export function createOrchestrationRun({
 } = {}) {
   validateDevelopmentContract(contract);
   const normalizedRunId = id(runId, 'runId');
-  const gates = selectRequiredGates(contract, impacts);
+  const gates = resolveContractGateProfiles(contract, impacts);
   const strategy = selectExecutionStrategy({
     capabilities,
     contract,

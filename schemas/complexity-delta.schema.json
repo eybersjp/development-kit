@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://development-kit.dev/schemas/complexity-delta.schema.json",
+  "title": "Development Kit Complexity Delta",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "deltaId",
+    "filesAdded",
+    "filesRemoved",
+    "filesModified",
+    "linesAdded",
+    "linesDeleted",
+    "dependenciesAdded",
+    "abstractionsExported",
+    "requiresSimplicityReview",
+    "triggerReasons",
+    "computedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "deltaId": {
+      "type": "string",
+      "pattern": "^cd-[a-f0-9]{20}$"
+    },
+    "filesAdded": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "filesRemoved": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "filesModified": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "linesAdded": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "linesDeleted": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "dependenciesAdded": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "abstractionsExported": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "requiresSimplicityReview": {
+      "type": "boolean"
+    },
+    "triggerReasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "computedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

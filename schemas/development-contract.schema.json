@@ -32,7 +32,8 @@
       "enum": [
         "1.0.0",
         "1.1.0",
-        "1.2.0"
+        "1.2.0",
+        "1.3.0"
       ]
     },
     "contractId": {
@@ -609,6 +610,46 @@
           }
         }
       }
+    },
+    "workspaceTargets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registryPath",
+        "registryFingerprint",
+        "primary",
+        "affected",
+        "verification"
+      ],
+      "properties": {
+        "registryPath": {
+          "const": ".development-kit/workspace.json"
+        },
+        "registryFingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "primary": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9@][A-Za-z0-9._:@/-]{0,127}$"
+        },
+        "affected": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9@][A-Za-z0-9._:@/-]{0,127}$"
+          },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "verification": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9@][A-Za-z0-9._:@/-]{0,127}$"
+          },
+          "uniqueItems": true
+        }
+      }
     }
   },
   "$defs": {
@@ -648,7 +689,10 @@
       "if": {
         "properties": {
           "schemaVersion": {
-            "const": "1.2.0"
+            "enum": [
+              "1.2.0",
+              "1.3.0"
+            ]
           }
         },
         "required": [

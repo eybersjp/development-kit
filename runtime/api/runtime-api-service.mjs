@@ -22,6 +22,12 @@ import { resolveMemoryIdentity } from '../intelligence/memory-identity.mjs';
 import { resolveEffectiveSettings } from '../intelligence/settings.mjs';
 import { LocalMemoryProvider } from '../intelligence/local-memory-provider.mjs';
 import { getCurrentState } from '../autopilot/state-store.mjs';
+import { validateWorkflowState } from '../autopilot/validators.mjs';
+import { loadWorkspaceTargetRegistry } from '../orchestration/workspace-targets.mjs';
+import { loadCostRecords } from '../orchestration/cost-observatory.mjs';
+import { loadDiscoveryEvents } from '../orchestration/discovery-reentry.mjs';
+import { loadDevelopmentContract } from '../orchestration/development-contract.mjs';
+import { resolveContractGateProfiles } from '../orchestration/gate-profiles.mjs';
 import { MemoryType, MemoryStatus, MemoryAuthority } from '../intelligence/memory-enums.mjs';
 import { validateMemoryRecord, validateAuthorityTransition } from '../intelligence/memory-schema.mjs';
 import { loadActiveDecisionMenu, resolveDecisionInput } from '../orchestration/decision-menu.mjs';
@@ -95,10 +101,21 @@ export class RuntimeApiService {
     // CORS Handling (Deny-by-default, allow loopback Control Center)
     const origin = req.headers.origin;
     if (origin) {
-      const isLoopbackOrigin =
-        origin.startsWith('http://127.0.0.1') ||
-        origin.startsWith('http://localhost') ||
-        origin.startsWith(`http://[::1]`);
+      // Compare the parsed URL hostname, not a string prefix: an attacker
+      // can own "localhost.evil.example" or "127.0.0.1.evil.example".
+      // Origin must be a canonical HTTP loopback origin without credentials,
+      // path, query, or a spoofed suffix.
+      let isLoopbackOrigin = false;
+      try {
+        const parsedOrigin = new URL(origin);
+        isLoopbackOrigin =
+          parsedOrigin.protocol === 'http:' &&
+          ['127.0.0.1', 'localhost', '[::1]'].includes(parsedOrigin.hostname) &&
+          parsedOrigin.username === '' && parsedOrigin.password === '' &&
+          parsedOrigin.origin === origin;
+      } catch {
+        // Treat malformed, opaque, or untrusted origins as remote.
+      }
 
       if (!isLoopbackOrigin) {
         res.writeHead(403, { 'Content-Type': 'application/json' });
@@ -253,6 +270,128 @@ export class RuntimeApiService {
     if (method === 'GET' && pathname === '/v1/settings') {
       const effective = resolveEffectiveSettings(this.rootDir);
       return this._json(res, 200, { settings: effective });
+    }
+
+    if (method === 'GET' && pathname === '/v1/scale-context') {
+      // Read-only projection over v0.11's supported state authority. T04's
+      // canonical event ledger is deliberately NOT included in v0.12.
+      const directory = path.join(this.rootDir, '.development-kit', 'autopilot', 'state');
+      const pointerPath = path.join(directory, 'current.json');
+      let stateHealth = 'unavailable';
+      let state = { active: false, currentStage: null, revision: null };
+      let activeContractId = null;
+      if (fs.existsSync(pointerPath)) {
+        try {
+          const pointer = JSON.parse(fs.readFileSync(pointerPath, 'utf8'));
+          if (!Number.isSafeInteger(pointer.currentRevision) ||
+              !/^revision-\d{6}\.json$/.test(pointer.currentRevisionFile) ||
+              Number(pointer.currentRevisionFile.slice(9, 15)) !== pointer.currentRevision) {
+            throw new Error('Invalid revision pointer');
+          }
+          const revisionPath = path.join(directory, pointer.currentRevisionFile);
+          if (!fs.existsSync(revisionPath)) {
+            stateHealth = 'recovery-required';
+          } else {
+            const revision = JSON.parse(fs.readFileSync(revisionPath, 'utf8'));
+            validateWorkflowState(revision);
+            if (revision.stateRevision !== pointer.currentRevision) {
+              throw new Error('Pointer revision mismatch');
+            }
+            stateHealth = 'unverified';
+            state = { active: true, currentStage: revision.currentStage, revision: revision.stateRevision };
+            activeContractId = typeof revision.orchestration?.activeContractId === 'string'
+              ? revision.orchestration.activeContractId : null;
+          }
+        } catch {
+          stateHealth = 'degraded';
+        }
+      }
+      const modules = {
+        workspaceTargets: 'workspace-targets.mjs',
+        executionCapsules: 'execution-capsule.mjs',
+        lifecycleInstances: 'lifecycle-instance.mjs',
+        discoveryReentry: 'discovery-reentry.mjs',
+        gateProfiles: 'gate-profiles.mjs',
+        verificationExtensionSdk: 'verification-extension-sdk.mjs',
+        complexityDeltaGuard: 'complexity-delta.mjs',
+      };
+      const capabilities = Object.fromEntries(Object.entries(modules).map(([id, filename]) => [
+        id, { installed: fs.existsSync(new URL('../orchestration/' + filename, import.meta.url)),
+          accepted: null, acceptanceStatus: 'not-independently-established' },
+      ]));
+      capabilities.stateEngineV2 = {
+        installed: false, accepted: false, acceptanceStatus: 'deferred-to-v0.13.0',
+      };
+      // Operational state is observed strictly from the existing stable
+      // project stores. Never confuse an installed module with an active,
+      // verified, or accepted capability, and never mutate data on GET.
+      const observe = (read) => {
+        try { return { status: 'available', ...read() }; }
+        catch { return { status: 'degraded' }; }
+      };
+      const operational = {
+        workspaceTargets: observe(() => {
+          const registry = loadWorkspaceTargetRegistry(this.rootDir, { required: false });
+          return registry ? {
+            status: 'available', count: Object.keys(registry.targets || {}).length,
+            targetIds: Object.keys(registry.targets || {}).sort(),
+          } : { status: 'unavailable', count: 0 };
+        }),
+        costObservatory: observe(() => {
+          const ledger = path.join(this.rootDir, '.development-kit', 'telemetry', 'cost-records.jsonl');
+          if (!fs.existsSync(ledger)) return { status: 'unavailable', count: 0 };
+          const records = loadCostRecords(this.rootDir);
+          return { status: 'available', count: records.length };
+        }),
+        discoveryQueue: observe(() => {
+          const directory = path.join(this.rootDir, '.development-kit', 'discovery', 'events');
+          if (!fs.existsSync(directory)) return { status: 'unavailable', count: 0 };
+          const events = loadDiscoveryEvents(this.rootDir);
+          return { status: 'available', count: events.length,
+            pendingApproval: events.filter(event => event.requiresHumanApproval).length };
+        }),
+        lifecycleInstances: {
+          status: stateHealth === 'unverified' ? 'available' : stateHealth,
+          count: state.active ? 1 : 0,
+          currentStage: state.currentStage,
+          revision: state.revision,
+        },
+        contextCache: observe(() => {
+          const directory = path.join(this.rootDir, '.development-kit', 'cache', 'context');
+          if (!fs.existsSync(directory)) return { status: 'unavailable', entryCount: 0 };
+          let entries = 0;
+          const walk = (dir) => {
+            for (const node of fs.readdirSync(dir, { withFileTypes: true })) {
+              if (node.isSymbolicLink()) continue;
+              if (node.isDirectory()) walk(path.join(dir, node.name));
+              else if (node.isFile() && node.name.endsWith('.json')) entries++;
+            }
+          };
+          walk(directory);
+          return { status: 'available', entryCount: entries, freshness: 'unverified' };
+        }),
+        effectiveGates: observe(() => {
+          if (!activeContractId) {
+            return { status: 'unavailable', reason: 'no-source-bound-active-contract' };
+          }
+          const contract = loadDevelopmentContract(activeContractId, this.rootDir);
+          if (!contract) return { status: 'unavailable', reason: 'active-contract-not-found' };
+          const gates = resolveContractGateProfiles(contract);
+          return { status: 'available', requiredVerification: gates.verification,
+            requiredReviewers: gates.reviewers, requiredHumanApprovals: gates.humanApprovals,
+            requiredControlDomains: gates.controlDomains };
+        }),
+      };
+      return this._json(res, 200, {
+        schemaVersion: '1.0.0',
+        canonicalStateStore: 'autopilot-versioned-snapshots',
+        stateHealth,
+        state,
+        capabilities,
+        operational,
+        authority: 'read-only-projection',
+        acceptanceAuthority: 'canonical-deterministic-gates',
+      });
     }
 
     if (method === 'GET' && pathname === '/v1/configuration-readiness') {

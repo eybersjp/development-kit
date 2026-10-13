@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  DEVELOPMENT_CONTRACT_SCHEMA_VERSION,
   ContractPersistenceError,
   ContractValidationError,
   StaleContractError,
@@ -83,7 +84,7 @@ test('ORCH-001 creates a validated contract with stable evidence boundary and ex
   assert.equal(contract.executionSafety.destructiveOperations, 'explicit-approval');
   assert.equal(contract.executionSafety.remoteMutation, 'explicit-contract');
   assert.equal(contract.acceptanceCriteria.length, 2);
-  assert.equal(contract.schemaVersion, '1.2.0');
+  assert.equal(contract.schemaVersion, DEVELOPMENT_CONTRACT_SCHEMA_VERSION);
   assert.equal(contract.developmentMode.resolved.mode, 'balanced');
   assert.equal(contract.developmentMode.source, 'backward-compatible-default');
   assert.match(contract.developmentMode.fingerprint, /^sha256:[a-f0-9]{64}$/);

@@ -2,7 +2,7 @@ import { checkContractStaleness, validateDevelopmentContract } from './developme
 import { validateControlManifest, validateVerificationRecord } from './evidence-store.mjs';
 import { validateReviewResult } from './review-result.mjs';
 import { validateArchitectureDrift } from './architecture-drift.mjs';
-import { selectRequiredGates } from './gate-selector.mjs';
+import { resolveContractGateProfiles } from './gate-profiles.mjs';
 import { buildAuthorityGraphFromContract } from './authority-graph.mjs';
 import {
   evaluateConfigurationReadiness,
@@ -63,10 +63,17 @@ function canonicalVerificationClass(value) {
   return aliases.get(normalized) ?? normalized;
 }
 
-function verificationRequirementCovered(requirement, verification, controlsByDomain) {
+function verificationRequirementCovered(requirement, verification, controlsByDomain, architectureDrift, reviewByRole) {
   const normalized = normalizeVerificationRequirement(requirement);
-  if (normalized === 'security') return controlsByDomain.get('security')?.verdict === 'PASS';
+  if (normalized === 'security' || normalized === 'security-audit') {
+    return controlsByDomain.get('security')?.verdict === 'PASS' ||
+      (verification?.verdict === 'PASS' && verification.criteria.some((c) => c.status === 'PASS' && Array.isArray(c.verificationType) && c.verificationType.some((t) => canonicalVerificationClass(t) === 'security')));
+  }
   if (normalized === 'specification') return verification?.verdict === 'PASS';
+  if (normalized === 'architecture-verification') {
+    return architectureDrift?.verdict === 'PASS' || reviewByRole?.get('architecture-reviewer')?.verdict === 'PASS' ||
+      (verification?.verdict === 'PASS' && verification.criteria.some((c) => c.status === 'PASS' && Array.isArray(c.verificationType) && c.verificationType.some((t) => canonicalVerificationClass(t) === 'architecture-verification')));
+  }
   if (!verification || verification.verdict !== 'PASS') return false;
 
   const requiredClass = canonicalVerificationClass(normalized);
@@ -76,7 +83,7 @@ function verificationRequirementCovered(requirement, verification, controlsByDom
 }
 
 function deriveRequiredGates(contract) {
-  return selectRequiredGates(contract, {
+  return resolveContractGateProfiles(contract, {
     touchesUi: contract.designConstraints.length > 0
       || contract.authoritativeSources.some((source) => source.kind === 'design-authority' || /(^|\/)design\.md$/i.test(source.path)),
     securitySensitive: contract.securityConstraints.length > 0 || contract.risk.level >= 3,
@@ -115,6 +122,67 @@ export function decideAcceptance({
     if (verification.sourceFingerprint !== contract.sourceFingerprint) blockers.push({ code: 'VERIFICATION_SOURCE_MISMATCH' });
     if (verification.verdict === 'FAIL') blockers.push({ code: 'VERIFICATION_FAILED' });
     if (verification.verdict === 'INCOMPLETE') pending.push({ code: 'VERIFICATION_INCOMPLETE' });
+  }
+
+  // Mandatory project-owned verifier bindings are immutable contract policy.
+  // Every extension result must be independently reflected in canonical
+  // verification evidence. Omitting a failed extension cannot make ACCEPTED.
+  const requiredExtensions = contract.approvalPolicy?.requiredExtensions ?? [];
+  if (!Array.isArray(requiredExtensions)) {
+    blockers.push({ code: 'INVALID_REQUIRED_EXTENSION_POLICY' });
+  } else {
+    for (const item of requiredExtensions) {
+      if (!item || typeof item.extensionId !== 'string' || !item.extensionId.trim() ||
+          typeof item.criterionId !== 'string' || !item.criterionId.trim()) {
+        blockers.push({ code: 'INVALID_REQUIRED_EXTENSION_BINDING' });
+        continue;
+      }
+      if (!contract.acceptanceCriteria.some(criterion => criterion.id === item.criterionId)) {
+        blockers.push({ code: 'EXTENSION_CRITERION_NOT_IN_CONTRACT', extensionId: item.extensionId });
+        continue;
+      }
+      const criterion = verification?.criteria?.find(x => x.id === item.criterionId);
+      if (!criterion || criterion.status === 'UNVERIFIED' || criterion.status === 'PARTIAL') {
+        pending.push({ code: 'REQUIRED_EXTENSION_UNVERIFIED', extensionId: item.extensionId, criterionId: item.criterionId });
+      } else if (criterion.status !== 'PASS') {
+        blockers.push({ code: 'REQUIRED_EXTENSION_FAILED', extensionId: item.extensionId, criterionId: item.criterionId });
+      } else if (!Array.isArray(criterion.evidence) || criterion.evidence.length === 0) {
+        blockers.push({ code: 'REQUIRED_EXTENSION_EVIDENCE_MISSING', extensionId: item.extensionId, criterionId: item.criterionId });
+      } else {
+        const matchingExtensionEvidence = criterion.evidence.filter(ev =>
+          ev && (ev.extensionId === item.extensionId || ev.id === item.extensionId)
+        );
+        if (matchingExtensionEvidence.length === 0) {
+          blockers.push({
+            code: 'REQUIRED_EXTENSION_EVIDENCE_UNBOUND',
+            extensionId: item.extensionId,
+            criterionId: item.criterionId,
+          });
+        } else {
+          for (const ev of matchingExtensionEvidence) {
+            if (ev.result && ev.result !== 'PASS' && ev.status !== 'PASS') {
+              blockers.push({
+                code: 'REQUIRED_EXTENSION_EVIDENCE_FAILED',
+                extensionId: item.extensionId,
+                criterionId: item.criterionId,
+              });
+            } else if (ev.sourceFingerprint && ev.sourceFingerprint !== contract.sourceFingerprint) {
+              blockers.push({
+                code: 'REQUIRED_EXTENSION_SOURCE_MISMATCH',
+                extensionId: item.extensionId,
+                criterionId: item.criterionId,
+              });
+            } else if (ev.criterionId && ev.criterionId !== item.criterionId) {
+              blockers.push({
+                code: 'REQUIRED_EXTENSION_CRITERION_MISMATCH',
+                extensionId: item.extensionId,
+                criterionId: item.criterionId,
+              });
+            }
+          }
+        }
+      }
+    }
   }
 
   if (!Array.isArray(reviews)) throw new AcceptanceEngineError('reviews must be an array');
@@ -166,8 +234,15 @@ export function decideAcceptance({
     if (!controlsByDomain.has(domain)) pending.push({ code: 'MISSING_CONTROL_DOMAIN', domain });
   }
 
-  for (const requirement of contract.requiredVerification) {
-    if (!verificationRequirementCovered(requirement, verification, controlsByDomain)) {
+  // When a source-bound contract requires gate profiles, inspect every
+  // composed verification class; no independent caller can silently omit it.
+  const requiredClasses = (contract.approvalPolicy?.requiredGateProfileIds?.length ||
+    contract.approvalPolicy?.targetCapabilities?.length ||
+    (contract.risk?.level ?? 0) >= 3 ||
+    (requiredGates.appliedProfiles?.length ?? 0) > 0)
+    ? requiredGates.verification : contract.requiredVerification;
+  for (const requirement of requiredClasses) {
+    if (!verificationRequirementCovered(requirement, verification, controlsByDomain, architectureDrift, reviewByRole)) {
       pending.push({ code: 'MISSING_REQUIRED_VERIFICATION', verification: requirement });
     }
   }
