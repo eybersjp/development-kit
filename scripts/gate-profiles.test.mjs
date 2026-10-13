@@ -5,11 +5,13 @@ import path from 'node:path';
 import { test } from 'node:test';
 import {
   resolveGateProfiles,
+  resolveContractGateProfiles,
   validateGateProfile,
   GateProfileError,
   BUILTIN_GATE_PROFILES,
 } from '../runtime/orchestration/gate-profiles.mjs';
 import { createDevelopmentContract, validateDevelopmentContract } from '../runtime/orchestration/development-contract.mjs';
+import { decideAcceptance } from '../runtime/orchestration/acceptance-engine.mjs';
 
 function createTempProject(t) {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dk-gate-profile-test-'));
@@ -130,4 +132,71 @@ test('AC-023: custom IDs cannot shadow built-in UI or consequential approval gat
   for (const malformed of [null, {}, 'gp-ui-design', [null]]) {
     assert.throws(() => resolveGateProfiles({ contract, profileIds: malformed }), GateProfileError);
   }
+});
+
+test('AC-023: acceptance derives consequential human gate and high-assurance review from contract', (t) => {
+  const rootDir = createTempProject(t);
+  const contract = createDevelopmentContract({
+    rootDir,
+    task: {
+      id: 'TASK-GP-REQUIRED',
+      projectId: 'proj_gp',
+      status: 'approved',
+      objective: 'Required profile cannot be omitted at acceptance',
+      scope: { in: ['runtime/'], out: [] },
+      requirements: ['REQ-1'],
+      acceptanceCriteria: ['Verify required profiles'],
+      risk: { level: 1, reasons: [] },
+      requiredVerification: ['tests'],
+      approvalPolicy: { requiredGateProfileIds: ['gp-consequential', 'gp-high-assurance'] },
+    },
+    authoritativeSources: [{ path: 'docs/spec.md', kind: 'specification', authority: 'required' }],
+  });
+  const gates = resolveContractGateProfiles(contract);
+  assert.ok(gates.humanApprovals.includes('consequential-action'));
+  assert.ok(gates.reviewers.includes('security-reviewer'));
+  assert.ok(gates.controlDomains.includes('security'));
+  const result = decideAcceptance({ contract, verification: null, rootDir });
+  assert.equal(result.state, 'PENDING');
+  assert.ok(result.pending.some(x => x.code === 'MISSING_REQUIRED_APPROVAL' &&
+    x.approvalId === 'consequential-action'));
+  assert.ok(result.pending.some(x => x.code === 'MISSING_REQUIRED_REVIEW' &&
+    x.role === 'security-reviewer'));
+  assert.ok(result.pending.some(x => x.code === 'MISSING_CONTROL_DOMAIN' &&
+    x.domain === 'security'));
+});
+
+test('AC-023: immutable required custom profile cannot be shadowed or omitted at run decision', t => {
+  const rootDir = createTempProject(t);
+  const contract = createDevelopmentContract({
+    rootDir,
+    task: {
+      id: 'TASK-GP-CUSTOM', projectId: 'proj_gp', status: 'approved',
+      objective: 'Custom gate policy is contract-owned',
+      scope: { in: ['runtime/'], out: [] },
+      requirements: ['REQ-1'], acceptanceCriteria: ['Custom profile requirement'],
+      approvalPolicy: {
+        requiredGateProfileIds: ['gp-project-approval'],
+        customGateProfiles: {
+          'gp-project-approval': {
+            schemaVersion: '1.0.0', profileId: 'gp-project-approval',
+            name: 'Human scoped review', verificationClasses: ['tests'],
+            requiredReviewers: ['code-reviewer'], requiredControlDomains: [],
+            requiredHumanApprovals: ['project-specific-review'],
+          },
+        },
+      },
+    },
+    authoritativeSources: [{ path: 'docs/spec.md', kind: 'specification', authority: 'required' }],
+  });
+  assert.ok(resolveContractGateProfiles(contract).humanApprovals.includes('project-specific-review'));
+  const decision = decideAcceptance({ contract, rootDir });
+  assert.ok(decision.pending.some(x => x.approvalId === 'project-specific-review'));
+  const tampered = structuredClone(contract);
+  tampered.approvalPolicy.customGateProfiles['gp-high-assurance'] = {
+    schemaVersion: '1.0.0', profileId: 'gp-high-assurance', name: 'Fake',
+    verificationClasses: [], requiredReviewers: [],
+    requiredControlDomains: [], requiredHumanApprovals: [],
+  };
+  assert.throws(() => resolveContractGateProfiles(tampered), /Built-in gate profile cannot be overridden/);
 });
