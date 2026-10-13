@@ -541,6 +541,7 @@ export class RuntimeApiService {
     // the host application's package.json for the framework.
     const candidates = [
       new URL('../../package.json', import.meta.url),
+      new URL('../../plugin.json', import.meta.url),
       path.join(this.rootDir, '.agents', 'plugins', 'development-kit', 'plugin.json'),
     ];
     for (const candidate of candidates) {
