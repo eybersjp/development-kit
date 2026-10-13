@@ -169,3 +169,52 @@ export class VerificationExtensionRegistry {
     return Array.from(this.extensions.values());
   }
 }
+
+/**
+ * Runs project-owned verification plugins without allowing plugins to author
+ * their own authoritative PASS evidence. The returned criterion status is
+ * input to a separate verifier, and acceptance still requires the canonical
+ * source-bound verification record for each contract-required extension.
+ */
+export async function executeVerificationExtensions({
+  registry, bindings, contract,
+} = {}) {
+  if (!(registry instanceof VerificationExtensionRegistry) ||
+      !Array.isArray(bindings) || !contract || !Array.isArray(contract.acceptanceCriteria)) {
+    throw new VerificationExtensionError('Extension execution requires registry, bindings and Development Contract');
+  }
+  const required = contract.approvalPolicy?.requiredExtensions ?? [];
+  if (!Array.isArray(required)) throw new VerificationExtensionError('Invalid contract-required extensions');
+  const results = [];
+  for (const binding of required) {
+    const configured = bindings.find(item => item?.extensionId === binding.extensionId &&
+      item?.criterionId === binding.criterionId);
+    const extension = registry.get(binding.extensionId);
+    const criterion = contract.acceptanceCriteria.find(item => item.id === binding.criterionId);
+    if (!criterion) throw new VerificationExtensionError('Extension criterion missing from approved contract');
+    let status = 'FAIL';
+    let reason = 'Required verification extension is not registered or its input is unavailable';
+    if (configured && extension && typeof extension.verify === 'function') {
+      try {
+        const evaluated = await extension.verify(structuredClone(configured.input));
+        if (evaluated && typeof evaluated === 'object' && evaluated.pass === true) {
+          status = 'PASS';
+          reason = null;
+        } else {
+          reason = evaluated?.reason || 'Extension returned a non-PASS result';
+        }
+      } catch (error) {
+        reason = 'Required extension execution failed: ' + error.message;
+      }
+    }
+    results.push({
+      id: criterion.id,
+      extensionId: binding.extensionId,
+      status,
+      reason,
+      // A separate verifier must attach source-bound evidence and issue the
+      // authoritative VerificationRecord; this is only test computation.
+    });
+  }
+  return results;
+}
