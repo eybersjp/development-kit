@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://development-kit.dev/schemas/discovery-event.schema.json",
+  "title": "Development Kit Discovery Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "discoveryId",
+    "lifecycleId",
+    "classification",
+    "description",
+    "evidence",
+    "affectedAuthority",
+    "minimumReentryStage",
+    "affectedTasks",
+    "requiresHumanApproval",
+    "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "discoveryId": {
+      "type": "string",
+      "pattern": "^disc-[a-zA-Z0-9_-]{8,64}$"
+    },
+    "lifecycleId": {
+      "type": "string",
+      "pattern": "^lc-[a-zA-Z0-9_-]{8,64}$"
+    },
+    "taskId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "classification": {
+      "type": "string",
+      "enum": [
+        "implementation-defect",
+        "plan-invalidation",
+        "architecture-invalidation",
+        "specification-invalidation"
+      ]
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence": {
+      "type": "object",
+      "required": [
+        "type",
+        "reference"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "details": {
+          "type": "object"
+        }
+      }
+    },
+    "affectedAuthority": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "kind"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "specification",
+              "architecture",
+              "plan",
+              "implementation"
+            ]
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "minimumReentryStage": {
+      "type": "string",
+      "enum": [
+        "UNDERSTAND",
+        "DEFINE",
+        "DESIGN",
+        "PLAN",
+        "IMPLEMENT",
+        "VERIFY",
+        "REVIEW",
+        "SIMPLIFY",
+        "COMPLETE"
+      ]
+    },
+    "affectedTasks": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "requiresHumanApproval": {
+      "type": "boolean"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

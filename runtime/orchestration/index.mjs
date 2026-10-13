@@ -156,3 +156,4 @@ export * from './state-engine-v2.mjs';
 export * from './state-engine-migration.mjs';
 
 export * from './lifecycle-instance.mjs';
+export * from './discovery-reentry.mjs';
