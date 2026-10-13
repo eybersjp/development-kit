@@ -2,7 +2,7 @@ import { checkContractStaleness, validateDevelopmentContract } from './developme
 import { validateControlManifest, validateVerificationRecord } from './evidence-store.mjs';
 import { validateReviewResult } from './review-result.mjs';
 import { validateArchitectureDrift } from './architecture-drift.mjs';
-import { selectRequiredGates } from './gate-selector.mjs';
+import { resolveContractGateProfiles } from './gate-profiles.mjs';
 import { buildAuthorityGraphFromContract } from './authority-graph.mjs';
 import {
   evaluateConfigurationReadiness,
@@ -76,7 +76,7 @@ function verificationRequirementCovered(requirement, verification, controlsByDom
 }
 
 function deriveRequiredGates(contract) {
-  return selectRequiredGates(contract, {
+  return resolveContractGateProfiles(contract, {
     touchesUi: contract.designConstraints.length > 0
       || contract.authoritativeSources.some((source) => source.kind === 'design-authority' || /(^|\/)design\.md$/i.test(source.path)),
     securitySensitive: contract.securityConstraints.length > 0 || contract.risk.level >= 3,
@@ -166,7 +166,12 @@ export function decideAcceptance({
     if (!controlsByDomain.has(domain)) pending.push({ code: 'MISSING_CONTROL_DOMAIN', domain });
   }
 
-  for (const requirement of contract.requiredVerification) {
+  // When a source-bound contract requires gate profiles, inspect every
+  // composed verification class; no independent caller can silently omit it.
+  const requiredClasses = (contract.approvalPolicy?.requiredGateProfileIds?.length ||
+    contract.approvalPolicy?.targetCapabilities?.length)
+    ? requiredGates.verification : contract.requiredVerification;
+  for (const requirement of requiredClasses) {
     if (!verificationRequirementCovered(requirement, verification, controlsByDomain)) {
       pending.push({ code: 'MISSING_REQUIRED_VERIFICATION', verification: requirement });
     }
