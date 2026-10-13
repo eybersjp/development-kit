@@ -27,6 +27,7 @@ import {
   unresolvedReviewThreads,
   requireCanonicalReviewRequestCommit,
   parseReviewThreadPage,
+  requireCanonicalGithubReviewVerdict,
 } from './t04-review-thread-blockers.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -237,7 +238,7 @@ for (const entry of receipts.reviews) {
     assert.ok(review.body?.includes('Reviewed commit:') &&
       review.body.includes(REVIEWED_SOURCE.slice(0, 10)) &&
       review.body.includes('Review role: ' + entry.role) &&
-      /\bPASS\b/.test(review.body),
+      requireCanonicalGithubReviewVerdict(review.body) === 'PASS',
       'GitHub reviewer did not expressly attest the requested role and PASS verdict');
     assert.equal(request.created_at, request.updated_at,
       'Scope request was edited; an edited request cannot authenticate an independent reviewer role');

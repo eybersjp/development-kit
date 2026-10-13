@@ -4,6 +4,7 @@ import {
   unresolvedReviewThreads,
   requireCanonicalReviewRequestCommit,
   parseReviewThreadPage,
+  requireCanonicalGithubReviewVerdict,
 } from './t04-review-thread-blockers.mjs';
 
 test('T04-A01 unresolved P2 and all other finding priorities prevent acceptance', () => {
@@ -57,4 +58,24 @@ test('T04-A05 authenticated GraphQL thread pages fail closed on missing nodes or
   assert.throws(() => parseReviewThreadPage({ ...good, nodes: [null] }), /malformed/i);
   assert.throws(() => parseReviewThreadPage({ ...good,
     nodes: [{ id: 'unknown' }] }), /malformed/i);
+});
+
+test('T04-A06 COMMENTED review requires a canonical PASS without conflicting findings', () => {
+  const valid = 'Reviewed commit: ' + 'a'.repeat(40) +
+    '\nReview role: code-reviewer\nReview verdict: PASS\nFindings: none';
+  assert.equal(requireCanonicalGithubReviewVerdict(valid), 'PASS');
+  for (const body of [
+    'cannot PASS',
+    'Review role: code-reviewer\nCannot PASS until P1 fixed',
+    'Verdict: PASS\nCannot PASS until the durability issue is fixed',
+    'Verdict: PASS\nP1 Windows crash durability still open',
+    'Verdict: PASS\nVerdict: FAIL',
+    'Verdict: FAIL',
+    'Verdict: PASS\nReview verdict: PASS',
+    'Verdict: PASS\nBlocked by unresolved review',
+    'Verdict: PASS\nnot PASS',
+  ]) {
+    assert.throws(() => requireCanonicalGithubReviewVerdict(body),
+      /canonical PASS verdict|Conflicting failure or finding marker/i, body);
+  }
 });

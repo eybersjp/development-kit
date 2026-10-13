@@ -34,3 +34,19 @@ export function parseReviewThreadPage(page) {
     endCursor: page.pageInfo.endCursor ?? null,
   };
 }
+
+/**
+ * A COMMENTED review is not a clean attestation just because negative prose
+ * contains the word PASS. Require an explicit verdict without contradictions.
+ */
+export function requireCanonicalGithubReviewVerdict(body) {
+  if (typeof body !== 'string') throw new Error('GitHub reviewer verdict evidence is malformed');
+  const fields = [...body.matchAll(/^(?:Review verdict|Verdict):[ \t]*([A-Za-z_-]+)[ \t]*$/gmi)];
+  if (fields.length !== 1 || fields[0][1] !== 'PASS') {
+    throw new Error('Independent GitHub review requires exactly one canonical PASS verdict');
+  }
+  if (/\b(?:FAIL(?:ED|URE)?|BLOCK(?:ED|ER|ING)?|REJECT(?:ED|ION)?|REQUEST[_ -]?CHANGES|P[012]|unresolved|cannot[ \t]+PASS|can['’]t[ \t]+PASS|not[ \t]+PASS|no[ \t]+PASS)\b/i.test(body)) {
+    throw new Error('Conflicting failure or finding marker in GitHub review');
+  }
+  return 'PASS';
+}
