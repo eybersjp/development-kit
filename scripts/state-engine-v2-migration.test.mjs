@@ -834,6 +834,7 @@ test('T04-H48 Windows crash rollback and recovery verify parent flush barrier be
   assert.equal(fs.existsSync(root), false);
 
   const parent = path.dirname(root);
+  const parentIdentity = fs.statSync(parent);
   const originalRename = fs.renameSync;
   const originalFsync = fs.fsyncSync;
   const originalUnlink = fs.unlinkSync;
@@ -849,10 +850,13 @@ test('T04-H48 Windows crash rollback and recovery verify parent flush barrier be
     return returned;
   };
   fs.fsyncSync = function watchParentFlush(fd) {
-    if (rollbackRenamed) {
+    const stat = fs.fstatSync(fd);
+    const returned = originalFsync.call(this, fd);
+    if (rollbackRenamed && stat.isDirectory() &&
+      stat.dev === parentIdentity.dev && stat.ino === parentIdentity.ino) {
       parentFlushedAfterRollback = true;
     }
-    return originalFsync.call(this, fd);
+    return returned;
   };
   fs.unlinkSync = function guardJournalRemoval(target, ...args) {
     if (typeof target === 'string' &&
