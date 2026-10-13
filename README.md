@@ -38,7 +38,7 @@ DKF is designed around that problem.
 
 It provides an agent-independent engineering runtime that binds work to explicit contracts, preserves provenance, isolates verification, computes control coverage, detects drift and stale authority, and derives acceptance from evidence.
 
-The current release line is **v0.11.2**.
+The current release line is **v0.12.0**, using the existing stable state authority; State Engine V2 is deferred to v0.13.0.
 
 v0.11 introduces the **Secrets & Configuration Readiness Gate**, a non-bypassable runtime control-plane gate that detects when project development depends on external configuration or secrets requiring Product Owner action (API keys, database credentials, public environment variables, tenant IDs, OAuth secrets, generated application secrets, or provider consoles).
 
@@ -52,9 +52,16 @@ DKF is not a project-management dashboard and is not intended to replace enginee
 
 ---
 
-## Current release: v0.11.2
+## Current release: v0.12.0
 
-The current released baseline is **v0.11.2**.
+v0.12.0 adds generic scale/context controls over the existing stable versioned-snapshot runtime. **T04 State Engine V2 is explicitly excluded** and remains the first priority for v0.13.0. See the [release-scope amendment](docs/04-architecture/dkf-v0.12-release-scope-amendment.md).
+
+### v0.12.0 — Stable-State Scale & Context
+
+- **Cost & context efficiency** — Cost Observatory, target routing, execution capsules and repository context cache.
+- **General-purpose development primitives** — Lifecycle Instances, controlled discovery re-entry, composable Gate Profiles, Verification Extension SDK and Complexity Delta Guard.
+- **Control Center** — Read-only projection using the existing stable state store, reporting unavailable/degraded/unverified state honestly instead of declaring false health.
+- **Explicit v0.13 deferral** — State Engine V2, canonical event ledger, migration, and full crash-durable Windows legacy-backup restoration remain out of v0.12.0. Full Windows support is mandatory in the next-release T04 implementation; existing stable state operation stays supported.
 
 ### v0.11.2 — Development Modes & IDEA Authority Hardening
 
@@ -191,9 +198,9 @@ The long-term architecture focuses on:
 
 Read the full [DKF Strategic Direction](STRATEGY.md).
 
-### v0.11.2 release highlights
+### v0.11.2 release history
 
-The published release is **v0.11.2**, consolidating:
+The preceding v0.11.2 release consolidated:
 
 - **Development Modes** — Rapid, Balanced, Specification-Driven, Documentation-Driven, and Maintenance & Evolution; persisted methodology policy is revisioned and immutably bound into new Development Contracts without weakening mandatory DKF controls.
 - **IDEA Authority Hardening** — explicit requirement provenance, Product Owner-bound transitions, one persisted fingerprinted interaction at a time, crash-safe discovery journaling, replay-proof consumption receipts, Design Authority binding, and Idea Brief approval bound to exact discovery/design/artifact fingerprints.
@@ -209,8 +216,8 @@ The published release is **v0.11.2**, consolidating:
 
 | Release | Direction |
 |---|---|
-| **v0.12** | Adaptive Reliability: Change Classification, Policy Engine, Lifecycle Compiler |
-| **v0.13** | DKF Proof: Acceptance Certificates and evidence bundles |
+| **v0.12.0** | Cost Observatory, Workspace Targets, Execution Capsules & Context Cache, Lifecycle Instances, Discovery/Re-entry, Gate Profiles, Verification SDK, Complexity Guard and truthful Control Center on stable state |
+| **v0.13.0** | **Priority #1: State Engine V2 (T04)** including full Windows backup-restore crash durability and independent acceptance; proof/evidence work follows |
 | **v0.14** | Repository Enforcement: GitHub CI and PR acceptance gates |
 | **v0.15** | Public DKF Reliability Benchmark |
 | **v0.16** | Isolated Execution and execution-provider contract |
