@@ -48,7 +48,8 @@ test('1. Runtime API starts on loopback and serves GET /v1/status and /v1/health
   assert.equal(statusRes.status, 200);
   const statusJson = await statusRes.json();
   assert.equal(statusJson.runtimeVersion, '0.7.0');
-  assert.equal(statusJson.frameworkVersion, '0.6.1');
+  const metadata = JSON.parse((await import('node:fs')).readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(statusJson.frameworkVersion, metadata.version);
 
   const healthRes = await fetch(`${started.url}/v1/health`);
   assert.equal(healthRes.status, 200);
