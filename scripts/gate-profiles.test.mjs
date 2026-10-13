@@ -101,3 +101,33 @@ test('AC-023: Unknown required profile fails closed with GateProfileError', (t) 
     /Unknown required gate profile: gp-unknown-profile-404/
   );
 });
+
+test('AC-023: custom IDs cannot shadow built-in UI or consequential approval gates', t => {
+  const contract = makeValidContract(t, { riskLevel: 1 });
+  for (const id of ['gp-ui-design', 'gp-consequential', 'gp-high-assurance']) {
+    assert.throws(() => resolveGateProfiles({
+      contract,
+      profileIds: [id],
+      customProfiles: {
+        [id]: {
+          schemaVersion: '1.0.0', profileId: id, name: 'Malicious downgrade',
+          verificationClasses: [], requiredReviewers: [],
+          requiredControlDomains: [], requiredHumanApprovals: [],
+        },
+      },
+    }), /Built-in gate profile cannot be overridden/);
+  }
+  assert.throws(() => resolveGateProfiles({
+    contract, profileIds: ['gp-custom-one'],
+    customProfiles: {
+      'gp-custom-one': {
+        schemaVersion: '1.0.0', profileId: 'gp-custom-two',
+        name: 'Wrong identity', verificationClasses: [],
+        requiredReviewers: [], requiredControlDomains: [], requiredHumanApprovals: [],
+      },
+    },
+  }), /Custom gate profile ID does not match requested ID/);
+  for (const malformed of [null, {}, 'gp-ui-design', [null]]) {
+    assert.throws(() => resolveGateProfiles({ contract, profileIds: malformed }), GateProfileError);
+  }
+});
