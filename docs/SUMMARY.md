@@ -258,6 +258,7 @@
 * [DKF Scale, Context & Iteration — Phase 6 T04 Validation](04-architecture/dkf-scale-context-iteration-phase06-t04-validation.md)
 * [DKF State Engine V2 — T04 Hardening Validation](04-architecture/dkf-state-engine-v2-t04-hardening-validation.md)
 * [DKF State Engine V2 — Offline Recovery Boundary](04-architecture/dkf-state-engine-v2-offline-recovery-boundary.md)
+* [DKF T04 — Windows Durability Protocol](04-architecture/dkf-t04-windows-restore-durability-protocol.md)
 
 ## 05. Developer Guide
 * [Local Development Setup](05-developer-guide/local-development-setup.md)
