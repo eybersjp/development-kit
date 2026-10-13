@@ -101,15 +101,31 @@ export function resolveGateProfiles({
   // 1. Compute mandatory baseline gates from contract and context
   const baseline = selectRequiredGates(contract, options);
 
-  // 2. Resolve requested profiles
+  // 2. Resolve requested profiles; project profiles may add gates but may not
+  // impersonate a built-in profile ID to suppress its required controls.
+  if (!Array.isArray(profileIds) || !Array.isArray(targetCapabilities) ||
+      !customProfiles || typeof customProfiles !== 'object' || Array.isArray(customProfiles)) {
+    throw new GateProfileError('Gate profile resolution inputs are malformed');
+  }
+  for (const id of Object.keys(customProfiles)) {
+    if (Object.hasOwn(BUILTIN_GATE_PROFILES, id)) {
+      throw new GateProfileError(`Built-in gate profile cannot be overridden: ${id}`);
+    }
+  }
   const profiles = [];
   for (const id of profileIds) {
+    if (typeof id !== 'string' || !id.trim()) {
+      throw new GateProfileError('Profile IDs must be nonempty strings');
+    }
     const profile = customProfiles[id] || BUILTIN_GATE_PROFILES[id];
     if (!profile) {
       // Fail closed on unknown required profile (AC-023)
       throw new GateProfileError(`Unknown required gate profile: ${id}`);
     }
     validateGateProfile(profile);
+    if (profile.profileId !== id) {
+      throw new GateProfileError('Custom gate profile ID does not match requested ID');
+    }
     profiles.push(profile);
   }
 
