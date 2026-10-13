@@ -74,3 +74,25 @@ test('AC-029: Policy or risk case still invokes mandatory simplicity review', ()
   assert.equal(depAdded.requiresSimplicityReview, true);
   assert.ok(depAdded.triggerReasons.some((r) => r.includes('dependencies')));
 });
+
+test('AC-028/029: fail closed on invalid risk and diff metrics; policy changes fingerprint the decision', () => {
+  const valid = { filesAdded: 0, linesAdded: 10, riskLevel: 1 };
+  const first = computeComplexityDelta(valid);
+  const highRisk = computeComplexityDelta({ ...valid, riskLevel: 3 });
+  const forced = computeComplexityDelta({ ...valid, alwaysReview: true });
+  assert.notEqual(first.deltaId, highRisk.deltaId,
+    'The same diff under different review policy must not share a decision fingerprint');
+  assert.notEqual(first.deltaId, forced.deltaId);
+  assert.equal(first.requiresSimplicityReview, false);
+  assert.equal(highRisk.requiresSimplicityReview, true);
+  assert.equal(forced.requiresSimplicityReview, true);
+  assert.equal(computeComplexityDelta({ ...valid, riskLevel: 4 }).requiresSimplicityReview, true);
+  for (const invalid of [Number.NaN, Number.POSITIVE_INFINITY, -1, 1.1, '2']) {
+    assert.throws(() => computeComplexityDelta({ ...valid, filesAdded: invalid }));
+    assert.throws(() => computeComplexityDelta({ ...valid, riskLevel: invalid }));
+  }
+  for (const invalid of [null, {}, [null], [123]]) {
+    assert.throws(() => computeComplexityDelta({ ...valid, dependenciesAdded: invalid }));
+  }
+  assert.throws(() => computeComplexityDelta({ ...valid, alwaysReview: 'false' }));
+});
