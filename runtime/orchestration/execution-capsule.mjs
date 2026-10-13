@@ -340,7 +340,17 @@ export function createExecutionCapsule({
   const targetDelta = resolveTargetDelta(contract, rootDir, changedFiles, entry);
   const upstream = normalizeUpstreamTasks(upstreamAcceptedTasks);
   const runtimeFacts = normalizeRuntimeFacts(verifiedRuntimeFacts);
-  const gateIds = stringArray([...(contract.approvalPolicy?.requiredGateProfileIds ?? []), ...requiredGateProfileIds], 'requiredGateProfileIds');
+  const authoritativeGateIds = stringArray(contract.approvalPolicy?.requiredGateProfileIds ?? [], 'contract requiredGateProfileIds');
+  const suppliedGateIds = stringArray(requiredGateProfileIds, 'requiredGateProfileIds');
+  // Legacy descriptive capability labels remain allowed, but no executable
+  // gate profile may appear in an execution capsule unless the approved
+  // contract itself requires it; otherwise run/acceptance would disagree.
+  for (const id of suppliedGateIds) {
+    if (id.startsWith('gp-') && !authoritativeGateIds.includes(id)) {
+      throw new ExecutionCapsuleError('Required gate profiles must be declared in the approved Development Contract');
+    }
+  }
+  const gateIds = stringArray([...authoritativeGateIds, ...suppliedGateIds], 'requiredGateProfileIds');
 
   const capsuleBase = {
     schemaVersion: EXECUTION_CAPSULE_SCHEMA_VERSION,
