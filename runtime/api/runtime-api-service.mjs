@@ -535,6 +535,29 @@ export class RuntimeApiService {
     return this._json(res, 404, { error: 'Not Found', message: `Route ${method} ${pathname} not found` });
   }
 
+  _resolveFrameworkVersion() {
+    // Report the installed framework, not a stale UI/API release label.
+    // The package must identify itself as development-kit; never mistake
+    // the host application's package.json for the framework.
+    const candidates = [
+      new URL('../../package.json', import.meta.url),
+      path.join(this.rootDir, '.agents', 'plugins', 'development-kit', 'plugin.json'),
+    ];
+    for (const candidate of candidates) {
+      try {
+        const metadata = JSON.parse(fs.readFileSync(candidate, 'utf8'));
+        if (metadata?.name === 'development-kit' &&
+            typeof metadata.version === 'string' &&
+            /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.+-]+)?$/.test(metadata.version)) {
+          return metadata.version;
+        }
+      } catch {
+        // The package or project-local plugin manifest may not be available.
+      }
+    }
+    return null; // Unknown is preferable to an invented framework version.
+  }
+
   async _getStatus() {
     const identity = resolveMemoryIdentity(this.rootDir);
     const settings = resolveEffectiveSettings(this.rootDir);
@@ -543,7 +566,7 @@ export class RuntimeApiService {
 
     return {
       runtimeVersion: '0.7.0',
-      frameworkVersion: '0.6.1',
+      frameworkVersion: this._resolveFrameworkVersion(),
       identity,
       settings,
       workflow: {
