@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "1.0.0",
+  "releaseVersion": "0.12.0",
+  "authority": "https://github.com/eybersjp/development-kit/issues/82",
+  "base": "feature/v0.12-execution-capsules-context-cache",
+  "canonicalStateEngine": "autopilot-versioned-snapshots",
+  "includedTasks": [
+    "DKF120-T01",
+    "DKF120-T02",
+    "DKF120-T03",
+    "DKF120-T05",
+    "DKF120-T06",
+    "DKF120-T07",
+    "DKF120-T08",
+    "DKF120-T09",
+    "DKF120-T10"
+  ],
+  "deferredTasks": [
+    "DKF120-T04"
+  ],
+  "requiredCriteria": [
+    "DKF-120-AC-001",
+    "DKF-120-AC-002",
+    "DKF-120-AC-003",
+    "DKF-120-AC-004",
+    "DKF-120-AC-005",
+    "DKF-120-AC-006",
+    "DKF-120-AC-007",
+    "DKF-120-AC-008",
+    "DKF-120-AC-009",
+    "DKF-120-AC-010",
+    "DKF-120-AC-011",
+    "DKF-120-AC-016",
+    "DKF-120-AC-017",
+    "DKF-120-AC-018",
+    "DKF-120-AC-019",
+    "DKF-120-AC-020",
+    "DKF-120-AC-021",
+    "DKF-120-AC-022",
+    "DKF-120-AC-023",
+    "DKF-120-AC-024",
+    "DKF-120-AC-025",
+    "DKF-120-AC-026",
+    "DKF-120-AC-027",
+    "DKF-120-AC-028",
+    "DKF-120-AC-029",
+    "DKF-120-AC-030",
+    "DKF-120-AC-031",
+    "DKF-120-AC-032",
+    "DKF-120-AC-033",
+    "DKF-120-AC-035",
+    "DKF-120-AC-036",
+    "DKF-120-AC-037",
+    "DKF-120-AC-038",
+    "DKF-120-AC-039",
+    "DKF-120-AC-040"
+  ],
+  "deferredCriteria": [
+    "DKF-120-AC-012",
+    "DKF-120-AC-013",
+    "DKF-120-AC-014",
+    "DKF-120-AC-015",
+    "DKF-120-AC-034"
+  ],
+  "acceptanceEdges": [
+    "DKF120-T01->DKF120-T02",
+    "DKF120-T02->DKF120-T03",
+    "DKF120-T03->DKF120-T05",
+    "DKF120-T05->DKF120-T06",
+    "DKF120-T06->DKF120-T07",
+    "DKF120-T07->DKF120-T08",
+    "DKF120-T08->DKF120-T09",
+    "DKF120-T09->DKF120-T10"
+  ],
+  "priorityNextRelease": {
+    "version": "0.13.0",
+    "task": "DKF120-T04",
+    "issue": 73,
+    "fullWindowsRestoreRequired": true
+  },
+  "publishAuthorizedOnVerifiedAcceptance": true,
+  "releasePublished": false
+}
