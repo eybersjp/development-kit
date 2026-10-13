@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { RuntimeApiService } from '../runtime/api/runtime-api-service.mjs';
+import { createDiscoveryEvent } from '../runtime/orchestration/discovery-reentry.mjs';
 
 async function serve(t) {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dk-v012-stable-'));
@@ -113,4 +114,32 @@ test('v0.12 security: remote-controlled lookalike origins never receive cross-or
     assert.equal(response.status, 200, origin);
     assert.equal(response.headers.get('access-control-allow-origin'), origin);
   }
+});
+
+test('AC-030: Control Center exposes actual persisted discovery and cost observatory state, never invented acceptance', async t => {
+  const { rootDir, get } = await serve(t);
+  let data = await get('/v1/scale-context');
+  assert.equal(data.operational.discoveryQueue.status, 'unavailable');
+  assert.equal(data.operational.costObservatory.status, 'unavailable');
+  assert.equal(data.operational.lifecycleInstances.count, 0);
+  const event = createDiscoveryEvent({
+    rootDir, lifecycleId: 'lc-1234567890ab', classification: 'specification-invalidation',
+    description: 'Findings require review', evidence: { type: 'test', reference: 'AC-030' },
+    affectedAuthority: [{ kind: 'specification', path: 'docs/spec.md' }],
+  });
+  assert.equal(event.requiresHumanApproval, true);
+  const ledger = path.join(rootDir, '.development-kit', 'telemetry', 'cost-records.jsonl');
+  fs.mkdirSync(path.dirname(ledger), { recursive: true });
+  fs.writeFileSync(ledger, '{bad-json\n', 'utf8');
+  data = await get('/v1/scale-context');
+  assert.equal(data.operational.discoveryQueue.status, 'available');
+  assert.equal(data.operational.discoveryQueue.count, 1);
+  assert.equal(data.operational.discoveryQueue.pendingApproval, 1);
+  assert.equal(data.operational.costObservatory.status, 'degraded');
+  assert.equal(data.capabilities.discoveryReentry.accepted, null);
+  assert.equal(data.capabilities.stateEngineV2.acceptanceStatus, 'deferred-to-v0.13.0');
+  const file = path.join(rootDir, '.development-kit', 'discovery', 'events', event.discoveryId + '.json');
+  const before = fs.readFileSync(file);
+  await get('/v1/scale-context');
+  assert.deepEqual(fs.readFileSync(file), before);
 });
