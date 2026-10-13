@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, 'fix/v0.12-t04-state-engine-hardening', 'feature/v0.12-*']
 
 permissions:
   contents: read
@@ -90,6 +90,9 @@ jobs:
 
       - name: Validate Scale/Context v0.12 Phase 2 PLAN
         run: node scripts/phase02-scale-context-plan-validate.mjs
+
+      - name: Validate approved parallel v0.12 PLAN amendment
+        run: npm run parallel-plan:validate
 
       - name: Validate v0.12 Cost Observatory increment
         run: npm run cost-observatory:test
