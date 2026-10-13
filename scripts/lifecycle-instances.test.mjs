@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
 import {
   createLifecycleInstance,
@@ -10,7 +13,8 @@ import {
   DEFAULT_ROOT_LIFECYCLE_ID,
   LIFECYCLE_INSTANCE_SCHEMA_VERSION,
 } from '../runtime/orchestration/lifecycle-instance.mjs';
-import { CANONICAL_STAGES } from '../runtime/autopilot/transition-model.mjs';
+import { CANONICAL_STAGES, createInitialState } from '../runtime/autopilot/transition-model.mjs';
+import { saveStateRevision } from '../runtime/autopilot/state-store.mjs';
 
 test('AC-016: Lifecycle Instances support parent/child relationships with independent state isolation', () => {
   const parent = createLifecycleInstance({
@@ -219,4 +223,24 @@ test('AC-017: externally supplied completed status cannot survive unaccepted lif
   assert.notEqual(pending.status, 'completed');
   const rejected = evaluateLifecycleCompletion({ instance: userSupplied, acceptanceState: 'REJECTED' });
   assert.equal(rejected.status, 'active');
+});
+
+test('AC-016: implicit legacy lifecycle rehydrates stable persisted snapshot without writes', (t) => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dkf-life-legacy-'));
+  t.after(() => fs.rmSync(rootDir, { recursive: true, force: true }));
+  const state = createInitialState({}, rootDir);
+  state.currentStage = 'REVIEW';
+  state.completedStages = ['UNDERSTAND', 'DEFINE', 'DESIGN', 'PLAN', 'IMPLEMENT', 'VERIFY'];
+  state.stateRevision = 3;
+  saveStateRevision(state, rootDir);
+  const pointer = path.join(rootDir, '.development-kit', 'autopilot', 'state', 'current.json');
+  const previous = fs.readFileSync(pointer);
+  const hydrated = ensureProjectLifecycle({ rootDir });
+  assert.equal(hydrated.stage, 'REVIEW');
+  assert.equal(hydrated.sourceRevision, 3);
+  assert.deepEqual(hydrated.completedStages, state.completedStages);
+  assert.deepEqual(fs.readFileSync(pointer), previous);
+  const explicit = ensureProjectLifecycle({ rootDir, legacyAutopilotState: { currentStage: 'PLAN', stateRevision: 5 } });
+  assert.equal(explicit.stage, 'PLAN');
+  assert.equal(explicit.sourceRevision, 5);
 });
