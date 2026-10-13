@@ -9,6 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const rootPackage = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const npmCli = process.env.npm_execpath;
 if (!npmCli || !fs.existsSync(npmCli)) {
   console.error('npm_execpath is required; run npm run consumer-smoke:v012');
