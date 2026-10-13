@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as reviewParsers from './t04-review-thread-blockers.mjs';
 import {
   unresolvedReviewThreads,
   requireCanonicalReviewRequestCommit,
@@ -12,6 +13,63 @@ test('T04-A01 unresolved P2 and all other finding priorities prevent acceptance'
   const p1 = { id: 'p1', isResolved: false, comments: { nodes: [{ body: '[P1] lost data' }] } };
   const minor = { id: 'minor', isResolved: false, comments: { nodes: [{ body: 'Unanswered question' }] } };
   assert.deepEqual(unresolvedReviewThreads([p2, p1, minor]).map(x => x.id), ['p2', 'p1', 'minor']);
+});
+
+test('RI-01 source binding rejects abbreviated and uppercase alternate identifiers', () => {
+  const source = 'a'.repeat(40);
+  for (const alternate of ['bbbbbbb', 'B'.repeat(40), source.toUpperCase(), source.slice(0, 10)]) {
+    assert.throws(() => requireCanonicalReviewRequestCommit('Commit: ' + source + '\nBaseline: ' + alternate, source));
+  }
+});
+
+test('RI-01 clean verdict requires one canonical findings declaration and no structured severity', () => {
+  for (const findings of ['', 'Findings: MAJOR Windows journal publication may lose data',
+    'Findings: none\nSeverity: CRITICAL', 'Findings: none\nStatus: OPEN',
+    'Findings: none\nFindings: none', 'Findings: none\n[MAJOR] data loss']) {
+    assert.throws(() => requireCanonicalGithubReviewVerdict('Verdict: PASS\n' + findings));
+  }
+});
+
+test('RI-02 authenticated scope request binds PR and exactly one role', () => {
+  const source = 'a'.repeat(40);
+  const request = { issue_url: 'https://api.github.com/repos/eybersjp/development-kit/issues/70',
+    body: '@codex\nIndependent role: code-reviewer\nCommit: ' + source };
+  assert.equal(typeof reviewParsers.requireCanonicalGithubReviewRequest, 'function');
+  assert.doesNotThrow(() => reviewParsers.requireCanonicalGithubReviewRequest(request, 'code-reviewer', source));
+  for (const invalid of [{ ...request, issue_url: request.issue_url.replace('/70', '/71') },
+    { ...request, issue_url: undefined },
+    { ...request, body: request.body + '\nIndependent role: code-reviewer' },
+    { ...request, body: request.body + '\nIndependent role: security-reviewer' }]) {
+    assert.throws(() => reviewParsers.requireCanonicalGithubReviewRequest(invalid, 'code-reviewer', source));
+  }
+});
+
+test('RI-01 authenticated response binds unique anchored role and full API source', () => {
+  const source = 'a'.repeat(40);
+  const review = { commit_id: source, body: 'Reviewed commit: ' + source +
+    '\nReview role: code-reviewer\nVerdict: PASS\nFindings: none' };
+  assert.equal(typeof reviewParsers.requireCanonicalGithubReviewResponse, 'function');
+  assert.doesNotThrow(() => reviewParsers.requireCanonicalGithubReviewResponse(review, 'code-reviewer', source));
+  for (const invalid of [{ ...review, commit_id: 'b'.repeat(40) },
+    { ...review, body: review.body.replace(source, source.slice(0, 10)) },
+    { ...review, body: review.body + '\nReview role: code-reviewer' },
+    { ...review, body: review.body + '\nReview role: security-reviewer' },
+    { ...review, body: review.body.replace('Review role:', 'Example Review role:') },
+    { ...review, body: review.body + '\nBaseline: bbbbbbb' }]) {
+    assert.throws(() => reviewParsers.requireCanonicalGithubReviewResponse(invalid, 'code-reviewer', source));
+  }
+});
+
+test('RI-01 final pagination cursor rejects malformed types', () => {
+  for (const endCursor of [123, {}, []]) {
+    assert.throws(() => parseReviewThreadPage({ nodes: [], pageInfo: { hasNextPage: false, endCursor } }));
+  }
+});
+
+test('RI-01 clean declaration cannot suppress a separate structured minor finding', () => {
+  for (const marker of ['Severity: MINOR', 'Finding: data loss', '[P3] unanswered question', 'Status: PENDING']) {
+    assert.throws(() => requireCanonicalGithubReviewVerdict('Verdict: PASS\nFindings: none\n' + marker));
+  }
 });
 
 test('T04-A02 resolved threads cannot block a clean exact-source review', () => {

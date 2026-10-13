@@ -1,8 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 
 import { validateWorkflowState } from '../autopilot/validators.mjs';
 import { validateOrchestrationRun } from './orchestration-run.mjs';
@@ -584,36 +582,39 @@ function restoreJournalPath(targetRoot) {
   return path.join(path.dirname(root), '.dk-restore-journal-' + digest + '.json');
 }
 
+/**
+ * Directory-entry ordering barrier for the restore transaction.
+ *
+ * POSIX: fsync(2) on the parent directory descriptor.
+ * Windows: libuv opens directories with FILE_FLAG_BACKUP_SEMANTICS, and
+ * fs.fsyncSync calls FlushFileBuffers. FlushFileBuffers needs a write-capable
+ * handle ('r+'); a read-only handle fails EPERM. Microsoft documents a normal
+ * (flags = 0) flush as writing cached file data *and metadata* and
+ * synchronizing the storage cache (NtFlushBuffersFileEx; only
+ * FLUSH_FLAGS_FILE_DATA_SYNC_ONLY is documented invalid for directory
+ * handles). See docs/04-architecture/dkf-t04-windows-restore-durability-protocol.md
+ * for the exact guarantee relied on and its limits.
+ *
+ * Any failure is fatal: callers never mutate or acknowledge past a barrier
+ * that did not complete, so the journal and witnesses are retained.
+ */
 function syncRestoreParent(parent) {
-  if (process.platform === 'win32') return;
-  const fd = fs.openSync(parent, 'r');
-  try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  let fd;
+  try {
+    fd = fs.openSync(parent, process.platform === 'win32' ? 'r+' : 'r');
+    fs.fsyncSync(fd);
+  } catch (error) {
+    throw new StateMigrationError('Restore directory flush barrier failed; recovery evidence retained', {
+      code: 'RESTORE_DIRECTORY_FLUSH_FAILED', directory: parent, cause: error.code || error.message,
+    });
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
 }
 
-// Node.js fs.renameSync does not expose Windows' MOVEFILE_WRITE_THROUGH flag.
-// Use the OS-native rename for journaled rollback; any unavailable helper or
-// failed native call leaves the restore journal intact and recovery fails closed.
 function durableRestoreRollbackRename(from, to) {
-  if (process.platform !== 'win32') {
-    fs.renameSync(from, to);
-    syncRestoreParent(path.dirname(to));
-    return;
-  }
-  const systemRoot = process.env.SystemRoot || process.env.WINDIR;
-  if (!systemRoot || !path.isAbsolute(systemRoot)) {
-    throw new StateMigrationError('Windows durable rollback unavailable: SystemRoot is not available; journal retained');
-  }
-  const powershell = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-  const script = fileURLToPath(new URL('../../scripts/windows-durable-rename.ps1', import.meta.url));
-  try {
-    execFileSync(powershell, [
-      '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-      '-File', script, '-From', path.toNamespacedPath(from), '-To', path.toNamespacedPath(to),
-    ], { encoding: 'utf8', windowsHide: true, timeout: 60000 });
-  } catch (error) {
-    throw new StateMigrationError('Windows write-through rollback failed; recovery journal retained: ' +
-      (error.stderr?.toString().trim() || error.message));
-  }
+  fs.renameSync(from, to);
+  syncRestoreParent(path.dirname(to));
 }
 
 /**
@@ -692,6 +693,8 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
   }
 
   let outcome;
+  // Pre-mutation capability probe (fails closed with every witness intact).
+  syncRestoreParent(parent);
   if (inDisplaced && !atRoot) {
     // The restored root directory entry must be durable before removing the
     // only journal that permits redoing this rollback after another power loss.
@@ -710,7 +713,10 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
     throw new StateMigrationError('Ambiguous restore journal state; refusing automatic mutation');
   }
 
-  if (inStage) fs.rmSync(stage, { recursive: true, force: true });
+  if (inStage) {
+    fs.rmSync(stage, { recursive: true, force: true });
+    syncRestoreParent(parent);
+  }
   // Keep any promoted displaced original as a recovery asset: never auto-delete.
   fs.unlinkSync(journalPath);
   syncRestoreParent(parent);
@@ -825,6 +831,9 @@ export function restoreLegacyBackup({
     throw new StateMigrationError('Legacy backup restore root must be an ordinary directory');
   }
   const transactionId = crypto.randomBytes(16).toString('hex');
+  // Pre-mutation capability probe: if this volume cannot complete the
+  // directory flush barrier, refuse before creating the stage or journal.
+  syncRestoreParent(parent);
   const stage = path.join(parent, '.dk-legacy-restore-stage-' + transactionId);
   fs.mkdirSync(stage, { mode: 0o700 });
   const displaced = stage + '-original';

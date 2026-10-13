@@ -734,10 +734,7 @@ test('T04-H28 restore journals preserve original after a simulated process death
 
 
 test('T04-H47 recovery fsyncs the restored parent entry before deleting its rollback journal', (t) => {
-  if (process.platform === 'win32') {
-    t.skip('POSIX parent-directory fsync durability semantics are not available on Windows');
-    return;
-  }
+  // Runs on Windows too: the barrier is FlushFileBuffers on a directory handle.
   const source = tempProject(t, 'dk-rollback-fsync-source-');
   writeLegacyAutopilot(source, 2);
   const migrated = migrateLegacyStateToV2({ rootDir: source });
@@ -807,14 +804,11 @@ test('T04-H47 recovery fsyncs the restored parent entry before deleting its roll
   }
 });
 
-test('T04-H48 Windows crash rollback uses native write-through move before journal unlink', (t) => {
+test('T04-H48 Windows crash rollback and recovery verify parent flush barrier before journal unlink', (t) => {
   if (process.platform !== 'win32') {
-    t.skip('Windows-native MoveFileExW write-through semantics');
+    t.skip('Windows parent flush barrier verification');
     return;
   }
-  const helper = fs.readFileSync(new URL('./windows-durable-rename.ps1', import.meta.url), 'utf8');
-  assert.match(helper, /MoveFileExW/);
-  assert.match(helper, /MOVEFILE_WRITE_THROUGH/);
 
   const source = tempProject(t, 'dk-win-rollback-source-');
   writeLegacyAutopilot(source, 2);
@@ -839,20 +833,34 @@ test('T04-H48 Windows crash rollback uses native write-through move before journ
   assert.equal(result.status, 91, result.stderr);
   assert.equal(fs.existsSync(root), false);
 
+  const parent = path.dirname(root);
   const originalRename = fs.renameSync;
+  const originalFsync = fs.fsyncSync;
   const originalUnlink = fs.unlinkSync;
+  let rollbackRenamed = false;
+  let parentFlushedAfterRollback = false;
   let journalRemoved = false;
-  fs.renameSync = function forbidUnflushedRollback(from, to, ...args) {
+
+  fs.renameSync = function watchRollback(from, to, ...args) {
+    const returned = originalRename.call(this, from, to, ...args);
     if (typeof from === 'string' && from.endsWith('-original') && to === root) {
-      throw new Error('Windows restore rollback must use the native write-through API');
+      rollbackRenamed = true;
     }
-    return originalRename.call(this, from, to, ...args);
+    return returned;
+  };
+  fs.fsyncSync = function watchParentFlush(fd) {
+    if (rollbackRenamed) {
+      parentFlushedAfterRollback = true;
+    }
+    return originalFsync.call(this, fd);
   };
   fs.unlinkSync = function guardJournalRemoval(target, ...args) {
     if (typeof target === 'string' &&
       path.basename(target).startsWith('.dk-restore-journal-')) {
       journalRemoved = true;
-      assert.equal(fs.readFileSync(sentinel, 'utf8'), 'WINDOWS-ORIGINAL');
+      assert.equal(rollbackRenamed, true, 'Recovery must restore the displaced root');
+      assert.equal(parentFlushedAfterRollback, true,
+        'Windows rollback directory rename must be flushed to disk before deleting the journal');
     }
     return originalUnlink.call(this, target, ...args);
   };
@@ -863,6 +871,7 @@ test('T04-H48 Windows crash rollback uses native write-through move before journ
     assert.equal(fs.readFileSync(sentinel, 'utf8'), 'WINDOWS-ORIGINAL');
   } finally {
     fs.renameSync = originalRename;
+    fs.fsyncSync = originalFsync;
     fs.unlinkSync = originalUnlink;
   }
 });

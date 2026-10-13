@@ -12,7 +12,9 @@ export function requireCanonicalReviewRequestCommit(body, reviewedCommit) {
   // Exactly one unambiguous source-binding field is permitted. An authenticated
   // reaction alone has no Git object provenance; ambiguous requests fail closed.
   const fields = [...body.matchAll(/^(?:Commit|Immutable source commit):[ \t]*([a-f0-9]{40})[ \t]*$/gm)];
-  const hashes = body.match(/\b[a-f0-9]{40}\b/g) ?? [];
+  // Conservatively reject every other plausible Git abbreviation, including
+  // uppercase identifiers. Hex-only prose may therefore need rewording.
+  const hashes = body.match(/\b[a-f0-9]{7,40}\b/gi) ?? [];
   if (fields.length !== 1 || fields[0][1] !== reviewedCommit ||
       hashes.length !== 1 || hashes[0] !== reviewedCommit) {
     throw new Error('Reviewer scope request must identify exactly one canonical reviewed commit');
@@ -23,6 +25,7 @@ export function requireCanonicalReviewRequestCommit(body, reviewedCommit) {
 export function parseReviewThreadPage(page) {
   if (!page || !Array.isArray(page.nodes) || !page.pageInfo ||
       typeof page.pageInfo.hasNextPage !== 'boolean' ||
+      (page.pageInfo.endCursor != null && typeof page.pageInfo.endCursor !== 'string') ||
       (page.pageInfo.hasNextPage &&
         (typeof page.pageInfo.endCursor !== 'string' || !page.pageInfo.endCursor)) ||
       page.nodes.some(node => !node || typeof node.isResolved !== 'boolean')) {
@@ -48,5 +51,46 @@ export function requireCanonicalGithubReviewVerdict(body) {
   if (/\b(?:FAIL(?:ED|URE)?|BLOCK(?:ED|ER|ING)?|REJECT(?:ED|ION)?|REQUEST[_ -]?CHANGES|P[012]|unresolved|cannot[ \t]+PASS|can['’]t[ \t]+PASS|not[ \t]+PASS|no[ \t]+PASS)\b/i.test(body)) {
     throw new Error('Conflicting failure or finding marker in GitHub review');
   }
+  const findings = [...body.matchAll(/^Findings:[ \t]*(.*)$/gmi)];
+  if (findings.length !== 1 || findings[0][0] !== 'Findings: none') {
+    throw new Error('Independent GitHub review requires exactly one canonical clean findings declaration');
+  }
+  if (/\b(?:MAJOR|CRITICAL|OPEN|P[0-9])\b/i.test(body) ||
+      /^[ \t]*(?:Severity|Finding):/mi.test(body) ||
+      /^[ \t]*Status:[ \t]*(?:PENDING|ACTIVE|UNRESOLVED)\b/mi.test(body)) {
+    throw new Error('Conflicting failure or finding marker in GitHub review');
+  }
   return 'PASS';
+}
+
+function requireCanonicalRole(body, label, expectedRole) {
+  const roles = ['architecture-reviewer', 'code-reviewer', 'security-reviewer'];
+  const fields = [...body.matchAll(new RegExp('^' + label + ':[ \\t]*(.*)$', 'gmi'))];
+  if (!roles.includes(expectedRole) || fields.length !== 1 ||
+      fields[0][0] !== label + ': ' + expectedRole) {
+    throw new Error('Reviewer evidence requires exactly one canonical ' + label);
+  }
+}
+
+export function requireCanonicalGithubReviewRequest(request, expectedRole, reviewedCommit) {
+  if (!request || request.issue_url !== 'https://api.github.com/repos/eybersjp/development-kit/issues/70' ||
+      typeof request.body !== 'string' || !request.body.includes('@codex')) {
+    throw new Error('Authenticated reviewer scope request must bind PR #70');
+  }
+  requireCanonicalRole(request.body, 'Independent role', expectedRole);
+  requireCanonicalReviewRequestCommit(request.body, reviewedCommit);
+  return reviewedCommit;
+}
+
+export function requireCanonicalGithubReviewResponse(review, expectedRole, reviewedCommit) {
+  if (!review || review.commit_id !== reviewedCommit || typeof review.body !== 'string') {
+    throw new Error('Authenticated review metadata must bind the immutable reviewed source');
+  }
+  requireCanonicalRole(review.body, 'Review role', expectedRole);
+  // Reuse the same conservative source-token policy with a response-only label.
+  if (/^(?:Commit|Immutable source commit):/mi.test(review.body)) {
+    throw new Error('Review response contains an alternative source-binding field');
+  }
+  requireCanonicalReviewRequestCommit(review.body.replace(/^Reviewed commit:/gm, 'Commit:'), reviewedCommit);
+  return requireCanonicalGithubReviewVerdict(review.body);
 }

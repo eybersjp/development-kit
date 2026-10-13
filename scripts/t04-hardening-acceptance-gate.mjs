@@ -25,9 +25,9 @@ import { detectArchitectureDrift } from '../runtime/orchestration/architecture-d
 import { decideAcceptance, validateAcceptanceRecord } from '../runtime/orchestration/acceptance-engine.mjs';
 import {
   unresolvedReviewThreads,
-  requireCanonicalReviewRequestCommit,
+  requireCanonicalGithubReviewRequest,
+  requireCanonicalGithubReviewResponse,
   parseReviewThreadPage,
-  requireCanonicalGithubReviewVerdict,
 } from './t04-review-thread-blockers.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -169,12 +169,7 @@ for (const entry of receipts.reviews) {
   scopeRequestIds.add(entry.scopeRequestCommentId);
   const request = await githubApi('issues/comments/' + entry.scopeRequestCommentId);
   assert.ok(request, 'Independent reviewer scope request was not found in GitHub');
-  assert.ok(request.body?.includes('@codex') && request.body.includes('Independent role: ' + entry.role),
-    'Scope request must explicitly specify independent reviewer role');
-  assert.deepEqual(REQUIRED_ROLES.filter(role =>
-    request.body.includes('Independent role: ' + role)), [entry.role],
-    'A scope request cannot authenticate multiple reviewer roles');
-  requireCanonicalReviewRequestCommit(request.body, REVIEWED_SOURCE);
+  requireCanonicalGithubReviewRequest(request, entry.role, REVIEWED_SOURCE);
 
   // Reject any receipt if unresolved blocking findings remain on PR #70
   const query = `query($owner: String!, $repo: String!, $pr: Int!, $cursor: String) {
@@ -235,11 +230,7 @@ for (const entry of receipts.reviews) {
     assert.equal(review.commit_id, REVIEWED_SOURCE, 'Review did not inspect the required immutable source');
     assert.ok(['APPROVED', 'COMMENTED'].includes(review.state),
       'GitHub reviewer submission is dismissed or not completed');
-    assert.ok(review.body?.includes('Reviewed commit:') &&
-      review.body.includes(REVIEWED_SOURCE.slice(0, 10)) &&
-      review.body.includes('Review role: ' + entry.role) &&
-      requireCanonicalGithubReviewVerdict(review.body) === 'PASS',
-      'GitHub reviewer did not expressly attest the requested role and PASS verdict');
+    requireCanonicalGithubReviewResponse(review, entry.role, REVIEWED_SOURCE);
     assert.equal(request.created_at, request.updated_at,
       'Scope request was edited; an edited request cannot authenticate an independent reviewer role');
     assert.ok(Date.parse(review.submitted_at) > Date.parse(request.created_at),
