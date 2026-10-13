@@ -36,6 +36,17 @@ try {
   const manifest = JSON.parse(fs.readFileSync(path.join(packageDir,
     '.agents', 'plugins', 'development-kit', 'plugin.json'), 'utf8'));
   assert.equal(manifest.version, rootPackage.version);
+  // A repository-local DKF installation must identify the running executable,
+  // not an older plugin manifest in the host workspace's .agents directory.
+  const staleManifest = path.join(consumer, '.agents', 'plugins', 'development-kit', 'plugin.json');
+  fs.mkdirSync(path.dirname(staleManifest), { recursive: true });
+  fs.writeFileSync(staleManifest, JSON.stringify({ name: 'development-kit', version: '0.10.0' }));
+  const { RuntimeApiService } = await import(pathToFileURL(path.join(packageDir,
+    '.agents', 'plugins', 'development-kit', 'runtime', 'api', 'runtime-api-service.mjs')).href);
+  const api = new RuntimeApiService({ rootDir: consumer });
+  assert.equal(api._resolveFrameworkVersion(), rootPackage.version,
+    'installed executable version must win over host workspace stale manifest');
+
   for (const moduleName of [
     'cost-observatory', 'workspace-targets', 'execution-capsule',
     'lifecycle-instance', 'discovery-reentry', 'gate-profiles',
