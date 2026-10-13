@@ -24,17 +24,17 @@ const npm = (args, cwd) => execFileSync(process.execPath, [npmCli, ...args], {
 try {
   const packed = JSON.parse(npm(['pack', '--json', '--pack-destination', temp], root));
   assert.equal(packed.length, 1);
-  assert.equal(packed[0].version, '0.12.0');
+  assert.equal(packed[0].version, rootPackage.version);
   const tarball = path.join(temp, packed[0].filename);
   assert.equal(fs.existsSync(tarball), true);
   npm(['install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund',
     '--prefix', consumer, tarball], root);
   const packageDir = path.join(consumer, 'node_modules', 'development-kit');
   const installed = JSON.parse(fs.readFileSync(path.join(packageDir, 'package.json'), 'utf8'));
-  assert.equal(installed.version, '0.12.0');
+  assert.equal(installed.version, rootPackage.version);
   const manifest = JSON.parse(fs.readFileSync(path.join(packageDir,
     '.agents', 'plugins', 'development-kit', 'plugin.json'), 'utf8'));
-  assert.equal(manifest.version, '0.12.0');
+  assert.equal(manifest.version, rootPackage.version);
   for (const moduleName of [
     'cost-observatory', 'workspace-targets', 'execution-capsule',
     'lifecycle-instance', 'discovery-reentry', 'gate-profiles',
