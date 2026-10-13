@@ -9,8 +9,12 @@ import {
   evaluateInvariant,
   checkDatasetFreshness,
   VerificationExtensionRegistry,
+  executeVerificationExtensions,
   VerificationExtensionError,
 } from '../runtime/orchestration/verification-extension-sdk.mjs';
+import { createDevelopmentContract } from '../runtime/orchestration/development-contract.mjs';
+import { decideAcceptance } from '../runtime/orchestration/acceptance-engine.mjs';
+import { createVerificationRecord } from '../runtime/orchestration/evidence-store.mjs';
 
 test('AC-025: Generic numeric tolerance primitives support absolute and relative bounds', () => {
   // Absolute tolerance test
@@ -135,4 +139,64 @@ test('AC-025: numeric verification fails closed on nonfinite and absent toleranc
   assert.equal(checkNumericTolerance({
     actual: 100, expected: 1e308, relativeTolerance: 1e308,
   }).pass, false, 'Overflowed tolerance threshold cannot verify');
+});
+
+test('AC-026: two distinct project validators execute and failed output blocks canonical acceptance', async t => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dk-ext-acceptance-'));
+  t.after(() => fs.rmSync(rootDir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(rootDir, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(rootDir, 'docs', 'spec.md'), '# Required verification\nREQ-1\n');
+  const contract = createDevelopmentContract({
+    rootDir,
+    task: {
+      id: 'TASK-EXT-001', projectId: 'proj-ext', status: 'approved',
+      objective: 'Project-specific extensions must not self-accept',
+      scope: { in: ['.'], out: [] }, requirements: ['REQ-1'],
+      acceptanceCriteria: [
+        { id: 'AC-FIN', statement: 'Financial invariant', source: 'REQ-1',
+          verificationType: ['tests'], requiredEvidence: true },
+        { id: 'AC-GEO', statement: 'Geometry invariant', source: 'REQ-1',
+          verificationType: ['tests'], requiredEvidence: true },
+      ],
+      approvalPolicy: { requiredExtensions: [
+        { extensionId: 've-financial', criterionId: 'AC-FIN' },
+        { extensionId: 've-geometry', criterionId: 'AC-GEO' },
+      ] },
+    },
+    authoritativeSources: [{ path: 'docs/spec.md', kind: 'specification', authority: 'required' }],
+  });
+  const registry = new VerificationExtensionRegistry();
+  registry.register({
+    extensionId: 've-financial', name: 'Financial totals',
+    verify: ({ actual, expected }) => checkNumericTolerance({ actual, expected, absoluteTolerance: 0.05 }),
+  });
+  registry.register({
+    extensionId: 've-geometry', name: 'Geometry topology',
+    verify: ({ points }) => evaluateInvariant({ name: 'nonempty-geometry',
+      condition: value => value.points.length > 2, value: { points } }),
+  });
+  const execution = await executeVerificationExtensions({
+    contract, registry,
+    bindings: [
+      { extensionId: 've-financial', criterionId: 'AC-FIN', input: { actual: 100.1, expected: 100 } },
+      { extensionId: 've-geometry', criterionId: 'AC-GEO', input: { points: [[0, 0], [1, 1]] } },
+    ],
+  });
+  assert.deepEqual(execution.map(x => x.status), ['FAIL', 'FAIL']);
+  const evidence = createVerificationRecord({
+    contract, runId: 'run-ext-0001', role: 'test-engineer',
+    sourceFingerprint: contract.sourceFingerprint,
+    criteria: execution.map(x => ({ id: x.id, status: x.status, evidence: [], reason: x.reason })),
+  });
+  assert.equal(evidence.verdict, 'FAIL');
+  const outcome = decideAcceptance({ contract, verification: evidence, rootDir });
+  assert.equal(outcome.state, 'BLOCKED');
+  assert.ok(outcome.blockers.some(x => x.code === 'REQUIRED_EXTENSION_FAILED'));
+  const missing = decideAcceptance({ contract, rootDir });
+  assert.equal(missing.state, 'PENDING');
+  assert.ok(missing.pending.some(x => x.code === 'REQUIRED_EXTENSION_UNVERIFIED'));
+  const absent = await executeVerificationExtensions({
+    contract, registry: new VerificationExtensionRegistry(), bindings: [],
+  });
+  assert.deepEqual(absent.map(x => x.status), ['FAIL', 'FAIL']);
 });
