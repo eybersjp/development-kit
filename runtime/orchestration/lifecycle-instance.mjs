@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { CANONICAL_STAGES } from '../autopilot/transition-model.mjs';
+import { getCurrentState } from '../autopilot/state-store.mjs';
 
 export const LIFECYCLE_INSTANCE_SCHEMA_VERSION = '1.0.0';
 export const DEFAULT_LIFECYCLE_TYPE = 'standard';
@@ -235,17 +236,23 @@ export function ensureProjectLifecycle({
   rootDir = process.cwd(),
   legacyAutopilotState = null,
 } = {}) {
-  // If legacyAutopilotState exists and has no lifecycleId, bind to default root lifecycle
-  if (legacyAutopilotState) {
-    const existingLifecycleId = legacyAutopilotState.lifecycleId || DEFAULT_ROOT_LIFECYCLE_ID;
+  // Preserve existing legacy workflow progress, including previously completed stages.
+  // Caller-provided state takes precedence; a read-only lookup never overwrites it.
+  const existingState = legacyAutopilotState ?? getCurrentState(rootDir);
+  if (existingState) {
+    const existingLifecycleId = existingState.lifecycleId || DEFAULT_ROOT_LIFECYCLE_ID;
     return createLifecycleInstance({
       lifecycleId: existingLifecycleId,
       parentLifecycleId: null,
       type: 'legacy-project',
       name: 'Default Root Lifecycle',
-      stage: legacyAutopilotState.currentStage || 'UNDERSTAND',
-      status: legacyAutopilotState.workflowStatus === 'completed' ? 'completed' : 'active',
-      sourceRevision: legacyAutopilotState.stateRevision || 1,
+      stage: existingState.currentStage || 'UNDERSTAND',
+      status: existingState.workflowStatus === 'completed' ? 'completed'
+        : existingState.workflowStatus === 'cancelled' ? 'cancelled'
+        : existingState.workflowStatus === 'paused' ? 'paused'
+        : existingState.workflowStatus === 'recovering' ? 'blocked' : 'active',
+      sourceRevision: existingState.stateRevision || 1,
+      completedStages: Array.isArray(existingState.completedStages) ? existingState.completedStages : [],
     });
   }
 
