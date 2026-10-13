@@ -183,9 +183,21 @@ test('startup health-check timeout cleans up a still-running DKF-owned process',
   });
   fs.writeFileSync(path.join(root, 'idle.mjs'), 'setInterval(() => {}, 1000);', 'utf8');
 
-  t.after(() => {
+  t.after(async () => {
     try { stopPreview({ rootDir: root }); } catch {}
-    fs.rmSync(root, { recursive: true, force: true });
+    for (let i = 0; i < 5; i++) {
+      try {
+        fs.rmSync(root, { recursive: true, force: true });
+        break;
+      } catch (err) {
+        if (i < 4 && (err.code === 'EBUSY' || err.code === 'EPERM')) {
+          await new Promise((r) => setTimeout(r, 200));
+        } else {
+          // If still locked on Windows, ignore to avoid failing test cleanup
+          break;
+        }
+      }
+    }
   });
 
   const result = await ensurePreview({

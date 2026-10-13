@@ -304,11 +304,16 @@ export function normalizeAcceptanceCriteria(criteria = []) {
     }
 
     const requirementId = typeof value.requirementId === 'string' && value.requirementId.trim() ? value.requirementId.trim() : null;
+    // Multi-requirement mapping is explicit, audited source authority: a
+    // single acceptance criterion can verify several distinct requirements.
+    const requirementIds = normalizeStringArray(value.requirementIds ??
+      (requirementId ? [requirementId] : []));
 
     return {
       id,
       statement,
       requirementId,
+      requirementIds,
       source,
       verificationType,
       requiredEvidence: value.requiredEvidence !== false,
@@ -491,7 +496,7 @@ export function validateDevelopmentContract(contract) {
   if (!Array.isArray(contract.acceptanceCriteria) || contract.acceptanceCriteria.length === 0) {
     errors.push('acceptanceCriteria must contain at least one criterion');
   } else {
-    const criterionKeys = new Set(['id', 'statement', 'requirementId', 'source', 'verificationType', 'requiredEvidence']);
+    const criterionKeys = new Set(['id', 'statement', 'requirementId', 'requirementIds', 'source', 'verificationType', 'requiredEvidence']);
     const criterionIds = new Set();
     for (const criterion of contract.acceptanceCriteria) {
       if (!isPlainObject(criterion)) {
@@ -499,6 +504,22 @@ export function validateDevelopmentContract(contract) {
         continue;
       }
       assertNoExtraKeys(criterion, criterionKeys, 'acceptance criterion', errors);
+      if (criterion.requirementIds !== undefined) {
+        validateStringArray(criterion.requirementIds, 'acceptance criterion requirementIds', errors);
+        if (Array.isArray(criterion.requirementIds) && Array.isArray(contract.requirements)) {
+          for (const req of criterion.requirementIds) {
+            if (typeof req !== 'string' || !req.trim()) continue;
+            const matches = contract.requirements.some(item => {
+              if (typeof item === 'string') return item === req;
+              if (isPlainObject(item) && typeof item.id === 'string') return item.id === req;
+              return false;
+            });
+            if (!matches) {
+              errors.push('Acceptance criterion references unknown requirement: ' + req);
+            }
+          }
+        }
+      }
       if (typeof criterion.id !== 'string' || !IDENTIFIER_PATTERN.test(criterion.id)) errors.push('Acceptance criterion id is invalid');
       if (criterionIds.has(criterion.id)) errors.push(`Duplicate acceptance criterion id: ${criterion.id}`);
       criterionIds.add(criterion.id);
