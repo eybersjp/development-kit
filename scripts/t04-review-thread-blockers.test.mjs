@@ -6,6 +6,7 @@ import {
   requireCanonicalReviewRequestCommit,
   parseReviewThreadPage,
   requireCanonicalGithubReviewVerdict,
+  formatCanonicalT04ReviewRequest,
 } from './t04-review-thread-blockers.mjs';
 
 test('T04-A01 unresolved P2 and all other finding priorities prevent acceptance', () => {
@@ -135,5 +136,41 @@ test('T04-A06 COMMENTED review requires a canonical PASS without conflicting fin
   ]) {
     assert.throws(() => requireCanonicalGithubReviewVerdict(body),
       /canonical PASS verdict|Conflicting failure or finding marker/i, body);
+  }
+});
+
+test('T04-A07 reject extra free-text contradicting zero-findings review', () => {
+  const full = 'Reviewed commit: ' + 'a'.repeat(40) +
+    '\nReview role: code-reviewer\nVerdict: PASS\nFindings: none';
+  assert.equal(reviewParsers.requireCanonicalGithubReviewResponse({
+    commit_id: 'a'.repeat(40), body: full,
+  }, 'code-reviewer', 'a'.repeat(40)), 'PASS');
+  for (const additional of [
+    'The restore loses the original tree after a power outage',
+    'Possible loss of user data on Windows',
+    'Further investigation is required',
+    'Verdict: PASS',
+    'Findings: none',
+    '',
+  ]) {
+    assert.throws(() => reviewParsers.requireCanonicalGithubReviewResponse({
+      commit_id: 'a'.repeat(40), body: full + '\n' + additional,
+    }, 'code-reviewer', 'a'.repeat(40)), /Conflicting failure|canonical/i);
+  }
+});
+
+test('T04-A08 generated reviewer request has one immutable SHA and exactly one role', () => {
+  const source = 'a'.repeat(40);
+  const roles = ['code-reviewer', 'architecture-reviewer', 'security-reviewer'];
+  for (const role of roles) {
+    const body = formatCanonicalT04ReviewRequest(role, source, 'Inspect precise T04 source and evidence.');
+    assert.equal((body.match(new RegExp(source, 'g')) || []).length, 1);
+    assert.equal(reviewParsers.requireCanonicalGithubReviewRequest({
+      issue_url: 'https://api.github.com/repos/eybersjp/development-kit/issues/70',
+      body,
+    }, role, source), source);
+    assert.throws(() => formatCanonicalT04ReviewRequest(
+      role, source, 'Inspect a different revision ' + 'b'.repeat(40) + '.',
+    ), /one canonical reviewed commit/i);
   }
 });
