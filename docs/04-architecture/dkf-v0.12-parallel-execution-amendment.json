@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "1.0.0",
+  "amendmentId": "DKF-V012-PARALLEL-SCHEDULING-PO-20261013",
+  "planId": "DKF-V012-SCALE-CONTEXT-ITERATION",
+  "authority": "https://github.com/eybersjp/development-kit/issues/74",
+  "approvalDate": "2026-10-13",
+  "amends": "docs/04-architecture/dkf-scale-context-iteration-v0.12-implementation-plan.md#1-execution-rule",
+  "preserveOriginalPlanFingerprint": true,
+  "implementationPolicy": {
+    "parallelProvisionalStartEnabled": true,
+    "taskIds": [
+      "DKF120-T05",
+      "DKF120-T06",
+      "DKF120-T07",
+      "DKF120-T08",
+      "DKF120-T09",
+      "DKF120-T10"
+    ],
+    "requiresIsolatedWork": true,
+    "requiresProvisionalStatus": true
+  },
+  "acceptancePolicy": {
+    "requiresAcceptedDependencies": true,
+    "requiresIndependentReview": true,
+    "requiresDeterministicGate": true
+  },
+  "integrationPolicy": {
+    "requiresAcceptedDependencies": true,
+    "requiresOrderedIntegration": true
+  },
+  "releasePolicy": {
+    "requiresAllTenTasksAccepted": true,
+    "requiresExplicitProductOwnerApproval": true,
+    "authorizedToPublish": false
+  },
+  "nonWaivable": {
+    "retainFullWindowsLegacyRestore": true,
+    "issue73OpenUntilIndependentlyVerified": true,
+    "hostileSameUidDeferralOnlyInIssue72": true
+  }
+}
