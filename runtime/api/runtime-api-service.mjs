@@ -255,6 +255,24 @@ export class RuntimeApiService {
       return this._json(res, 200, { settings: effective });
     }
 
+    if (method === 'GET' && pathname === '/v1/scale-context') {
+      // Expose v0.12 Scale/Context control plane state (AC-030)
+      return this._json(res, 200, {
+        schemaVersion: '1.0.0',
+        capabilities: {
+          workspaceTargets: true,
+          executionCapsules: true,
+          stateEngineV2: true,
+          lifecycleInstances: true,
+          discoveryReentry: true,
+          gateProfiles: true,
+          verificationExtensionSdk: true,
+          complexityDeltaGuard: true,
+        },
+        stateHealth: 'healthy',
+      });
+    }
+
     if (method === 'GET' && pathname === '/v1/configuration-readiness') {
       const reg = loadConfigurationRegistry(this.rootDir);
       const gate = evaluateConfigurationReadiness({
