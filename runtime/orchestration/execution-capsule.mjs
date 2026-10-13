@@ -340,7 +340,7 @@ export function createExecutionCapsule({
   const targetDelta = resolveTargetDelta(contract, rootDir, changedFiles, entry);
   const upstream = normalizeUpstreamTasks(upstreamAcceptedTasks);
   const runtimeFacts = normalizeRuntimeFacts(verifiedRuntimeFacts);
-  const gateIds = stringArray(requiredGateProfileIds, 'requiredGateProfileIds');
+  const gateIds = stringArray([...(contract.approvalPolicy?.requiredGateProfileIds ?? []), ...requiredGateProfileIds], 'requiredGateProfileIds');
 
   const capsuleBase = {
     schemaVersion: EXECUTION_CAPSULE_SCHEMA_VERSION,
