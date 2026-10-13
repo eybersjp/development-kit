@@ -46,7 +46,7 @@ export function requireCanonicalGithubReviewVerdict(body) {
   if (typeof body !== 'string') throw new Error('GitHub reviewer verdict evidence is malformed');
   // Closed schema: no trailers, markdown prose, second findings field or
   // unstructured text capable of contradicting a declared clean review.
-  const lines = body.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n');
+  const lines = body.replace(/\r\n/g, '\n').split('\n');
   if (lines.length === 1) {
     throw new Error('Independent GitHub review requires exactly one canonical PASS verdict');
   }
