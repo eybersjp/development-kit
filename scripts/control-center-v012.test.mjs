@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import vm from 'node:vm';
+import { renderControlCenterHtml } from '../runtime/control-center/control-center-app.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -206,4 +208,28 @@ test('v0.12 integrated: project contract enforces gates, extensions, discovery, 
   assert.equal(observed.stateHealth, 'unavailable');
   assert.equal(observed.operational.effectiveGates.status, 'unavailable');
   assert.equal(observed.capabilities.verificationExtensionSdk.accepted, null);
+});
+
+
+test('Control Center displays installed DKF version and does not ship stale labels', async t => {
+  const { get } = await serve(t);
+  const data = await get('/v1/status');
+  const installed = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(data.frameworkVersion, installed.version);
+});
+
+test('Control Center live UI includes valid JS, polling, refresh, and v0.12 projection', () => {
+  const html = renderControlCenterHtml({ sessionToken: 'test-local-session' });
+  assert.match(html, /id="framework-badge"/);
+  assert.match(html, /data-view="scale-context"/);
+  assert.match(html, /Refresh now/);
+  assert.doesNotMatch(html, /<span class="brand-badge">v0\.7\.0<\/span>/);
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(script, 'embedded dashboard JS must exist');
+  assert.doesNotThrow(() => new vm.Script(script));
+  assert.match(script, /setInterval\(/);
+  assert.match(script, /5000/);
+  assert.match(script, /'\/v1\/scale-context'/);
+  assert.match(script, /cache: 'no-store'/);
+  assert.match(script, /visibilitychange/);
 });
