@@ -96,10 +96,21 @@ export class RuntimeApiService {
     // CORS Handling (Deny-by-default, allow loopback Control Center)
     const origin = req.headers.origin;
     if (origin) {
-      const isLoopbackOrigin =
-        origin.startsWith('http://127.0.0.1') ||
-        origin.startsWith('http://localhost') ||
-        origin.startsWith(`http://[::1]`);
+      // Compare the parsed URL hostname, not a string prefix: an attacker
+      // can own "localhost.evil.example" or "127.0.0.1.evil.example".
+      // Origin must be a canonical HTTP loopback origin without credentials,
+      // path, query, or a spoofed suffix.
+      let isLoopbackOrigin = false;
+      try {
+        const parsedOrigin = new URL(origin);
+        isLoopbackOrigin =
+          parsedOrigin.protocol === 'http:' &&
+          ['127.0.0.1', 'localhost', '[::1]'].includes(parsedOrigin.hostname) &&
+          parsedOrigin.username === '' && parsedOrigin.password === '' &&
+          parsedOrigin.origin === origin;
+      } catch {
+        // Treat malformed, opaque, or untrusted origins as remote.
+      }
 
       if (!isLoopbackOrigin) {
         res.writeHead(403, { 'Content-Type': 'application/json' });
