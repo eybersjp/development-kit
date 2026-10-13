@@ -569,10 +569,15 @@ export class RuntimeApiService {
       frameworkVersion: this._resolveFrameworkVersion(),
       identity,
       settings,
+      projectRoot: path.resolve(this.rootDir),
       workflow: {
         active: Boolean(state),
-        currentStage: state ? state.currentStage : null,
-        workflowStatus: state ? state.workflowStatus : null,
+        currentStage: state?.currentStage ?? null,
+        workflowStatus: state?.workflowStatus ?? null,
+        revision: state?.stateRevision ?? null,
+        updatedAt: state?.updatedAt ?? null,
+        activeTask: typeof state?.activeTask === 'string' ? state.activeTask : state?.activeTask?.id ?? null,
+        activeContractId: state?.orchestration?.activeContractId ?? null,
       },
       intelligence: {
         activeMemoryCount: records.filter((r) => r.status === MemoryStatus.ACTIVE).length,
