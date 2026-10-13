@@ -92,7 +92,8 @@
     "state-engine-v2:benchmark": "node scripts/state-engine-v2-benchmark.mjs --events 300",
     "lifecycle-instances:test": "node scripts/phase07-lifecycle-instances-contract.mjs && node --test scripts/lifecycle-instances.test.mjs",
     "discovery-reentry:test": "node scripts/phase08-discovery-reentry-contract.mjs && node --test scripts/discovery-reentry.test.mjs",
-    "gate-profiles:test": "node scripts/phase09-gate-profiles-contract.mjs && node --test scripts/gate-profiles.test.mjs"
+    "gate-profiles:test": "node scripts/phase09-gate-profiles-contract.mjs && node --test scripts/gate-profiles.test.mjs",
+    "verification-extension-sdk:test": "node scripts/phase10-verification-extension-sdk-contract.mjs && node --test scripts/verification-extension-sdk.test.mjs"
   },
   "engines": {
     "node": ">=18.0.0"
