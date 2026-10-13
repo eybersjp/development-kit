@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://development-kit.dev/schemas/lifecycle-instance.schema.json",
+  "title": "Development Kit Lifecycle Instance",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "lifecycleId",
+    "parentLifecycleId",
+    "type",
+    "name",
+    "stage",
+    "status",
+    "targets",
+    "sourceRevision",
+    "sourceFingerprint",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "lifecycleId": {
+      "type": "string",
+      "pattern": "^lc-[a-zA-Z0-9_-]{8,64}$"
+    },
+    "parentLifecycleId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "UNDERSTAND",
+        "DEFINE",
+        "DESIGN",
+        "PLAN",
+        "IMPLEMENT",
+        "VERIFY",
+        "REVIEW",
+        "SIMPLIFY",
+        "COMPLETE"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "completed",
+        "paused",
+        "blocked",
+        "cancelled"
+      ]
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "sourceRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "sourceFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "completedStages": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "UNDERSTAND",
+          "DEFINE",
+          "DESIGN",
+          "PLAN",
+          "IMPLEMENT",
+          "VERIFY",
+          "REVIEW",
+          "SIMPLIFY",
+          "COMPLETE"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
