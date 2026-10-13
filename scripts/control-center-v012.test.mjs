@@ -199,7 +199,7 @@ test('v0.12 integrated: project contract enforces gates, extensions, discovery, 
   });
   assert.equal(event.minimumReentryStage, 'DEFINE');
   assert.equal(event.requiresHumanApproval, true);
-  assert.equal(computeComplexityDelta({ linesAdded: 5, linesRemoved: 2 }).schemaVersion, '1.0.0');
+  assert.equal(computeComplexityDelta({ linesAdded: 5, linesDeleted: 2 }).schemaVersion, '1.0.0');
   const observed = await get('/v1/scale-context');
   assert.equal(observed.operational.discoveryQueue.count, 1);
   assert.equal(observed.operational.discoveryQueue.pendingApproval, 1);
