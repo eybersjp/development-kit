@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 
 export const DISCOVERY_EVENT_SCHEMA_VERSION = '1.0.0';
 
@@ -17,6 +19,46 @@ export const REENTRY_STAGE_MAP = Object.freeze({
 });
 
 const DISCOVERY_ID_PATTERN = /^disc-[a-zA-Z0-9_-]{8,64}$/;
+
+const AUTHORITY_STAGES = Object.freeze({
+  specification: 'DEFINE',
+  architecture: 'DESIGN',
+  plan: 'PLAN',
+  implementation: 'IMPLEMENT',
+});
+const AUTHORITY_APPROVAL_STAGES = new Set(['DEFINE', 'DESIGN']);
+const REENTRY_ORDER = ['DEFINE', 'DESIGN', 'PLAN', 'IMPLEMENT'];
+const DISCOVERY_STORE_ROOT = '.development-kit/discovery/events';
+const discoveryFile = (rootDir, discoveryId) =>
+  path.join(rootDir, DISCOVERY_STORE_ROOT, discoveryId + '.json');
+
+function deriveAuthorityRequirements(classification, affectedAuthority) {
+  if (!DISCOVERY_CLASSIFICATIONS.includes(classification)) {
+    throw new DiscoveryError(`Unknown classification: ${classification}`);
+  }
+  if (!Array.isArray(affectedAuthority)) {
+    throw new DiscoveryError('affectedAuthority must be an array');
+  }
+  const candidates = [REENTRY_STAGE_MAP[classification]];
+  for (const authority of affectedAuthority) {
+    if (!authority || typeof authority !== 'object' || Array.isArray(authority)) {
+      throw new DiscoveryError('affectedAuthority entries must be objects');
+    }
+    requireText(authority.path, 'affectedAuthority.path');
+    if (!Object.hasOwn(AUTHORITY_STAGES, authority.kind)) {
+      throw new DiscoveryError(`Unknown affected authority kind: ${authority.kind}`);
+    }
+    if (authority.sections !== undefined &&
+        (!Array.isArray(authority.sections) ||
+          authority.sections.some(section => typeof section !== 'string' || !section.trim()))) {
+      throw new DiscoveryError('affectedAuthority.sections must be an array of non-empty strings');
+    }
+    candidates.push(AUTHORITY_STAGES[authority.kind]);
+  }
+  const stage = candidates.sort((a, b) => REENTRY_ORDER.indexOf(a) - REENTRY_ORDER.indexOf(b))[0];
+  return { stage, requiresHumanApproval: AUTHORITY_APPROVAL_STAGES.has(stage) };
+}
+
 
 export class DiscoveryError extends Error {
   constructor(message, details = null) {
@@ -69,7 +111,8 @@ export function validateDiscoveryEvent(event) {
     throw new DiscoveryError('affectedAuthority must be an array');
   }
 
-  const expectedStage = REENTRY_STAGE_MAP[event.classification];
+  const { stage: expectedStage, requiresHumanApproval: mandatoryApproval } =
+    deriveAuthorityRequirements(event.classification, event.affectedAuthority);
   if (event.minimumReentryStage !== expectedStage) {
     throw new DiscoveryError(
       `minimumReentryStage mismatch for ${event.classification}: expected ${expectedStage}, got ${event.minimumReentryStage}`
@@ -83,8 +126,6 @@ export function validateDiscoveryEvent(event) {
   if (typeof event.requiresHumanApproval !== 'boolean') {
     throw new DiscoveryError('requiresHumanApproval must be a boolean');
   }
-  const mandatoryApproval = event.classification === 'specification-invalidation' ||
-    event.classification === 'architecture-invalidation';
   if (event.requiresHumanApproval !== mandatoryApproval) {
     throw new DiscoveryError('Human approval requirement conflicts with authoritative discovery classification');
   }
@@ -100,20 +141,8 @@ export function resolveReentryStage({
     throw new DiscoveryError(`Unknown classification: ${classification}`);
   }
 
-  // Determine stage strictly based on classification authority hierarchy:
-  // spec-invalidation -> DEFINE
-  // arch-invalidation -> DESIGN
-  // plan-invalidation -> PLAN
-  // implementation-defect -> IMPLEMENT
-  const stage = REENTRY_STAGE_MAP[classification];
+  return deriveAuthorityRequirements(classification, affectedAuthority);
 
-  // Upstream authority changes (spec/arch) require human approval gate!
-  const requiresHumanApproval = classification === 'specification-invalidation' || classification === 'architecture-invalidation';
-
-  return {
-    stage,
-    requiresHumanApproval,
-  };
 }
 
 export function createDiscoveryEvent({
@@ -151,6 +180,49 @@ export function createDiscoveryEvent({
 
   validateDiscoveryEvent(event);
   return event;
+}
+
+export function persistDiscoveryEvent(event, rootDir = process.cwd()) {
+  validateDiscoveryEvent(event);
+  const file = discoveryFile(rootDir, event.discoveryId);
+  const directory = path.dirname(file);
+  fs.mkdirSync(directory, { recursive: true });
+  const content = JSON.stringify(event, null, 2) + '\n';
+  if (fs.existsSync(file)) {
+    if (fs.readFileSync(file, 'utf8') === content) return { path: file, created: false };
+    throw new DiscoveryError('Refusing to overwrite a previously recorded discovery ID');
+  }
+  const temp = path.join(directory, '.pending-' + crypto.randomBytes(12).toString('hex'));
+  const fd = fs.openSync(temp, 'wx', 0o600);
+  try {
+    fs.writeFileSync(fd, content, 'utf8');
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  try {
+    // Exclusive publication: never replace an existing committed event.
+    fs.linkSync(temp, file);
+  } finally {
+    fs.unlinkSync(temp);
+  }
+  return { path: file, created: true };
+}
+
+export function loadDiscoveryEvents(rootDir = process.cwd()) {
+  const directory = path.join(rootDir, DISCOVERY_STORE_ROOT);
+  if (!fs.existsSync(directory)) return [];
+  const events = [];
+  for (const name of fs.readdirSync(directory).filter(n => n.endsWith('.json')).sort()) {
+    if (!/^disc-[a-zA-Z0-9_-]{8,64}\.json$/.test(name)) {
+      throw new DiscoveryError('Unsafe discovery event filename');
+    }
+    const event = JSON.parse(fs.readFileSync(path.join(directory, name), 'utf8'));
+    validateDiscoveryEvent(event);
+    if (name !== event.discoveryId + '.json') throw new DiscoveryError('Discovery event ID and filename disagree');
+    events.push(event);
+  }
+  return events;
 }
 
 /**
