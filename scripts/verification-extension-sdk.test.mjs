@@ -115,3 +115,24 @@ test('AC-038 & AC-037: Two materially different example extensions run without c
   assert.equal(registry.get('ve-financial-tolerance').name, 'Financial Ledger Tolerance Extension');
   assert.equal(registry.get('ve-cad-geometry').name, 'CAD Geometry Invariant Extension');
 });
+
+test('AC-025: numeric verification fails closed on nonfinite and absent tolerance', () => {
+  assert.equal(checkNumericTolerance({ actual: 10, expected: 10 }).pass, true);
+  const unequal = checkNumericTolerance({ actual: 100, expected: 1 });
+  assert.equal(unequal.pass, false, 'Omitted tolerance is not unconditional acceptance');
+  assert.match(unequal.reason, /no tolerance/i);
+
+  for (const nonfinite of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    assert.throws(() => checkNumericTolerance({ actual: nonfinite, expected: 1, absoluteTolerance: 1 }));
+    assert.throws(() => checkNumericTolerance({ actual: 1, expected: nonfinite, relativeTolerance: 1 }));
+    assert.throws(() => checkNumericTolerance({ actual: 1, expected: 1, absoluteTolerance: nonfinite }));
+    assert.throws(() => checkNumericTolerance({ actual: 1, expected: 1, relativeTolerance: nonfinite }));
+  }
+
+  assert.equal(checkNumericTolerance({
+    actual: 1e308, expected: -1e308, absoluteTolerance: 1,
+  }).pass, false, 'Overflowed difference cannot verify');
+  assert.equal(checkNumericTolerance({
+    actual: 100, expected: 1e308, relativeTolerance: 1e308,
+  }).pass, false, 'Overflowed tolerance threshold cannot verify');
+});
