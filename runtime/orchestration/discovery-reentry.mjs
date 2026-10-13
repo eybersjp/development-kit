@@ -154,6 +154,7 @@ export function createDiscoveryEvent({
   evidence,
   affectedAuthority = [],
   affectedTasks = [],
+  rootDir = null,
   now = new Date().toISOString(),
 } = {}) {
   const { stage, requiresHumanApproval } = resolveReentryStage({ classification, affectedAuthority });
@@ -179,6 +180,7 @@ export function createDiscoveryEvent({
   };
 
   validateDiscoveryEvent(event);
+  if (rootDir !== null) persistDiscoveryEvent(event, rootDir);
   return event;
 }
 
