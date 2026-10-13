@@ -155,8 +155,14 @@ export function advanceLifecycleStage(instance, nextStage, { now = new Date().to
   const currentIndex = CANONICAL_STAGES.indexOf(instance.stage);
   const nextIndex = CANONICAL_STAGES.indexOf(nextStage);
 
-  if (instance.status === 'completed') {
-    throw new LifecycleError(`Cannot advance completed lifecycle: ${instance.lifecycleId}`);
+  if (instance.status !== 'active') {
+    throw new LifecycleError(`Cannot advance non-active lifecycle: ${instance.lifecycleId}`);
+  }
+  // Ordinary progression is strictly one canonical stage at a time. Controlled
+  // backwards re-entry is a separate governed operation and cannot be achieved
+  // by calling this low-level stage advancement helper.
+  if (nextIndex !== currentIndex + 1) {
+    throw new LifecycleError('Lifecycle stage transition must advance exactly one canonical stage');
   }
 
   const completedStages = new Set(instance.completedStages || []);
@@ -171,9 +177,10 @@ export function advanceLifecycleStage(instance, nextStage, { now = new Date().to
     updatedAt: now,
   };
 
-  if (nextStage === 'COMPLETE') {
-    updated.status = 'completed';
-  }
+  // Entering the COMPLETE stage does NOT mark the lifecycle accepted.
+  // Only the independently evaluated deterministic acceptance result may
+  // produce a completed status in evaluateLifecycleCompletion().
+  updated.status = 'active';
 
   validateLifecycleInstance(updated);
   return updated;
