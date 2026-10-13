@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'feature/v0.12-*']
   pull_request:
     branches: [main]
 
@@ -102,6 +102,15 @@ jobs:
 
       - name: Validate v0.12 State Engine V2 increment
         run: npm run state-engine-v2:test
+
+      - name: Validate provisional v0.12 T05–T10 modules
+        run: |
+          npm run lifecycle-instances:test
+          npm run discovery-reentry:test
+          npm run gate-profiles:test
+          npm run verification-extension-sdk:test
+          npm run complexity-delta:test
+          npm run control-center-v012:test
 
       - name: Validate cross-owner legacy restore metadata
         if: ${{ matrix.os == 'ubuntu-latest' && github.event.pull_request.head.repo.full_name == github.repository }}
