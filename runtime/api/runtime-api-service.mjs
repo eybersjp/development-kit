@@ -267,7 +267,7 @@ export class RuntimeApiService {
         try {
           const pointer = JSON.parse(fs.readFileSync(pointerPath, 'utf8'));
           if (!Number.isSafeInteger(pointer.currentRevision) ||
-              !/^revision-\\d{6}\\.json$/.test(pointer.currentRevisionFile) ||
+              !/^revision-\d{6}\.json$/.test(pointer.currentRevisionFile) ||
               Number(pointer.currentRevisionFile.slice(9, 15)) !== pointer.currentRevision) {
             throw new Error('Invalid revision pointer');
           }
