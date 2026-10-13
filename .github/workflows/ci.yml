@@ -98,6 +98,15 @@ jobs:
       - name: Validate v0.12 Execution Capsules & Context Cache increment
         run: npm run execution-capsule:test
 
+      - name: Validate v0.12 non-T04 feature increments
+        run: |
+          npm run lifecycle-instances:test
+          npm run discovery-reentry:test
+          npm run gate-profiles:test
+          npm run verification-extension-sdk:test
+          npm run complexity-delta:test
+          npm run control-center-v012:test
+
       - name: Validate Design Authority governance
         run: npm run design-authority:validate
 
