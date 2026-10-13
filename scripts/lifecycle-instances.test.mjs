@@ -211,3 +211,12 @@ test('AC-017: lifecycle COMPLETE is not inherited by a parent, nor dictated by e
     instance: parent, acceptanceState: 'ACCEPTED', domainState,
   }).completed, false);
 });
+
+test('AC-017: externally supplied completed status cannot survive unaccepted lifecycle evaluation', () => {
+  const userSupplied = createLifecycleInstance({ name: 'Forged completed status', stage: 'COMPLETE', status: 'completed' });
+  const pending = evaluateLifecycleCompletion({ instance: userSupplied, acceptanceState: 'PENDING' });
+  assert.equal(pending.completed, false);
+  assert.notEqual(pending.status, 'completed');
+  const rejected = evaluateLifecycleCompletion({ instance: userSupplied, acceptanceState: 'REJECTED' });
+  assert.equal(rejected.status, 'active');
+});
