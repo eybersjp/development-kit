@@ -193,7 +193,7 @@ export function resolveContractGateProfiles(contract, options = {}) {
     throw new GateProfileError('Invalid persisted contract gate-profile policy');
   }
   if (profileIds.length === 0 && Object.keys(customProfiles).length === 0 &&
-      targetCapabilities.length === 0) {
+      targetCapabilities.length === 0 && (contract.risk?.level ?? 0) < 3) {
     return selectRequiredGates(contract, options);
   }
   return resolveGateProfiles({

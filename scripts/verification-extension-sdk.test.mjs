@@ -200,3 +200,100 @@ test('AC-026: two distinct project validators execute and failed output blocks c
   });
   assert.deepEqual(absent.map(x => x.status), ['FAIL', 'FAIL']);
 });
+
+test('F8: Adversarial test - Acceptance requires strictly bound, passing extension evidence matching extensionId, criterion, and source fingerprint', async t => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dk-ext-f8-'));
+  t.after(() => fs.rmSync(rootDir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(rootDir, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(rootDir, 'docs', 'spec.md'), '# Required verification\nREQ-1\n');
+
+  const contract = createDevelopmentContract({
+    rootDir,
+    task: {
+      id: 'TASK-EXT-F8', projectId: 'proj-ext-f8', status: 'approved',
+      objective: 'Verify strict extension evidence binding',
+      scope: { in: ['.'], out: [] }, requirements: ['REQ-1'],
+      acceptanceCriteria: [
+        { id: 'AC-EXT-1', statement: 'Custom math invariant', source: 'REQ-1',
+          verificationType: ['tests'], requiredEvidence: true },
+      ],
+      approvalPolicy: {
+        requiredExtensions: [
+          { extensionId: 've-math-check', criterionId: 'AC-EXT-1' },
+        ],
+      },
+    },
+    authoritativeSources: [{ path: 'docs/spec.md', kind: 'specification', authority: 'required' }],
+  });
+
+  // 1. Adversarial Case: Unrelated PASS evidence without matching extensionId
+  const unrelatedEvidenceRecord = createVerificationRecord({
+    contract, runId: 'run-f8-1', role: 'test-engineer',
+    sourceFingerprint: contract.sourceFingerprint,
+    criteria: [{
+      id: 'AC-EXT-1',
+      status: 'PASS',
+      evidence: [{ type: 'test', id: 'generic-test-passed' }],
+    }],
+  });
+  const outcomeUnbound = decideAcceptance({ contract, verification: unrelatedEvidenceRecord, rootDir });
+  assert.equal(outcomeUnbound.state, 'BLOCKED');
+  assert.ok(outcomeUnbound.blockers.some(b => b.code === 'REQUIRED_EXTENSION_EVIDENCE_UNBOUND' && b.extensionId === 've-math-check'),
+    'Must block when evidence is not bound to required extensionId');
+
+  // 2. Adversarial Case: Forged/mismatched extensionId
+  const forgedEvidenceRecord = createVerificationRecord({
+    contract, runId: 'run-f8-2', role: 'test-engineer',
+    sourceFingerprint: contract.sourceFingerprint,
+    criteria: [{
+      id: 'AC-EXT-1',
+      status: 'PASS',
+      evidence: [{ type: 'test', extensionId: 've-other-extension' }],
+    }],
+  });
+  const outcomeForged = decideAcceptance({ contract, verification: forgedEvidenceRecord, rootDir });
+  assert.equal(outcomeForged.state, 'BLOCKED');
+  assert.ok(outcomeForged.blockers.some(b => b.code === 'REQUIRED_EXTENSION_EVIDENCE_UNBOUND'));
+
+  // 3. Adversarial Case: Extension result failed despite criterion status PASS
+  const failedExtensionEvidenceRecord = createVerificationRecord({
+    contract, runId: 'run-f8-3', role: 'test-engineer',
+    sourceFingerprint: contract.sourceFingerprint,
+    criteria: [{
+      id: 'AC-EXT-1',
+      status: 'PASS',
+      evidence: [{ type: 'test', extensionId: 've-math-check', result: 'FAIL' }],
+    }],
+  });
+  const outcomeFailedExt = decideAcceptance({ contract, verification: failedExtensionEvidenceRecord, rootDir });
+  assert.equal(outcomeFailedExt.state, 'BLOCKED');
+  assert.ok(outcomeFailedExt.blockers.some(b => b.code === 'REQUIRED_EXTENSION_EVIDENCE_FAILED'));
+
+  // 4. Adversarial Case: Extension evidence bound to wrong criterionId
+  const mismatchedCriterionRecord = createVerificationRecord({
+    contract, runId: 'run-f8-4', role: 'test-engineer',
+    sourceFingerprint: contract.sourceFingerprint,
+    criteria: [{
+      id: 'AC-EXT-1',
+      status: 'PASS',
+      evidence: [{ type: 'test', extensionId: 've-math-check', result: 'PASS', criterionId: 'AC-WRONG' }],
+    }],
+  });
+  const outcomeMismatchedCrit = decideAcceptance({ contract, verification: mismatchedCriterionRecord, rootDir });
+  assert.equal(outcomeMismatchedCrit.state, 'BLOCKED');
+  assert.ok(outcomeMismatchedCrit.blockers.some(b => b.code === 'REQUIRED_EXTENSION_CRITERION_MISMATCH'));
+
+  // 5. Adversarial Case: Stale/mismatched source fingerprint on extension evidence
+  const mismatchedFingerprintRecord = createVerificationRecord({
+    contract, runId: 'run-f8-5', role: 'test-engineer',
+    sourceFingerprint: contract.sourceFingerprint,
+    criteria: [{
+      id: 'AC-EXT-1',
+      status: 'PASS',
+      evidence: [{ type: 'test', extensionId: 've-math-check', result: 'PASS', sourceFingerprint: 'sha256:' + '0'.repeat(64) }],
+    }],
+  });
+  const outcomeMismatchedFp = decideAcceptance({ contract, verification: mismatchedFingerprintRecord, rootDir });
+  assert.equal(outcomeMismatchedFp.state, 'BLOCKED');
+  assert.ok(outcomeMismatchedFp.blockers.some(b => b.code === 'REQUIRED_EXTENSION_SOURCE_MISMATCH'));
+});

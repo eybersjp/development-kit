@@ -63,10 +63,17 @@ function canonicalVerificationClass(value) {
   return aliases.get(normalized) ?? normalized;
 }
 
-function verificationRequirementCovered(requirement, verification, controlsByDomain) {
+function verificationRequirementCovered(requirement, verification, controlsByDomain, architectureDrift, reviewByRole) {
   const normalized = normalizeVerificationRequirement(requirement);
-  if (normalized === 'security') return controlsByDomain.get('security')?.verdict === 'PASS';
+  if (normalized === 'security' || normalized === 'security-audit') {
+    return controlsByDomain.get('security')?.verdict === 'PASS' ||
+      (verification?.verdict === 'PASS' && verification.criteria.some((c) => c.status === 'PASS' && Array.isArray(c.verificationType) && c.verificationType.some((t) => canonicalVerificationClass(t) === 'security')));
+  }
   if (normalized === 'specification') return verification?.verdict === 'PASS';
+  if (normalized === 'architecture-verification') {
+    return architectureDrift?.verdict === 'PASS' || reviewByRole?.get('architecture-reviewer')?.verdict === 'PASS' ||
+      (verification?.verdict === 'PASS' && verification.criteria.some((c) => c.status === 'PASS' && Array.isArray(c.verificationType) && c.verificationType.some((t) => canonicalVerificationClass(t) === 'architecture-verification')));
+  }
   if (!verification || verification.verdict !== 'PASS') return false;
 
   const requiredClass = canonicalVerificationClass(normalized);
@@ -141,6 +148,39 @@ export function decideAcceptance({
         blockers.push({ code: 'REQUIRED_EXTENSION_FAILED', extensionId: item.extensionId, criterionId: item.criterionId });
       } else if (!Array.isArray(criterion.evidence) || criterion.evidence.length === 0) {
         blockers.push({ code: 'REQUIRED_EXTENSION_EVIDENCE_MISSING', extensionId: item.extensionId, criterionId: item.criterionId });
+      } else {
+        const matchingExtensionEvidence = criterion.evidence.filter(ev =>
+          ev && (ev.extensionId === item.extensionId || ev.id === item.extensionId)
+        );
+        if (matchingExtensionEvidence.length === 0) {
+          blockers.push({
+            code: 'REQUIRED_EXTENSION_EVIDENCE_UNBOUND',
+            extensionId: item.extensionId,
+            criterionId: item.criterionId,
+          });
+        } else {
+          for (const ev of matchingExtensionEvidence) {
+            if (ev.result && ev.result !== 'PASS' && ev.status !== 'PASS') {
+              blockers.push({
+                code: 'REQUIRED_EXTENSION_EVIDENCE_FAILED',
+                extensionId: item.extensionId,
+                criterionId: item.criterionId,
+              });
+            } else if (ev.sourceFingerprint && ev.sourceFingerprint !== contract.sourceFingerprint) {
+              blockers.push({
+                code: 'REQUIRED_EXTENSION_SOURCE_MISMATCH',
+                extensionId: item.extensionId,
+                criterionId: item.criterionId,
+              });
+            } else if (ev.criterionId && ev.criterionId !== item.criterionId) {
+              blockers.push({
+                code: 'REQUIRED_EXTENSION_CRITERION_MISMATCH',
+                extensionId: item.extensionId,
+                criterionId: item.criterionId,
+              });
+            }
+          }
+        }
       }
     }
   }
@@ -197,10 +237,12 @@ export function decideAcceptance({
   // When a source-bound contract requires gate profiles, inspect every
   // composed verification class; no independent caller can silently omit it.
   const requiredClasses = (contract.approvalPolicy?.requiredGateProfileIds?.length ||
-    contract.approvalPolicy?.targetCapabilities?.length)
+    contract.approvalPolicy?.targetCapabilities?.length ||
+    (contract.risk?.level ?? 0) >= 3 ||
+    (requiredGates.appliedProfiles?.length ?? 0) > 0)
     ? requiredGates.verification : contract.requiredVerification;
   for (const requirement of requiredClasses) {
-    if (!verificationRequirementCovered(requirement, verification, controlsByDomain)) {
+    if (!verificationRequirementCovered(requirement, verification, controlsByDomain, architectureDrift, reviewByRole)) {
       pending.push({ code: 'MISSING_REQUIRED_VERIFICATION', verification: requirement });
     }
   }

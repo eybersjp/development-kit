@@ -200,3 +200,45 @@ test('AC-023: immutable required custom profile cannot be shadowed or omitted at
   };
   assert.throws(() => resolveContractGateProfiles(tampered), /Built-in gate profile cannot be overridden/);
 });
+
+test('F7: High-risk contracts without explicit profiles automatically enforce gp-high-assurance requirements and block acceptance', (t) => {
+  const rootDir = createTempProject(t);
+  const contract = createDevelopmentContract({
+    rootDir,
+    task: {
+      id: 'TASK-GP-HIGH-RISK',
+      projectId: 'proj_gp_hr',
+      status: 'approved',
+      objective: 'High-risk contract must enforce gp-high-assurance even with empty profile list',
+      scope: { in: ['runtime/'], out: [] },
+      requirements: ['REQ-1'],
+      acceptanceCriteria: [
+        { id: 'AC-1', statement: 'High risk requirement', verificationType: ['tests'], requiredEvidence: true },
+      ],
+      risk: { level: 3, reasons: ['Elevated system risk'] },
+      requiredVerification: ['tests'],
+      approvalPolicy: {
+        requiredGateProfileIds: [],
+        customGateProfiles: {},
+        targetCapabilities: [],
+      },
+    },
+    authoritativeSources: [{ path: 'docs/spec.md', kind: 'specification', authority: 'required' }],
+  });
+
+  const gates = resolveContractGateProfiles(contract);
+  assert.ok(gates.appliedProfiles.includes('gp-high-assurance'), 'Must include gp-high-assurance in appliedProfiles');
+  assert.ok(gates.verification.includes('security-audit'), 'Must include security-audit verification class');
+  assert.ok(gates.verification.includes('architecture-verification'), 'Must include architecture-verification class');
+  assert.ok(gates.reviewers.includes('security-reviewer'), 'Must include security-reviewer');
+  assert.ok(gates.reviewers.includes('architecture-reviewer'), 'Must include architecture-reviewer');
+  assert.ok(gates.controlDomains.includes('security'), 'Must include security control domain');
+
+  // Verify that acceptance blocks when security and architecture evidence is missing
+  const acceptance = decideAcceptance({ contract, rootDir });
+  assert.equal(acceptance.state, 'PENDING');
+  assert.ok(acceptance.pending.some(x => x.code === 'MISSING_REQUIRED_VERIFICATION' && x.verification === 'security-audit'));
+  assert.ok(acceptance.pending.some(x => x.code === 'MISSING_REQUIRED_VERIFICATION' && x.verification === 'architecture-verification'));
+  assert.ok(acceptance.pending.some(x => x.code === 'MISSING_REQUIRED_REVIEW' && x.role === 'security-reviewer'));
+  assert.ok(acceptance.pending.some(x => x.code === 'MISSING_REQUIRED_REVIEW' && x.role === 'architecture-reviewer'));
+});
