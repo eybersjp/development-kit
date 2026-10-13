@@ -950,3 +950,83 @@ test('T04-H46 recovery fsyncs a fully present but unflushed suffix before acknow
     fs.unlinkSync = originalUnlink;
   }
 });
+
+
+test('T04-H49 Windows refuses canonical ledger mutation when pending-journal directory flush fails', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('Windows write-capable directory flush barrier');
+    return;
+  }
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H49_BASELINE', payload: { step: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const before = fs.readFileSync(paths.events);
+  const dir = fs.statSync(paths.stateRoot);
+  const originalFsync = fs.fsyncSync;
+  let injected = false;
+  fs.fsyncSync = function failStateDirectory(fd) {
+    const witness = fs.fstatSync(fd);
+    if (witness.isDirectory() && witness.dev === dir.dev && witness.ino === dir.ino) {
+      injected = true;
+      const error = new Error('injected Windows namespace durability failure');
+      error.code = 'EIO';
+      throw error;
+    }
+    return originalFsync.call(this, fd);
+  };
+  try {
+    assert.throws(
+      () => appendMetadataEvent({ rootDir, eventType: 'H49_FOLLOWUP', payload: { step: 2 } }),
+      /directory durability barrier failed/i,
+    );
+  } finally {
+    fs.fsyncSync = originalFsync;
+  }
+  assert.equal(injected, true);
+  assert.deepEqual(fs.readFileSync(paths.events), before,
+    'The ledger must not be changed if publishing the pending journal is not durable');
+  assert.equal(fs.existsSync(paths.pending), true,
+    'Keep recovery evidence when pending journal namespace cannot be flushed');
+});
+
+test('T04-H50 Windows flushes pending-journal directory before any physical canonical append', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('Windows pending-journal namespace ordering');
+    return;
+  }
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H50_BASELINE', payload: { step: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const dir = fs.statSync(paths.stateRoot);
+  const ledger = fs.statSync(paths.events);
+  const originalFsync = fs.fsyncSync;
+  const originalWrite = fs.writeSync;
+  let namespaceFlushed = false;
+  let sawLedgerAppend = false;
+  fs.fsyncSync = function watchStateDirectoryFlush(fd) {
+    const stat = fs.fstatSync(fd);
+    const returned = originalFsync.call(this, fd);
+    if (stat.isDirectory() && stat.dev === dir.dev && stat.ino === dir.ino) {
+      namespaceFlushed = true;
+    }
+    return returned;
+  };
+  fs.writeSync = function guardLedgerAppend(fd, ...args) {
+    const stat = fs.fstatSync(fd);
+    if (stat.isFile() && stat.dev === ledger.dev && stat.ino === ledger.ino) {
+      sawLedgerAppend = true;
+      assert.equal(namespaceFlushed, true,
+        'The pending journal must be flushed in its parent before appending ledger bytes');
+    }
+    return originalWrite.call(this, fd, ...args);
+  };
+  try {
+    appendMetadataEvent({ rootDir, eventType: 'H50_FOLLOWUP', payload: { step: 2 } });
+  } finally {
+    fs.fsyncSync = originalFsync;
+    fs.writeSync = originalWrite;
+  }
+  assert.equal(sawLedgerAppend, true);
+  assert.equal(fs.existsSync(paths.pending), false);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
