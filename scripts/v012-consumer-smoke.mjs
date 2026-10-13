@@ -36,17 +36,23 @@ try {
   const manifest = JSON.parse(fs.readFileSync(path.join(packageDir,
     '.agents', 'plugins', 'development-kit', 'plugin.json'), 'utf8'));
   assert.equal(manifest.version, rootPackage.version);
-  // A repository-local DKF installation must identify the running executable,
-  // not an older plugin manifest in the host workspace's .agents directory.
-  const staleManifest = path.join(consumer, '.agents', 'plugins', 'development-kit', 'plugin.json');
+  // Install the packaged plugin as a real consumer. The npm tarball carries
+  // source runtime/ plus the manifest, and the installer materializes its plugin.
+  execFileSync(process.execPath, [path.join(packageDir, 'scripts', 'install-antigravity.mjs'), '--project'], {
+    cwd: consumer, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000,
+  });
+  const pluginDir = path.join(consumer, '.agents', 'plugins', 'development-kit');
+  const installedPlugin = JSON.parse(fs.readFileSync(path.join(pluginDir, 'plugin.json'), 'utf8'));
+  assert.equal(installedPlugin.version, rootPackage.version);
+  const legacyRoot = path.join(consumer, 'nested-app');
+  const staleManifest = path.join(legacyRoot, '.agents', 'plugins', 'development-kit', 'plugin.json');
   fs.mkdirSync(path.dirname(staleManifest), { recursive: true });
   fs.writeFileSync(staleManifest, JSON.stringify({ name: 'development-kit', version: '0.10.0' }));
-  const { RuntimeApiService } = await import(pathToFileURL(path.join(packageDir,
-    '.agents', 'plugins', 'development-kit', 'runtime', 'api', 'runtime-api-service.mjs')).href);
-  const api = new RuntimeApiService({ rootDir: consumer });
+  const { RuntimeApiService } = await import(pathToFileURL(path.join(pluginDir,
+    'runtime', 'api', 'runtime-api-service.mjs')).href);
+  const api = new RuntimeApiService({ rootDir: legacyRoot });
   assert.equal(api._resolveFrameworkVersion(), rootPackage.version,
-    'installed executable version must win over host workspace stale manifest');
-
+    'running executable plugin version must win over older target-project manifest');
   for (const moduleName of [
     'cost-observatory', 'workspace-targets', 'execution-capsule',
     'lifecycle-instance', 'discovery-reentry', 'gate-profiles',
