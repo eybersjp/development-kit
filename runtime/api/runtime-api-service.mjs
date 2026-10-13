@@ -23,6 +23,9 @@ import { resolveEffectiveSettings } from '../intelligence/settings.mjs';
 import { LocalMemoryProvider } from '../intelligence/local-memory-provider.mjs';
 import { getCurrentState } from '../autopilot/state-store.mjs';
 import { validateWorkflowState } from '../autopilot/validators.mjs';
+import { loadWorkspaceTargetRegistry } from '../orchestration/workspace-targets.mjs';
+import { loadCostRecords } from '../orchestration/cost-observatory.mjs';
+import { loadDiscoveryEvents } from '../orchestration/discovery-reentry.mjs';
 import { MemoryType, MemoryStatus, MemoryAuthority } from '../intelligence/memory-enums.mjs';
 import { validateMemoryRecord, validateAuthorityTransition } from '../intelligence/memory-schema.mjs';
 import { loadActiveDecisionMenu, resolveDecisionInput } from '../orchestration/decision-menu.mjs';
@@ -314,12 +317,63 @@ export class RuntimeApiService {
       capabilities.stateEngineV2 = {
         installed: false, accepted: false, acceptanceStatus: 'deferred-to-v0.13.0',
       };
+      // Operational state is observed strictly from the existing stable
+      // project stores. Never confuse an installed module with an active,
+      // verified, or accepted capability, and never mutate data on GET.
+      const observe = (read) => {
+        try { return { status: 'available', ...read() }; }
+        catch { return { status: 'degraded' }; }
+      };
+      const operational = {
+        workspaceTargets: observe(() => {
+          const registry = loadWorkspaceTargetRegistry(this.rootDir, { required: false });
+          return registry ? {
+            status: 'available', count: Object.keys(registry.targets || {}).length,
+            targetIds: Object.keys(registry.targets || {}).sort(),
+          } : { status: 'unavailable', count: 0 };
+        }),
+        costObservatory: observe(() => {
+          const ledger = path.join(this.rootDir, '.development-kit', 'telemetry', 'cost-records.jsonl');
+          if (!fs.existsSync(ledger)) return { status: 'unavailable', count: 0 };
+          const records = loadCostRecords(this.rootDir);
+          return { status: 'available', count: records.length };
+        }),
+        discoveryQueue: observe(() => {
+          const directory = path.join(this.rootDir, '.development-kit', 'discovery', 'events');
+          if (!fs.existsSync(directory)) return { status: 'unavailable', count: 0 };
+          const events = loadDiscoveryEvents(this.rootDir);
+          return { status: 'available', count: events.length,
+            pendingApproval: events.filter(event => event.requiresHumanApproval).length };
+        }),
+        lifecycleInstances: {
+          status: stateHealth === 'unverified' ? 'available' : stateHealth,
+          count: state.active ? 1 : 0,
+          currentStage: state.currentStage,
+          revision: state.revision,
+        },
+        contextCache: observe(() => {
+          const directory = path.join(this.rootDir, '.development-kit', 'cache', 'context');
+          if (!fs.existsSync(directory)) return { status: 'unavailable', entryCount: 0 };
+          let entries = 0;
+          const walk = (dir) => {
+            for (const node of fs.readdirSync(dir, { withFileTypes: true })) {
+              if (node.isSymbolicLink()) continue;
+              if (node.isDirectory()) walk(path.join(dir, node.name));
+              else if (node.isFile() && node.name.endsWith('.json')) entries++;
+            }
+          };
+          walk(directory);
+          return { status: 'available', entryCount: entries, freshness: 'unverified' };
+        }),
+        effectiveGates: { status: 'unavailable', reason: 'no-source-bound-active-contract' },
+      };
       return this._json(res, 200, {
         schemaVersion: '1.0.0',
         canonicalStateStore: 'autopilot-versioned-snapshots',
         stateHealth,
         state,
         capabilities,
+        operational,
         authority: 'read-only-projection',
         acceptanceAuthority: 'canonical-deterministic-gates',
       });
