@@ -26,6 +26,26 @@ export function computeComplexityDelta({
   alwaysReview = false,
   now = '2026-10-13T00:00:00.000Z',
 } = {}) {
+  // Invalid metric inputs must not silently suppress mandatory simplicity
+  // review, and a decision fingerprint must include policy-affecting inputs.
+  for (const [name, value] of Object.entries({
+    filesAdded, filesRemoved, filesModified, linesAdded, linesDeleted,
+  })) {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new ComplexityDeltaError(`${name} must be a non-negative safe integer`);
+    }
+  }
+  if (!Number.isInteger(riskLevel) || riskLevel < 1 || riskLevel > 3) {
+    throw new ComplexityDeltaError('riskLevel must be an integer from 1 to 3');
+  }
+  if (typeof alwaysReview !== 'boolean') {
+    throw new ComplexityDeltaError('alwaysReview must be boolean');
+  }
+  for (const [name, values] of Object.entries({ dependenciesAdded, abstractionsExported })) {
+    if (!Array.isArray(values) || values.some(v => typeof v !== 'string' || !v.trim())) {
+      throw new ComplexityDeltaError(`${name} must contain non-empty strings`);
+    }
+  }
   const normDeps = [...new Set(dependenciesAdded)].sort();
   const normAbstr = [...new Set(abstractionsExported)].sort();
 
@@ -71,6 +91,8 @@ export function computeComplexityDelta({
     linesDeleted,
     normDeps,
     normAbstr,
+    riskLevel,
+    alwaysReview,
   });
   const hash = crypto.createHash('sha256').update(digestPayload).digest('hex').slice(0, 20);
   const deltaId = `cd-${hash}`;
