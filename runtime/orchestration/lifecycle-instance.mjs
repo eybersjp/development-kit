@@ -222,7 +222,8 @@ export function evaluateLifecycleCompletion({
     lifecycleId: instance.lifecycleId,
     parentLifecycleId: instance.parentLifecycleId,
     completed: isAccepted && isCompleteStage,
-    status: (isAccepted && isCompleteStage) ? 'completed' : instance.status,
+    status: (isAccepted && isCompleteStage) ? 'completed'
+      : (instance.status === 'completed' ? 'active' : instance.status),
     acceptanceState: acceptanceState || 'PENDING',
   };
 }
