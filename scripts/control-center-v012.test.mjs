@@ -5,6 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { RuntimeApiService } from '../runtime/api/runtime-api-service.mjs';
 import { createDiscoveryEvent } from '../runtime/orchestration/discovery-reentry.mjs';
+import { createDevelopmentContract } from '../runtime/orchestration/development-contract.mjs';
+import { createOrchestrationRun } from '../runtime/orchestration/orchestration-run.mjs';
+import { decideAcceptance } from '../runtime/orchestration/acceptance-engine.mjs';
+import { VerificationExtensionRegistry, executeVerificationExtensions } from '../runtime/orchestration/verification-extension-sdk.mjs';
+import { computeComplexityDelta } from '../runtime/orchestration/complexity-delta.mjs';
 
 async function serve(t) {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dk-v012-stable-'));
@@ -142,4 +147,63 @@ test('AC-030: Control Center exposes actual persisted discovery and cost observa
   const before = fs.readFileSync(file);
   await get('/v1/scale-context');
   assert.deepEqual(fs.readFileSync(file), before);
+});
+
+test('v0.12 integrated: project contract enforces gates, extensions, discovery, complexity, and Control Center read-only status', async t => {
+  const { rootDir, get } = await serve(t);
+  fs.mkdirSync(path.join(rootDir, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(rootDir, 'docs', 'spec.md'), '# Project specification\nREQ-1: Required evidence\n');
+  const contract = createDevelopmentContract({
+    rootDir,
+    task: {
+      id: 'TASK-CROSS-001', projectId: 'proj-cross', status: 'approved',
+      objective: 'Integrated cross-feature verification',
+      scope: { in: ['.'], out: [] },
+      requirements: ['REQ-1'],
+      acceptanceCriteria: [{
+        id: 'AC-EXT', statement: 'Mandatory extension passes',
+        source: 'REQ-1', verificationType: ['tests'], requiredEvidence: true,
+      }],
+      requiredVerification: ['tests'],
+      approvalPolicy: {
+        requiredGateProfileIds: ['gp-consequential'],
+        requiredExtensions: [{ extensionId: 've-safety-check', criterionId: 'AC-EXT' }],
+      },
+    },
+    authoritativeSources: [{ path: 'docs/spec.md', kind: 'specification', authority: 'required' }],
+  });
+  const run = createOrchestrationRun({
+    contract, runId: 'run-v012-integrated',
+    capabilities: { fileRead: true, fileWrite: true, freshContext: true, shell: true },
+  });
+  assert.ok(run.requiredGates.humanApprovals.includes('consequential-action'));
+  const state = decideAcceptance({ contract, verification: null, rootDir });
+  assert.equal(state.state, 'PENDING');
+  assert.ok(state.pending.some(g => g.code === 'MISSING_REQUIRED_APPROVAL' &&
+    g.approvalId === 'consequential-action'));
+  assert.ok(state.pending.some(g => g.code === 'REQUIRED_EXTENSION_UNVERIFIED'));
+  const registry = new VerificationExtensionRegistry();
+  registry.register({ extensionId: 've-safety-check', name: 'Project safety',
+    verify: ({ safe }) => ({ pass: safe === true }) });
+  const extensions = await executeVerificationExtensions({
+    registry, contract,
+    bindings: [{ extensionId: 've-safety-check', criterionId: 'AC-EXT', input: { safe: false } }],
+  });
+  assert.equal(extensions[0].status, 'FAIL');
+  const event = createDiscoveryEvent({
+    rootDir, lifecycleId: 'lc-1234567890ab',
+    classification: 'implementation-defect',
+    description: 'A specification change must force upstream review',
+    evidence: { type: 'test', reference: 'AC-CROSS' },
+    affectedAuthority: [{ path: 'docs/spec.md', kind: 'specification' }],
+  });
+  assert.equal(event.minimumReentryStage, 'DEFINE');
+  assert.equal(event.requiresHumanApproval, true);
+  assert.equal(computeComplexityDelta({ linesAdded: 5, linesRemoved: 2 }).schemaVersion, '1.0.0');
+  const observed = await get('/v1/scale-context');
+  assert.equal(observed.operational.discoveryQueue.count, 1);
+  assert.equal(observed.operational.discoveryQueue.pendingApproval, 1);
+  assert.equal(observed.stateHealth, 'unavailable');
+  assert.equal(observed.operational.effectiveGates.status, 'unavailable');
+  assert.equal(observed.capabilities.verificationExtensionSdk.accepted, null);
 });
