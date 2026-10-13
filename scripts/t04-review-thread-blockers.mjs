@@ -44,23 +44,48 @@ export function parseReviewThreadPage(page) {
  */
 export function requireCanonicalGithubReviewVerdict(body) {
   if (typeof body !== 'string') throw new Error('GitHub reviewer verdict evidence is malformed');
-  const fields = [...body.matchAll(/^(?:Review verdict|Verdict):[ \t]*([A-Za-z_-]+)[ \t]*$/gmi)];
-  if (fields.length !== 1 || fields[0][1] !== 'PASS') {
+  // Closed schema: no trailers, markdown prose, second findings field or
+  // unstructured text capable of contradicting a declared clean review.
+  const lines = body.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n');
+  if (lines.length === 1) {
     throw new Error('Independent GitHub review requires exactly one canonical PASS verdict');
   }
-  if (/\b(?:FAIL(?:ED|URE)?|BLOCK(?:ED|ER|ING)?|REJECT(?:ED|ION)?|REQUEST[_ -]?CHANGES|P[012]|unresolved|cannot[ \t]+PASS|can['’]t[ \t]+PASS|not[ \t]+PASS|no[ \t]+PASS)\b/i.test(body)) {
-    throw new Error('Conflicting failure or finding marker in GitHub review');
+  if (lines.length !== 2 && lines.length !== 4) {
+    throw new Error('Conflicting failure or finding marker in GitHub review: unexpected response fields');
   }
-  const findings = [...body.matchAll(/^Findings:[ \t]*(.*)$/gmi)];
-  if (findings.length !== 1 || findings[0][0] !== 'Findings: none') {
-    throw new Error('Independent GitHub review requires exactly one canonical clean findings declaration');
+  const [verdict, findings] = lines.slice(-2);
+  if (!/^(?:Review verdict|Verdict): PASS$/.test(verdict)) {
+    throw new Error('Independent GitHub review requires exactly one canonical PASS verdict');
   }
-  if (/\b(?:MAJOR|CRITICAL|OPEN|P[0-9])\b/i.test(body) ||
-      /^[ \t]*(?:Severity|Finding):/mi.test(body) ||
-      /^[ \t]*Status:[ \t]*(?:PENDING|ACTIVE|UNRESOLVED)\b/mi.test(body)) {
-    throw new Error('Conflicting failure or finding marker in GitHub review');
+  if (findings !== 'Findings: none') {
+    throw new Error('Conflicting failure or finding marker in GitHub review: findings not clean');
+  }
+  if (lines.length === 4 &&
+      (!/^Reviewed commit: [a-f0-9]{40}$/.test(lines[0]) ||
+       !/^Review role: (?:architecture-reviewer|code-reviewer|security-reviewer)$/.test(lines[1]))) {
+    throw new Error('Conflicting failure or finding marker in GitHub review: noncanonical source or role');
   }
   return 'PASS';
+}
+
+/**
+ * Construct a single-role immutable review request with exactly one SHA.
+ * The result must still be independently authored and evaluated externally.
+ */
+export function formatCanonicalT04ReviewRequest(role, reviewedCommit, scope) {
+  if (!['architecture-reviewer', 'code-reviewer', 'security-reviewer'].includes(role) ||
+      typeof scope !== 'string' || !scope.trim() || /[\r\n]/.test(scope)) {
+    throw new Error('T04 reviewer request role/scope is invalid');
+  }
+  const body = [
+    '@codex review',
+    'Independent role: ' + role,
+    'Commit: ' + reviewedCommit,
+    'Review scope: ' + scope,
+    'Report findings with priority; use the exact closed four-field response schema on a clean result. A finding must not be concealed by a PASS.',
+  ].join('\n');
+  requireCanonicalReviewRequestCommit(body, reviewedCommit);
+  return body;
 }
 
 function requireCanonicalRole(body, label, expectedRole) {
