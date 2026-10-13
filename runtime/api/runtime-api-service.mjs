@@ -26,6 +26,8 @@ import { validateWorkflowState } from '../autopilot/validators.mjs';
 import { loadWorkspaceTargetRegistry } from '../orchestration/workspace-targets.mjs';
 import { loadCostRecords } from '../orchestration/cost-observatory.mjs';
 import { loadDiscoveryEvents } from '../orchestration/discovery-reentry.mjs';
+import { loadDevelopmentContract } from '../orchestration/development-contract.mjs';
+import { resolveContractGateProfiles } from '../orchestration/gate-profiles.mjs';
 import { MemoryType, MemoryStatus, MemoryAuthority } from '../intelligence/memory-enums.mjs';
 import { validateMemoryRecord, validateAuthorityTransition } from '../intelligence/memory-schema.mjs';
 import { loadActiveDecisionMenu, resolveDecisionInput } from '../orchestration/decision-menu.mjs';
@@ -277,6 +279,7 @@ export class RuntimeApiService {
       const pointerPath = path.join(directory, 'current.json');
       let stateHealth = 'unavailable';
       let state = { active: false, currentStage: null, revision: null };
+      let activeContractId = null;
       if (fs.existsSync(pointerPath)) {
         try {
           const pointer = JSON.parse(fs.readFileSync(pointerPath, 'utf8'));
@@ -296,6 +299,8 @@ export class RuntimeApiService {
             }
             stateHealth = 'unverified';
             state = { active: true, currentStage: revision.currentStage, revision: revision.stateRevision };
+            activeContractId = typeof revision.orchestration?.activeContractId === 'string'
+              ? revision.orchestration.activeContractId : null;
           }
         } catch {
           stateHealth = 'degraded';
@@ -365,7 +370,17 @@ export class RuntimeApiService {
           walk(directory);
           return { status: 'available', entryCount: entries, freshness: 'unverified' };
         }),
-        effectiveGates: { status: 'unavailable', reason: 'no-source-bound-active-contract' },
+        effectiveGates: observe(() => {
+          if (!activeContractId) {
+            return { status: 'unavailable', reason: 'no-source-bound-active-contract' };
+          }
+          const contract = loadDevelopmentContract(activeContractId, this.rootDir);
+          if (!contract) return { status: 'unavailable', reason: 'active-contract-not-found' };
+          const gates = resolveContractGateProfiles(contract);
+          return { status: 'available', requiredVerification: gates.verification,
+            requiredReviewers: gates.reviewers, requiredHumanApprovals: gates.humanApprovals,
+            requiredControlDomains: gates.controlDomains };
+        }),
       };
       return this._json(res, 200, {
         schemaVersion: '1.0.0',
