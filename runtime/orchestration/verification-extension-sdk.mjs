@@ -60,6 +60,9 @@ export function checkNumericTolerance({
       throw new VerificationExtensionError('relativeTolerance must be a non-negative number');
     }
     const maxAllowed = Math.abs(expected) * relativeTolerance;
+    if (!Number.isFinite(maxAllowed)) {
+      return { pass: false, diff, reason: 'Relative tolerance arithmetic overflowed' };
+    }
     if (diff > maxAllowed) {
       return {
         pass: false,
