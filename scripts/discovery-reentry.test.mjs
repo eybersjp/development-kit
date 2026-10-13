@@ -83,3 +83,23 @@ test('AC-021: Selective invalidation preserves unrelated accepted work across de
   assert.equal(result.preservedCount, 4);
   assert.equal(result.invalidatedCount, 2);
 });
+
+test('AC-020: externally supplied discovery events cannot downgrade upstream approval gates', () => {
+  for (const classification of ['architecture-invalidation', 'specification-invalidation']) {
+    const event = createDiscoveryEvent({
+      lifecycleId: 'lc-1234567890ab', classification,
+      description: 'New evidence invalidates an upstream authority',
+      evidence: { type: 'review', reference: 'record-123' },
+    });
+    assert.equal(event.requiresHumanApproval, true);
+    assert.throws(() => validateDiscoveryEvent({ ...event, requiresHumanApproval: false }),
+      /Human approval requirement conflicts/);
+  }
+  const implementation = createDiscoveryEvent({
+    lifecycleId: 'lc-1234567890ab', classification: 'implementation-defect',
+    description: 'Implementation correction only',
+    evidence: { type: 'test-failure', reference: 'test-456' },
+  });
+  assert.throws(() => validateDiscoveryEvent({ ...implementation, requiresHumanApproval: true }),
+    /Human approval requirement conflicts/);
+});
