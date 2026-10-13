@@ -91,7 +91,11 @@ test('AC-017: COMPLETE applies only to the active Lifecycle Instance', () => {
   // Advance child to COMPLETE
   child = advanceLifecycleStage(child, 'COMPLETE');
   assert.equal(child.stage, 'COMPLETE');
-  assert.equal(child.status, 'completed');
+  assert.equal(child.status, 'active', 'Stage COMPLETE must not persist premature accepted status');
+
+  const pendingChild = evaluateLifecycleCompletion({ instance: child, acceptanceState: 'PENDING' });
+  assert.equal(pendingChild.completed, false);
+  assert.equal(pendingChild.status, 'active');
 
   // Evaluate child completion
   const childEval = evaluateLifecycleCompletion({
@@ -164,4 +168,46 @@ test('AC-018: Legacy single-lifecycle projects behave identically as a single de
   assert.equal(adapted.stage, 'PLAN');
   assert.equal(adapted.status, 'active');
   assert.equal(adapted.sourceRevision, 4);
+});
+
+
+test('AC-017: stage advancement cannot skip, regress, or self-complete without acceptance', () => {
+  const initial = createLifecycleInstance({ name: 'Acceptance guarded lifecycle', stage: 'UNDERSTAND' });
+  assert.throws(() => advanceLifecycleStage(initial, 'COMPLETE'), /exactly one canonical stage/);
+  assert.throws(() => advanceLifecycleStage(initial, 'PLAN'), /exactly one canonical stage/);
+  const defining = advanceLifecycleStage(initial, 'DEFINE');
+  assert.throws(() => advanceLifecycleStage(defining, 'UNDERSTAND'), /exactly one canonical stage/);
+  assert.throws(() => advanceLifecycleStage(defining, 'DEFINE'), /exactly one canonical stage/);
+
+  const preComplete = createLifecycleInstance({ name: 'Pre-complete instance', stage: 'SIMPLIFY' });
+  const completeStage = advanceLifecycleStage(preComplete, 'COMPLETE');
+  assert.equal(completeStage.status, 'active');
+  for (const verdict of [undefined, 'PENDING', 'FAIL', 'REJECTED']) {
+    const decision = evaluateLifecycleCompletion({ instance: completeStage, acceptanceState: verdict });
+    assert.equal(decision.completed, false);
+    assert.equal(decision.status, 'active');
+  }
+  assert.equal(evaluateLifecycleCompletion({
+    instance: completeStage, acceptanceState: 'ACCEPTED',
+  }).completed, true);
+
+  for (const status of ['paused', 'blocked', 'cancelled', 'completed']) {
+    const notActive = createLifecycleInstance({ name: 'Non-active lifecycle', status });
+    assert.throws(() => advanceLifecycleStage(notActive, 'DEFINE'), /non-active lifecycle/);
+  }
+});
+
+test('AC-017: lifecycle COMPLETE is not inherited by a parent, nor dictated by external domain flags', () => {
+  const parent = createLifecycleInstance({ name: 'Parent', stage: 'SIMPLIFY' });
+  const child = advanceLifecycleStage(createLifecycleInstance({
+    name: 'Child', parentLifecycleId: parent.lifecycleId, stage: 'SIMPLIFY',
+  }), 'COMPLETE');
+  const domainState = { status: 'shipped', completed: true, approved: true };
+  const childUnaccepted = evaluateLifecycleCompletion({ instance: child, acceptanceState: 'PENDING', domainState });
+  assert.equal(childUnaccepted.completed, false);
+  assert.equal(parent.status, 'active');
+  assert.equal(parent.stage, 'SIMPLIFY');
+  assert.equal(evaluateLifecycleCompletion({
+    instance: parent, acceptanceState: 'ACCEPTED', domainState,
+  }).completed, false);
 });
