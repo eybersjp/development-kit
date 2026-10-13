@@ -244,6 +244,7 @@
 * [DKF Scale, Context & Iteration — v0.12 Implementation PLAN](04-architecture/dkf-scale-context-iteration-v0.12-implementation-plan.md)
 * [DKF v0.12 — PO-approved Release Scope (T04 deferred)](04-architecture/dkf-v0.12-release-scope-amendment.md)
 * [DKF v0.12 — Matched Comparative Cost and Context Evidence](04-architecture/dkf-v0.12-release-comparative-evidence.md)
+* [DKF v0.12 — Exact 35-Criterion Release Acceptance Inventory](04-architecture/dkf-v0.12-final-acceptance-inventory.md)
 * [DKF Scale, Context & Iteration — Phase 2 Validation](04-architecture/dkf-scale-context-iteration-phase02-validation.md)
 * [DKF Cost Observatory — T01 Review](04-architecture/dkf-cost-observatory-t01-review.md)
 * [DKF Scale, Context & Iteration — Phase 3 T01 Validation](04-architecture/dkf-scale-context-iteration-phase03-t01-validation.md)
