@@ -117,6 +117,34 @@ export function decideAcceptance({
     if (verification.verdict === 'INCOMPLETE') pending.push({ code: 'VERIFICATION_INCOMPLETE' });
   }
 
+  // Mandatory project-owned verifier bindings are immutable contract policy.
+  // Every extension result must be independently reflected in canonical
+  // verification evidence. Omitting a failed extension cannot make ACCEPTED.
+  const requiredExtensions = contract.approvalPolicy?.requiredExtensions ?? [];
+  if (!Array.isArray(requiredExtensions)) {
+    blockers.push({ code: 'INVALID_REQUIRED_EXTENSION_POLICY' });
+  } else {
+    for (const item of requiredExtensions) {
+      if (!item || typeof item.extensionId !== 'string' || !item.extensionId.trim() ||
+          typeof item.criterionId !== 'string' || !item.criterionId.trim()) {
+        blockers.push({ code: 'INVALID_REQUIRED_EXTENSION_BINDING' });
+        continue;
+      }
+      if (!contract.acceptanceCriteria.some(criterion => criterion.id === item.criterionId)) {
+        blockers.push({ code: 'EXTENSION_CRITERION_NOT_IN_CONTRACT', extensionId: item.extensionId });
+        continue;
+      }
+      const criterion = verification?.criteria?.find(x => x.id === item.criterionId);
+      if (!criterion || criterion.status === 'UNVERIFIED' || criterion.status === 'PARTIAL') {
+        pending.push({ code: 'REQUIRED_EXTENSION_UNVERIFIED', extensionId: item.extensionId, criterionId: item.criterionId });
+      } else if (criterion.status !== 'PASS') {
+        blockers.push({ code: 'REQUIRED_EXTENSION_FAILED', extensionId: item.extensionId, criterionId: item.criterionId });
+      } else if (!Array.isArray(criterion.evidence) || criterion.evidence.length === 0) {
+        blockers.push({ code: 'REQUIRED_EXTENSION_EVIDENCE_MISSING', extensionId: item.extensionId, criterionId: item.criterionId });
+      }
+    }
+  }
+
   if (!Array.isArray(reviews)) throw new AcceptanceEngineError('reviews must be an array');
   const reviewByRole = new Map();
   for (const review of reviews) {
