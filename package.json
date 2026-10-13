@@ -89,7 +89,8 @@
     "workspace-targets:test": "node scripts/phase04-workspace-target-engine-contract.mjs && node --test scripts/workspace-targets.test.mjs",
     "execution-capsule:test": "node scripts/phase05-execution-capsule-contract.mjs && node --test scripts/context-cache.test.mjs scripts/execution-capsule.test.mjs",
     "state-engine-v2:test": "node scripts/phase06-state-engine-v2-contract.mjs && node --test scripts/state-engine-v2.test.mjs scripts/state-engine-v2-migration.test.mjs scripts/state-engine-v2-hardening.test.mjs scripts/t04-review-thread-blockers.test.mjs",
-    "state-engine-v2:benchmark": "node scripts/state-engine-v2-benchmark.mjs --events 300"
+    "state-engine-v2:benchmark": "node scripts/state-engine-v2-benchmark.mjs --events 300",
+    "lifecycle-instances:test": "node scripts/phase07-lifecycle-instances-contract.mjs && node --test scripts/lifecycle-instances.test.mjs"
   },
   "engines": {
     "node": ">=18.0.0"
