@@ -176,3 +176,27 @@ export function resolveGateProfiles({
     configurationReadiness: baseline.configurationReadiness,
   });
 }
+
+/**
+ * The persisted, approved Development Contract is the sole authority for gate
+ * profile selection at BOTH run creation and acceptance. A context capsule can
+ * describe the selected profiles but cannot weaken this authoritative policy.
+ */
+export function resolveContractGateProfiles(contract, options = {}) {
+  validateDevelopmentContract(contract);
+  const policy = contract.approvalPolicy ?? {};
+  const profileIds = policy.requiredGateProfileIds ?? [];
+  const customProfiles = policy.customGateProfiles ?? {};
+  const targetCapabilities = policy.targetCapabilities ?? [];
+  if (!Array.isArray(profileIds) || !Array.isArray(targetCapabilities) ||
+      !customProfiles || typeof customProfiles !== 'object' || Array.isArray(customProfiles)) {
+    throw new GateProfileError('Invalid persisted contract gate-profile policy');
+  }
+  if (profileIds.length === 0 && Object.keys(customProfiles).length === 0 &&
+      targetCapabilities.length === 0) {
+    return selectRequiredGates(contract, options);
+  }
+  return resolveGateProfiles({
+    contract, profileIds, customProfiles, targetCapabilities, options,
+  });
+}
