@@ -1,12 +1,12 @@
 # Development Kit Framework Documentation
 
-Welcome to the official documentation for **Development Kit Framework v0.12.0** (`development-kit@0.12.0`).
+Welcome to the official documentation for **Development Kit Framework v0.12.1** (`development-kit@0.12.1`).
 
 DKF is evolving into **the reliability control plane for agentic software development**.
 
 > **AI can write it. DKF proves it.**
 
-The v0.12.0 release adds Cost Observatory, Workspace Targets, Execution Capsules and Context Cache, Lifecycle Instances, Discovery/Re-entry, Generic Gate Profiles, Verification SDK, Complexity Delta Guard and a read-only Control Center projection. State Engine V2 (T04), including the full Windows backup-restore durability requirement, is deliberately deferred as the top priority for v0.13.0. Existing stable versioned-snapshot state remains authoritative.
+The v0.12.0 release added Cost Observatory, Workspace Targets, Execution Capsules and Context Cache, Lifecycle Instances, Discovery/Re-entry, Generic Gate Profiles, Verification SDK, Complexity Delta Guard and a read-only Control Center projection. State Engine V2 (T04), including the full Windows backup-restore durability requirement, is deliberately deferred as the top priority for v0.13.0. Existing stable versioned-snapshot state remains authoritative.
 
 ## Strategic documents
 
@@ -16,7 +16,7 @@ The v0.12.0 release adds Cost Observatory, Workspace Targets, Execution Capsules
 
 ## Current release highlights
 
-| Package Version | 0.12.0 |
+| Package Version | 0.12.1 |
 | Lifecycle Stages | 9 (UNDERSTAND through COMPLETE) |
 | Workflow Commands | 16 |
 | Specialist Agents | 18 |
