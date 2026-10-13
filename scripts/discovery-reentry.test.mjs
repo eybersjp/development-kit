@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
 import {
   createDiscoveryEvent,
   resolveReentryStage,
   computeSelectiveInvalidation,
   validateDiscoveryEvent,
+  persistDiscoveryEvent,
+  loadDiscoveryEvents,
   DiscoveryError,
   DISCOVERY_EVENT_SCHEMA_VERSION,
 } from '../runtime/orchestration/discovery-reentry.mjs';
@@ -102,4 +107,57 @@ test('AC-020: externally supplied discovery events cannot downgrade upstream app
   });
   assert.throws(() => validateDiscoveryEvent({ ...implementation, requiresHumanApproval: true }),
     /Human approval requirement conflicts/);
+});
+
+test('AC-020: upstream affected authority cannot be masked by implementation classification', () => {
+  for (const [kind, stage, approval] of [
+    ['specification', 'DEFINE', true],
+    ['architecture', 'DESIGN', true],
+    ['plan', 'PLAN', false],
+    ['implementation', 'IMPLEMENT', false],
+  ]) {
+    const authority = [{ path: 'docs/authority.md', kind }];
+    const event = createDiscoveryEvent({
+      lifecycleId: 'lc-1234567890ab', classification: 'implementation-defect',
+      description: 'Source invalidated', evidence: { type: 'review', reference: 'finding' },
+      affectedAuthority: authority,
+    });
+    assert.equal(event.minimumReentryStage, stage);
+    assert.equal(event.requiresHumanApproval, approval);
+    if (stage !== 'IMPLEMENT') {
+      assert.throws(() => validateDiscoveryEvent({ ...event, minimumReentryStage: 'IMPLEMENT' }),
+        /minimumReentryStage mismatch/);
+    }
+    if (approval) assert.throws(() => validateDiscoveryEvent({ ...event, requiresHumanApproval: false }),
+      /Human approval requirement conflicts/);
+  }
+  const mixed = resolveReentryStage({
+    classification: 'plan-invalidation',
+    affectedAuthority: [{ path: 'a', kind: 'architecture' }, { path: 'b', kind: 'specification' }],
+  });
+  assert.equal(mixed.stage, 'DEFINE');
+  assert.equal(mixed.requiresHumanApproval, true);
+  for (const affectedAuthority of [null, [{ path: 'x', kind: 'unknown' }], [{ kind: 'specification' }]]) {
+    assert.throws(() => resolveReentryStage({
+      classification: 'implementation-defect', affectedAuthority,
+    }), DiscoveryError);
+  }
+});
+
+test('AC-019: project-bound discovery events survive reload, reject edits and invalid persisted content', (t) => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dkf-discovery-'));
+  t.after(() => fs.rmSync(rootDir, { recursive: true, force: true }));
+  const event = createDiscoveryEvent({
+    rootDir, lifecycleId: 'lc-1234567890ab', classification: 'architecture-invalidation',
+    description: 'Architecture re-entry required',
+    evidence: { type: 'review', reference: 'finding-F1' },
+    affectedAuthority: [{ kind: 'architecture', path: 'docs/arch.md' }],
+  });
+  assert.deepEqual(loadDiscoveryEvents(rootDir), [event]);
+  assert.equal(persistDiscoveryEvent(event, rootDir).created, false);
+  assert.throws(() => persistDiscoveryEvent({ ...event, description: 'forged revision' }, rootDir),
+    /Refusing to overwrite/);
+  const pathToEvent = path.join(rootDir, '.development-kit', 'discovery', 'events', event.discoveryId + '.json');
+  fs.writeFileSync(pathToEvent, '{malformed:', 'utf8');
+  assert.throws(() => loadDiscoveryEvents(rootDir), SyntaxError);
 });
