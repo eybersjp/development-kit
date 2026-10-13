@@ -35,8 +35,8 @@ export function computeComplexityDelta({
       throw new ComplexityDeltaError(`${name} must be a non-negative safe integer`);
     }
   }
-  if (!Number.isInteger(riskLevel) || riskLevel < 1 || riskLevel > 3) {
-    throw new ComplexityDeltaError('riskLevel must be an integer from 1 to 3');
+  if (!Number.isSafeInteger(riskLevel) || riskLevel < 1) {
+    throw new ComplexityDeltaError('riskLevel must be a positive safe integer');
   }
   if (typeof alwaysReview !== 'boolean') {
     throw new ComplexityDeltaError('alwaysReview must be boolean');
