@@ -83,3 +83,34 @@ test('v0.12: existing public API routes remain compatible', async t => {
   await get('/v1/status');
   await get('/v1/settings');
 });
+
+
+test('v0.12 security: remote-controlled lookalike origins never receive cross-origin API reads', async t => {
+  const { get, rootDir } = await serve(t);
+  // The helper exercises the standard loopback host and endpoint; use the
+  // same source under a malicious Origin to verify the CORS trust boundary.
+  const dummy = await get('/v1/scale-context');
+  assert.equal(dummy.authority, 'read-only-projection');
+  const service = new RuntimeApiService({ rootDir });
+  const info = await service.start();
+  t.after(() => service.stop());
+  const url = `http://${info.host}:${info.port}/v1/status`;
+  for (const origin of [
+    'http://localhost.evil.example',
+    'http://127.0.0.1.evil.example',
+    'http://localhost@evil.example',
+    'http://127.0.0.1.evil.example:8443',
+    'null',
+    'https://localhost',
+    'file://localhost',
+  ]) {
+    const response = await fetch(url, { headers: { Origin: origin } });
+    assert.equal(response.status, 403, origin);
+    assert.equal(response.headers.get('access-control-allow-origin'), null, origin);
+  }
+  for (const origin of ['http://127.0.0.1:5173', 'http://localhost:3000', 'http://[::1]:8080']) {
+    const response = await fetch(url, { headers: { Origin: origin } });
+    assert.equal(response.status, 200, origin);
+    assert.equal(response.headers.get('access-control-allow-origin'), origin);
+  }
+});
