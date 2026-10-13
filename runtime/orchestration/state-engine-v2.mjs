@@ -153,16 +153,43 @@ function assertStateFilesNotLinks(paths) {
   }
 }
 
-function fsyncParentDirectory(directory) {
-  // POSIX directory fsync preserves renames/journal creation across a power
-  // loss; Windows does not support the same portable directory operation.
-  if (process.platform === 'win32') return;
-  const dirFd = fs.openSync(directory, 'r');
-  try {
-    fs.fsyncSync(dirFd);
-  } finally {
-    fs.closeSync(dirFd);
+/**
+ * Persist directory namespace updates before journal acknowledgement.
+ * POSIX uses the pinned directory FD; Windows must open a write-capable
+ * directory FD for fsync/FlushFileBuffers. Unavailable barriers fail closed.
+ */
+function flushStateDirectory(directory, pinnedDirFd = null) {
+  if (process.platform !== 'win32' && pinnedDirFd !== null) {
+    fs.fsyncSync(pinnedDirFd);
+    return;
   }
+  let fd;
+  try {
+    fd = fs.openSync(directory, process.platform === 'win32' ? 'r+' : 'r');
+    const stat = fs.fstatSync(fd);
+    if (!stat.isDirectory()) {
+      throw new StateEngineError('State Engine directory flush target is not a directory');
+    }
+    if (pinnedDirFd !== null) {
+      const pinned = fs.fstatSync(pinnedDirFd);
+      if (!pinned.isDirectory() || pinned.dev !== stat.dev || pinned.ino !== stat.ino) {
+        throw new StateEngineError('State Engine directory changed before durability barrier');
+      }
+    }
+    fs.fsyncSync(fd);
+  } catch (error) {
+    throw new StateEngineError('State Engine directory durability barrier failed; refusing acknowledgement', {
+      code: 'STATE_DIRECTORY_FLUSH_FAILED',
+      directory,
+      cause: error.code || error.message,
+    });
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+function fsyncParentDirectory(directory) {
+  flushStateDirectory(directory);
 }
 
 function pinnedUnlinkAndSync(filePath, pinnedDirFd = null) {
@@ -196,7 +223,7 @@ function pinnedUnlinkAndSync(filePath, pinnedDirFd = null) {
       throw new StateEngineError('State Engine directory was replaced before journal cleanup');
     }
     fs.unlinkSync(target);
-    if (process.platform !== 'win32') fs.fsyncSync(dirFd);
+    flushStateDirectory(directory, dirFd);
   } finally {
     if (ownsDirFd) fs.closeSync(dirFd);
   }
@@ -243,7 +270,7 @@ function atomicWrite(filePath, content, pinnedDirFd = null) {
     }
     fs.renameSync(tempPath, destination);
     published = true;
-    if (process.platform !== 'win32') fs.fsyncSync(dirFd);
+    flushStateDirectory(directory, dirFd);
     return filePath;
   } finally {
     if (!published) {
@@ -1095,7 +1122,7 @@ function appendDurably(filePath, appendedText, expectedIdentity = null, pinnedDi
     } finally {
       fs.closeSync(fd);
     }
-    if (process.platform !== 'win32') fs.fsyncSync(dirFd);
+    flushStateDirectory(directory, dirFd);
   } finally {
     if (ownsDirFd) fs.closeSync(dirFd);
   }
