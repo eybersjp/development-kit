@@ -191,6 +191,7 @@
 * [orchestration](03-reference/scripts/orchestration.md)
 * [phase01-scale-context-baseline](03-reference/scripts/phase01-scale-context-baseline.md)
 * [phase02-scale-context-plan-validate](03-reference/scripts/phase02-scale-context-plan-validate.md)
+* [v012-consumer-smoke](03-reference/scripts/v012-consumer-smoke.md)
 * [phase03-cost-observatory-contract](03-reference/scripts/phase03-cost-observatory-contract.md)
 * [phase04-workspace-target-engine-contract](03-reference/scripts/phase04-workspace-target-engine-contract.md)
 * [phase05-execution-capsule-contract](03-reference/scripts/phase05-execution-capsule-contract.md)
