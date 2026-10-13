@@ -157,3 +157,4 @@ export * from './state-engine-migration.mjs';
 
 export * from './lifecycle-instance.mjs';
 export * from './discovery-reentry.mjs';
+export * from './gate-profiles.mjs';
