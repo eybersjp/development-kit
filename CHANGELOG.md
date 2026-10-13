@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-13
+
+### Fixed
+- Control Center now polls project-owned lifecycle and scale/context state every five seconds while visible, refreshes on tab return, offers manual refresh, and indicates connection failures.
+- Shows monitored project root, persisted revision, lifecycle stage, last state-change time, and workflow status.
+- Replaces hardcoded framework version labels with installed package/manifest version resolution.
+- Adds v0.12 scale/context operational visibility with explicit unverified acceptance labels and no fabricated health.
+- Improves responsive layout, keyboard focus, and live-state/error-path regression coverage.
+
+### Unchanged
+- No state-authority replacement or migration; T04 State Engine V2 remains deferred to v0.13.0.
+- Existing v0.11 snapshot lifecycle records and approval gates are preserved.
+
+
 ## [0.12.0] - 2026-10-13
 
 ### Added

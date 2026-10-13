@@ -10,10 +10,10 @@ Verify the current public version with:
 npm view development-kit version
 ```
 
-After v0.12.0 has been published, the expected value is:
+After v0.12.1 has been published, the expected value is:
 
 ```text
-0.12.0
+0.12.1
 ```
 
 ## Required credentials
