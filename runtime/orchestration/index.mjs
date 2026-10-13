@@ -151,3 +151,10 @@ export * from './workspace-targets.mjs';
 
 export * from './context-cache.mjs';
 export * from './execution-capsule.mjs';
+
+// Optional v0.12 features on the accepted legacy state authority.
+export * from './lifecycle-instance.mjs';
+export * from './discovery-reentry.mjs';
+export * from './gate-profiles.mjs';
+export * from './verification-extension-sdk.mjs';
+export * from './complexity-delta.mjs';
