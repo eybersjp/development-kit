@@ -94,7 +94,8 @@
     "verification-extension-sdk:test": "node --test scripts/verification-extension-sdk.test.mjs",
     "complexity-delta:test": "node --test scripts/complexity-delta.test.mjs",
     "control-center-v012:test": "node --test scripts/control-center-v012.test.mjs",
-    "release-scope:v012": "node --test scripts/v012-release-scope.test.mjs"
+    "release-scope:v012": "node --test scripts/v012-release-scope.test.mjs",
+    "consumer-smoke:v012": "node scripts/v012-consumer-smoke.mjs"
   },
   "engines": {
     "node": ">=18.0.0"
