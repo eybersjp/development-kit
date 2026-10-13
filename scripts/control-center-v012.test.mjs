@@ -312,7 +312,7 @@ test('Control Center refresh updates visible UI and reports failures without fak
     setInterval: (callback, ms) => { assert.equal(ms, 5000); tick = callback; },
     Date,
   };
-  vm.runInNewContext(script + '\\n;globalThis.__testHooks = { refreshNow, switchView };', context);
+  vm.runInNewContext(script + '\n;globalThis.__testHooks = { refreshNow, switchView };', context);
   const flush = async () => { await new Promise(resolve => setImmediate(resolve)); };
   await flush();
   assert.equal(ids.get('lifecycle-pill').textContent, 'STAGE: DEFINE');
