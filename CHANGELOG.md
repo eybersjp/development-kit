@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-13
+
+### Added
+- Cost Observatory, generic Workspace Target Engine, Execution Capsules and Context Cache (T01–T03).
+- Lifecycle Instances, Discovery and Controlled Re-entry, generic Gate Profiles, Verification Extension SDK and Complexity Delta Guard (T05–T09).
+- Read-only `/v1/scale-context` Control Center projection using the established versioned-snapshot state store with truthful unavailable/unverified/degraded/recovery-required indicators.
+- Deterministic release-scope checks and Windows/Ubuntu test coverage for the scoped v0.12 features.
+
+### Changed
+- Product Owner-approved reduced v0.12.0 release scope: 35 applicable criteria, with the five State Engine V2-dependent criteria deferred and not counted as PASS.
+- Preserves existing v0.11.x runtime state storage and public command compatibility.
+
+### Deferred to v0.13.0 — Highest Priority
+- T04 State Engine V2 and AC-012, AC-013, AC-014, AC-015 and AC-034, including canonical event ledger, migration, crash-durable Windows legacy-backup restoration and independently authenticated risk-3 security/architecture/code reviews.
+- The full Windows restore requirement remains mandatory in v0.13.0. Issue #73 remains open. No T04 code or partial migrations are included in v0.12.0.
+
+
 ## [0.11.2] - 2026-10-01
 
 ### Added
