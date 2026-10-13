@@ -22,6 +22,7 @@ import { resolveMemoryIdentity } from '../intelligence/memory-identity.mjs';
 import { resolveEffectiveSettings } from '../intelligence/settings.mjs';
 import { LocalMemoryProvider } from '../intelligence/local-memory-provider.mjs';
 import { getCurrentState } from '../autopilot/state-store.mjs';
+import { validateWorkflowState } from '../autopilot/validators.mjs';
 import { MemoryType, MemoryStatus, MemoryAuthority } from '../intelligence/memory-enums.mjs';
 import { validateMemoryRecord, validateAuthorityTransition } from '../intelligence/memory-schema.mjs';
 import { loadActiveDecisionMenu, resolveDecisionInput } from '../orchestration/decision-menu.mjs';
@@ -253,6 +254,64 @@ export class RuntimeApiService {
     if (method === 'GET' && pathname === '/v1/settings') {
       const effective = resolveEffectiveSettings(this.rootDir);
       return this._json(res, 200, { settings: effective });
+    }
+
+    if (method === 'GET' && pathname === '/v1/scale-context') {
+      // Read-only projection over v0.11's supported state authority. T04's
+      // canonical event ledger is deliberately NOT included in v0.12.
+      const directory = path.join(this.rootDir, '.development-kit', 'autopilot', 'state');
+      const pointerPath = path.join(directory, 'current.json');
+      let stateHealth = 'unavailable';
+      let state = { active: false, currentStage: null, revision: null };
+      if (fs.existsSync(pointerPath)) {
+        try {
+          const pointer = JSON.parse(fs.readFileSync(pointerPath, 'utf8'));
+          if (!Number.isSafeInteger(pointer.currentRevision) ||
+              !/^revision-\\d{6}\\.json$/.test(pointer.currentRevisionFile) ||
+              Number(pointer.currentRevisionFile.slice(9, 15)) !== pointer.currentRevision) {
+            throw new Error('Invalid revision pointer');
+          }
+          const revisionPath = path.join(directory, pointer.currentRevisionFile);
+          if (!fs.existsSync(revisionPath)) {
+            stateHealth = 'recovery-required';
+          } else {
+            const revision = JSON.parse(fs.readFileSync(revisionPath, 'utf8'));
+            validateWorkflowState(revision);
+            if (revision.stateRevision !== pointer.currentRevision) {
+              throw new Error('Pointer revision mismatch');
+            }
+            stateHealth = 'unverified';
+            state = { active: true, currentStage: revision.currentStage, revision: revision.stateRevision };
+          }
+        } catch {
+          stateHealth = 'degraded';
+        }
+      }
+      const modules = {
+        workspaceTargets: 'workspace-targets.mjs',
+        executionCapsules: 'execution-capsule.mjs',
+        lifecycleInstances: 'lifecycle-instance.mjs',
+        discoveryReentry: 'discovery-reentry.mjs',
+        gateProfiles: 'gate-profiles.mjs',
+        verificationExtensionSdk: 'verification-extension-sdk.mjs',
+        complexityDeltaGuard: 'complexity-delta.mjs',
+      };
+      const capabilities = Object.fromEntries(Object.entries(modules).map(([id, filename]) => [
+        id, { installed: fs.existsSync(new URL('../orchestration/' + filename, import.meta.url)),
+          accepted: null, acceptanceStatus: 'not-independently-established' },
+      ]));
+      capabilities.stateEngineV2 = {
+        installed: false, accepted: false, acceptanceStatus: 'deferred-to-v0.13.0',
+      };
+      return this._json(res, 200, {
+        schemaVersion: '1.0.0',
+        canonicalStateStore: 'autopilot-versioned-snapshots',
+        stateHealth,
+        state,
+        capabilities,
+        authority: 'read-only-projection',
+        acceptanceAuthority: 'canonical-deterministic-gates',
+      });
     }
 
     if (method === 'GET' && pathname === '/v1/configuration-readiness') {
