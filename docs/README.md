@@ -1,12 +1,12 @@
 # Development Kit Framework Documentation
 
-Welcome to the official documentation for **Development Kit Framework v0.11.2** (`development-kit@0.11.2`).
+Welcome to the official documentation for **Development Kit Framework v0.12.0** (`development-kit@0.12.0`).
 
 DKF is evolving into **the reliability control plane for agentic software development**.
 
 > **AI can write it. DKF proves it.**
 
-The current v0.11.2 release brings together Development Modes and IDEA Authority Hardening on top of the Live UI Preview visual verification, Token & Context Efficiency hardening, and the Secrets & Configuration Readiness Gate. It provides Development Contracts, independent verification, deterministic acceptance, execution-safety controls, DKF Design Authority, DK Intelligence, DK Control Center, and the Numbered Decision Interface. The future direction is published separately so planned capabilities are never confused with implemented behavior.
+The v0.12.0 release adds Cost Observatory, Workspace Targets, Execution Capsules and Context Cache, Lifecycle Instances, Discovery/Re-entry, Generic Gate Profiles, Verification SDK, Complexity Delta Guard and a read-only Control Center projection. State Engine V2 (T04), including the full Windows backup-restore durability requirement, is deliberately deferred as the top priority for v0.13.0. Existing stable versioned-snapshot state remains authoritative.
 
 ## Strategic documents
 
@@ -16,7 +16,7 @@ The current v0.11.2 release brings together Development Modes and IDEA Authority
 
 ## Current release highlights
 
-| Package Version | 0.11.2 |
+| Package Version | 0.12.0 |
 | Lifecycle Stages | 9 (UNDERSTAND through COMPLETE) |
 | Workflow Commands | 16 |
 | Specialist Agents | 18 |
