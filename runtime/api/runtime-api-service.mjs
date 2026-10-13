@@ -22,6 +22,7 @@ import { resolveMemoryIdentity } from '../intelligence/memory-identity.mjs';
 import { resolveEffectiveSettings } from '../intelligence/settings.mjs';
 import { LocalMemoryProvider } from '../intelligence/local-memory-provider.mjs';
 import { getCurrentState } from '../autopilot/state-store.mjs';
+import { isStateEngineV2Active, getStateEnginePaths } from '../orchestration/state-engine-v2.mjs';
 import { MemoryType, MemoryStatus, MemoryAuthority } from '../intelligence/memory-enums.mjs';
 import { validateMemoryRecord, validateAuthorityTransition } from '../intelligence/memory-schema.mjs';
 import { loadActiveDecisionMenu, resolveDecisionInput } from '../orchestration/decision-menu.mjs';
@@ -256,20 +257,55 @@ export class RuntimeApiService {
     }
 
     if (method === 'GET' && pathname === '/v1/scale-context') {
-      // Expose v0.12 Scale/Context control plane state (AC-030)
+      // Read-only, non-authoritative projection. Never infer health or acceptance
+      // from the mere fact that a module is installed.
+      let stateHealth = 'unavailable';
+      let stateEngine = { active: false, health: 'unavailable', reason: 'state-engine-not-initialized' };
+      try {
+        const active = isStateEngineV2Active(this.rootDir);
+        if (active) {
+          const paths = getStateEnginePaths(this.rootDir);
+          const required = ['schema', 'events', 'snapshot', 'index'];
+          const missing = required.filter((key) => !fs.existsSync(paths[key]));
+          if (missing.length) {
+            stateHealth = 'degraded';
+            stateEngine = { active: true, health: stateHealth, reason: 'missing-canonical-or-derived-state', missing };
+          } else if (fs.existsSync(paths.pending)) {
+            stateHealth = 'recovery-required';
+            stateEngine = { active: true, health: stateHealth, reason: 'pending-commit-present' };
+          } else {
+            // No mutating replay/recovery is permitted from a GET endpoint.
+            // Basic presence is NOT a verified crash-durability guarantee.
+            stateHealth = 'unverified';
+            stateEngine = { active: true, health: stateHealth, reason: 'full-integrity-not-independently-verified' };
+          }
+        }
+      } catch (error) {
+        stateHealth = 'degraded';
+        stateEngine = { active: false, health: stateHealth, reason: 'state-engine-inspection-failed' };
+      }
+
+      const modules = {
+        workspaceTargets: '../orchestration/workspace-targets.mjs',
+        executionCapsules: '../orchestration/execution-capsule.mjs',
+        stateEngineV2: '../orchestration/state-engine-v2.mjs',
+        lifecycleInstances: '../orchestration/lifecycle-instance.mjs',
+        discoveryReentry: '../orchestration/discovery-reentry.mjs',
+        gateProfiles: '../orchestration/gate-profiles.mjs',
+        verificationExtensionSdk: '../orchestration/verification-extension-sdk.mjs',
+        complexityDeltaGuard: '../orchestration/complexity-delta.mjs',
+      };
+      const capabilities = Object.fromEntries(Object.entries(modules).map(([id, relative]) => {
+        const installed = fs.existsSync(new URL(relative, import.meta.url));
+        return [id, { installed, accepted: null, acceptanceStatus: 'not-independently-established' }];
+      }));
       return this._json(res, 200, {
         schemaVersion: '1.0.0',
-        capabilities: {
-          workspaceTargets: true,
-          executionCapsules: true,
-          stateEngineV2: true,
-          lifecycleInstances: true,
-          discoveryReentry: true,
-          gateProfiles: true,
-          verificationExtensionSdk: true,
-          complexityDeltaGuard: true,
-        },
-        stateHealth: 'healthy',
+        stateHealth,
+        stateEngine,
+        capabilities,
+        authority: 'read-only-projection',
+        acceptanceAuthority: 'canonical-deterministic-gates',
       });
     }
 
