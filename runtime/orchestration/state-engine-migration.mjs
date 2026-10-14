@@ -577,11 +577,196 @@ function resolveSafeRestoreDestination(targetRoot, relativePath, { createMissing
 }
 
 
-/** A deterministic sibling journal lets offline recovery find interrupted root promotion. */
+export const RESTORE_TRANSACTION_SCHEMA_VERSION = '2.0.0';
+const RESTORE_TERMINAL_PHASE = 'CLEANUP_SAFE';
+const RESTORE_PHASES = Object.freeze([
+  'PREPARED',
+  'ORIGINAL_DISPLACED',
+  'CANDIDATE_PUBLISHED',
+  'PROMOTION_ACKNOWLEDGED',
+  RESTORE_TERMINAL_PHASE,
+]);
+
+function restoreJournalDigest(targetRoot) {
+  return crypto.createHash('sha256').update(path.resolve(targetRoot)).digest('hex').slice(0, 24);
+}
+
+/**
+ * Stable sibling transaction log. It lives outside the root being replaced and
+ * is intentionally retained after successful restore. New transactions append
+ * to the same hash-chained JSONL history.
+ */
 function restoreJournalPath(targetRoot) {
   const root = path.resolve(targetRoot);
-  const digest = crypto.createHash('sha256').update(root).digest('hex').slice(0, 24);
-  return path.join(path.dirname(root), '.dk-restore-journal-' + digest + '.json');
+  return path.join(path.dirname(root), '.dk-restore-transaction-' + restoreJournalDigest(root) + '.jsonl');
+}
+
+/** Pre-v0.13 single-record journal retained for explicit compatibility recovery. */
+function legacyRestoreJournalPath(targetRoot) {
+  const root = path.resolve(targetRoot);
+  return path.join(path.dirname(root), '.dk-restore-journal-' + restoreJournalDigest(root) + '.json');
+}
+
+function restoreRecordHash(record) {
+  const { recordHash, ...payload } = record;
+  return stateSha256(Buffer.from(JSON.stringify(stable(payload))));
+}
+
+function validateRestoreRecord(record, previous = null) {
+  if (!plainObject(record) || record.schemaVersion !== RESTORE_TRANSACTION_SCHEMA_VERSION) {
+    throw new StateMigrationError('Restore transaction record schema is invalid');
+  }
+  if (!Number.isInteger(record.sequence) || record.sequence < 1) {
+    throw new StateMigrationError('Restore transaction sequence is invalid');
+  }
+  if (!/^[a-f0-9]{32}$/.test(record.transactionId || '')) {
+    throw new StateMigrationError('Restore transactionId is invalid');
+  }
+  if (!RESTORE_PHASES.includes(record.phase)) {
+    throw new StateMigrationError('Restore transaction phase is invalid');
+  }
+  if (typeof record.timestamp !== 'string' || Number.isNaN(Date.parse(record.timestamp))) {
+    throw new StateMigrationError('Restore transaction timestamp is invalid');
+  }
+  if (typeof record.targetRoot !== 'string' || path.resolve(record.targetRoot) !== record.targetRoot) {
+    throw new StateMigrationError('Restore transaction targetRoot is invalid');
+  }
+  if (typeof record.stageName !== 'string' || !/^\.dk-legacy-restore-stage-[a-f0-9]{32}$/.test(record.stageName)) {
+    throw new StateMigrationError('Restore transaction stageName is invalid');
+  }
+  if (record.existed !== true && record.existed !== false) {
+    throw new StateMigrationError('Restore transaction existed witness is invalid');
+  }
+  if (!/^\d+$/.test(record.stageDev || '') || !/^\d+$/.test(record.stageIno || '')) {
+    throw new StateMigrationError('Restore transaction stage identity is invalid');
+  }
+  if (record.existed && (!/^\d+$/.test(record.originalDev || '') || !/^\d+$/.test(record.originalIno || ''))) {
+    throw new StateMigrationError('Restore transaction original identity is invalid');
+  }
+  if (previous === null) {
+    if (record.sequence !== 1 || record.previousRecordHash !== null) {
+      throw new StateMigrationError('First restore record chain witness is invalid');
+    }
+  } else {
+    if (record.sequence !== previous.sequence + 1) {
+      throw new StateMigrationError('Restore transaction sequence is not contiguous');
+    }
+    if (record.previousRecordHash !== previous.recordHash) {
+      throw new StateMigrationError('Restore transaction previous hash does not match');
+    }
+  }
+  if (!/^sha256:[a-f0-9]{64}$/.test(record.recordHash || '')
+      || record.recordHash !== restoreRecordHash(record)) {
+    throw new StateMigrationError('Restore transaction record hash mismatch');
+  }
+  return true;
+}
+
+function loadRestoreJournal(targetRoot) {
+  const journal = restoreJournalPath(targetRoot);
+  if (!fs.existsSync(journal)) return [];
+  const content = fs.readFileSync(journal, 'utf8');
+  if (!content) return [];
+  if (!content.endsWith('\n')) {
+    throw new StateMigrationError('Restore transaction log has an incomplete trailing record; preserve it for operator recovery');
+  }
+  const lines = content.split('\n').filter(Boolean);
+  const records = [];
+  let previous = null;
+  for (const line of lines) {
+    let record;
+    try {
+      record = JSON.parse(line);
+    } catch (error) {
+      throw new StateMigrationError('Restore transaction log contains invalid JSON: ' + error.message);
+    }
+    validateRestoreRecord(record, previous);
+    records.push(record);
+    previous = record;
+  }
+  return records;
+}
+
+function latestRestoreTransaction(records) {
+  if (!Array.isArray(records) || records.length === 0) return null;
+  const transactionId = records.at(-1).transactionId;
+  const txRecords = records.filter((record) => record.transactionId === transactionId);
+  const prepared = txRecords.find((record) => record.phase === 'PREPARED');
+  if (!prepared) throw new StateMigrationError('Latest restore transaction is missing PREPARED witness');
+  return {
+    prepared,
+    last: txRecords.at(-1),
+    records: txRecords,
+  };
+}
+
+function appendRestoreTransactionRecord({
+  targetRoot,
+  transaction,
+  phase,
+  outcome = null,
+  now = new Date().toISOString(),
+}) {
+  if (!RESTORE_PHASES.includes(phase)) throw new StateMigrationError('Unknown restore transaction phase: ' + phase);
+  const journal = restoreJournalPath(targetRoot);
+  const records = loadRestoreJournal(targetRoot);
+  const previous = records.at(-1) ?? null;
+  const base = {
+    schemaVersion: RESTORE_TRANSACTION_SCHEMA_VERSION,
+    sequence: (previous?.sequence ?? 0) + 1,
+    transactionId: transaction.transactionId,
+    phase,
+    timestamp: now,
+    targetRoot: transaction.targetRoot,
+    stageName: transaction.stageName,
+    existed: transaction.existed,
+    originalDev: transaction.originalDev,
+    originalIno: transaction.originalIno,
+    stageDev: transaction.stageDev,
+    stageIno: transaction.stageIno,
+    outcome,
+    previousRecordHash: previous?.recordHash ?? null,
+  };
+  const record = { ...base, recordHash: restoreRecordHash(base) };
+
+  fs.mkdirSync(path.dirname(journal), { recursive: true });
+  const existed = fs.existsSync(journal);
+  const fd = fs.openSync(journal, 'a', 0o600);
+  try {
+    fs.writeFileSync(fd, JSON.stringify(record) + '\n', 'utf8');
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  // On first publication this is a namespace durability barrier. On Windows
+  // it is not the sole witness: orphan stage/displaced directories are also
+  // detected before any future destructive transaction.
+  if (!existed) syncRestoreParent(path.dirname(journal));
+  return Object.freeze(record);
+}
+
+function orphanRestoreWitnesses(targetRoot) {
+  const root = path.resolve(targetRoot);
+  const parent = path.dirname(root);
+  if (!fs.existsSync(parent)) return [];
+  return fs.readdirSync(parent)
+    .filter((name) => /^\.dk-legacy-restore-stage-[a-f0-9]{32}(?:-original)?$/.test(name))
+    .map((name) => path.join(parent, name))
+    .sort();
+}
+
+function assertNoUnjournaledRestoreWitness(targetRoot) {
+  if (fs.existsSync(restoreJournalPath(targetRoot)) || fs.existsSync(legacyRestoreJournalPath(targetRoot))) return;
+  const witnesses = orphanRestoreWitnesses(targetRoot);
+  if (witnesses.length > 0) {
+    throw new StateMigrationError(
+      'Restore witnesses exist without a recovery journal; refusing destructive mutation',
+      {
+        code: 'RESTORE_WITNESS_WITHOUT_JOURNAL',
+        witnesses,
+      },
+    );
+  }
 }
 
 /**
