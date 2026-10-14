@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import { validateWorkflowState } from '../autopilot/validators.mjs';
 import { validateOrchestrationRun } from './orchestration-run.mjs';
@@ -598,9 +600,87 @@ function restoreJournalPath(targetRoot) {
  * Any failure is fatal: callers never mutate or acknowledge past a barrier
  * that did not complete, so the journal and witnesses are retained.
  */
+const WINDOWS_DURABILITY_HELPER = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../scripts/windows-durable-rename.ps1',
+);
+
+function runWindowsDurabilityHelper(operation, args = {}) {
+  if (process.platform !== 'win32') {
+    throw new StateMigrationError('Windows durability helper may only run on Windows');
+  }
+  if (!fs.existsSync(WINDOWS_DURABILITY_HELPER)) {
+    throw new StateMigrationError('Windows durability helper is missing', {
+      code: 'WINDOWS_DURABILITY_HELPER_MISSING',
+      helper: WINDOWS_DURABILITY_HELPER,
+    });
+  }
+
+  const argv = [
+    '-NoLogo',
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy', 'Bypass',
+    '-File', WINDOWS_DURABILITY_HELPER,
+    '-Operation', operation,
+  ];
+  for (const [key, value] of Object.entries(args)) {
+    if (value === null || value === undefined) continue;
+    argv.push('-' + key, String(value));
+  }
+
+  const result = spawnSync('powershell.exe', argv, {
+    encoding: 'utf8',
+    windowsHide: true,
+    shell: false,
+    timeout: 30_000,
+  });
+  if (result.error || result.status !== 0) {
+    throw new StateMigrationError('Windows durability helper failed; recovery evidence retained', {
+      code: 'WINDOWS_DURABILITY_HELPER_FAILED',
+      operation,
+      status: result.status,
+      cause: result.error?.message ?? String(result.stderr || result.stdout || 'unknown failure').trim(),
+    });
+  }
+
+  const output = String(result.stdout || '').trim();
+  if (!output) {
+    throw new StateMigrationError('Windows durability helper returned no result');
+  }
+  try {
+    return JSON.parse(output.split(/\r?\n/).filter(Boolean).at(-1));
+  } catch (error) {
+    throw new StateMigrationError('Windows durability helper returned invalid JSON', {
+      operation,
+      cause: error.message,
+    });
+  }
+}
+
+function requireSupportedWindowsRestoreProfile(targetPath) {
+  if (process.platform !== 'win32') return null;
+  const profile = runWindowsDurabilityHelper('Probe', { Path: targetPath });
+  if (profile?.supportedAutomaticRestore !== true
+      || String(profile.fileSystem || '').toUpperCase() !== 'NTFS'
+      || profile.localFixed !== true) {
+    throw new StateMigrationError(
+      'Windows automatic restore requires a local fixed NTFS durability profile',
+      {
+        code: 'UNSUPPORTED_WINDOWS_DURABILITY_TARGET',
+        profile,
+      },
+    );
+  }
+  return profile;
+}
+
 function syncRestoreParent(parent) {
   let fd;
   try {
+    // This syscall barrier is useful on both platforms but is not treated as
+    // the sole recovery witness on Windows. The transaction journal/stage
+    // witnesses remain authoritative across restart ambiguity.
     fd = fs.openSync(parent, process.platform === 'win32' ? 'r+' : 'r');
     fs.fsyncSync(fd);
   } catch (error) {
@@ -612,9 +692,19 @@ function syncRestoreParent(parent) {
   }
 }
 
-function durableRestoreRollbackRename(from, to) {
+function durableRestoreRename(from, to) {
+  const parent = path.dirname(to);
+  if (process.platform === 'win32') {
+    requireSupportedWindowsRestoreProfile(parent);
+    runWindowsDurabilityHelper('Rename', { From: from, To: to });
+    return;
+  }
   fs.renameSync(from, to);
-  syncRestoreParent(path.dirname(to));
+  syncRestoreParent(parent);
+}
+
+function durableRestoreRollbackRename(from, to) {
+  durableRestoreRename(from, to);
 }
 
 /**
