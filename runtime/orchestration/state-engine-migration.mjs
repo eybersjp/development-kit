@@ -861,12 +861,15 @@ function requireSupportedWindowsRestoreProfile(targetPath) {
 }
 
 function syncRestoreParent(parent) {
+  if (process.platform === 'win32') {
+    requireSupportedWindowsRestoreProfile(parent);
+    runWindowsDurabilityHelper('FlushDirectory', { Path: parent });
+    return;
+  }
+
   let fd;
   try {
-    // This syscall barrier is useful on both platforms but is not treated as
-    // the sole recovery witness on Windows. The transaction journal/stage
-    // witnesses remain authoritative across restart ambiguity.
-    fd = fs.openSync(parent, process.platform === 'win32' ? 'r+' : 'r');
+    fd = fs.openSync(parent, 'r');
     fs.fsyncSync(fd);
   } catch (error) {
     throw new StateMigrationError('Restore directory flush barrier failed; recovery evidence retained', {
@@ -1257,9 +1260,28 @@ export function restoreLegacyBackup({
   if (confirmOffline !== true) {
     throw new StateMigrationError('Legacy backup restoration requires explicit offline confirmation and an exclusively controlled local workspace');
   }
-  if (fs.existsSync(restoreJournalPath(targetRoot))) {
-    throw new StateMigrationError('Incomplete legacy restore exists; run recoverLegacyRestore with offline confirmation first');
+
+  const resolvedRoot = path.resolve(targetRoot);
+  const parent = path.dirname(resolvedRoot);
+  assertNoUnjournaledRestoreWitness(resolvedRoot);
+
+  const legacyJournal = legacyRestoreJournalPath(resolvedRoot);
+  if (fs.existsSync(legacyJournal)) {
+    throw new StateMigrationError('Incomplete pre-v0.13 legacy restore exists; run recoverLegacyRestore with offline confirmation first');
   }
+
+  const priorRecords = loadRestoreJournal(resolvedRoot);
+  if (priorRecords.length > 0) {
+    const latest = latestRestoreTransaction(priorRecords);
+    if (latest.last.phase !== RESTORE_TERMINAL_PHASE) {
+      throw new StateMigrationError('Incomplete legacy restore exists; run recoverLegacyRestore with offline confirmation first', {
+        code: 'INCOMPLETE_RESTORE_TRANSACTION',
+        transactionId: latest.prepared.transactionId,
+        phase: latest.last.phase,
+      });
+    }
+  }
+
   const bundle = readJson(backupPath, 'Legacy backup');
   validateBackupBundle(bundle);
 
@@ -1267,14 +1289,10 @@ export function restoreLegacyBackup({
   // even one byte; a later malicious backup path cannot leave a partial restore.
   const destinations = bundle.files.map((entry) => ({
     entry,
-    destination: resolveSafeRestoreDestination(targetRoot, entry.path),
+    destination: resolveSafeRestoreDestination(resolvedRoot, entry.path),
   }));
   const normalizedDestinations = new Set();
   for (const { entry, destination } of destinations) {
-    // Conservative case/Unicode folding and Win32 trailing-dot/space removal
-    // prevents duplicate-target aliases on APFS/HFS+, NTFS, and FAT.
-    // Refusing distinct-case or aliased names on a case-sensitive mount is intentional:
-    // restore cannot safely assume a particular target filesystem policy.
     const key = destination
       .normalize('NFC')
       .toLowerCase()
@@ -1292,13 +1310,6 @@ export function restoreLegacyBackup({
     }
   }
 
-  // Path-based preflight + O_NOFOLLOW cannot secure an overwrite against a
-  // concurrent parent-directory swap. Build and fsync a complete replacement
-  // tree in an owner-only sibling directory. Publish by renaming the root
-  // directory itself; no restored byte is ever opened through an attacker-
-  // mutable path *inside* targetRoot.
-  const resolvedRoot = path.resolve(targetRoot);
-  const parent = path.dirname(resolvedRoot);
   const originalRootExists = fs.existsSync(resolvedRoot);
   const rootStat = originalRootExists ? fs.lstatSync(resolvedRoot) : null;
   const originalMetadata = originalRootExists ? collectRestoreMetadata(resolvedRoot) : [];
@@ -1306,20 +1317,32 @@ export function restoreLegacyBackup({
   if (rootStat && (!rootStat.isDirectory() || rootStat.isSymbolicLink())) {
     throw new StateMigrationError('Legacy backup restore root must be an ordinary directory');
   }
-  const transactionId = crypto.randomBytes(16).toString('hex');
-  // Pre-mutation capability probe: if this volume cannot complete the
-  // directory flush barrier, refuse before creating the stage or journal.
+
+  // Windows support is positive/capability based. Unsupported storage fails
+  // before the staging tree or any destructive target-root mutation exists.
+  if (process.platform === 'win32') requireSupportedWindowsRestoreProfile(parent);
   syncRestoreParent(parent);
+
+  const transactionId = crypto.randomBytes(16).toString('hex');
   const stage = path.join(parent, '.dk-legacy-restore-stage-' + transactionId);
-  fs.mkdirSync(stage, { mode: 0o700 });
   const displaced = stage + '-original';
+  fs.mkdirSync(stage, { mode: 0o700 });
+
   let promoted = false;
   let displacedOriginal = false;
+  let transaction = null;
+
   try {
     fs.chmodSync(stage, 0o700);
     if (originalRootExists) {
-      fs.cpSync(resolvedRoot, stage, { recursive: true, force: true, dereference: false, verbatimSymlinks: true });
+      fs.cpSync(resolvedRoot, stage, {
+        recursive: true,
+        force: true,
+        dereference: false,
+        verbatimSymlinks: true,
+      });
     }
+
     const restored = [];
     for (const { entry } of destinations) {
       const destination = resolveSafeRestoreDestination(stage, entry.path, { createMissing: true });
@@ -1332,8 +1355,6 @@ export function restoreLegacyBackup({
       } finally {
         fs.closeSync(fd);
       }
-      // An atomic rename replaces the *directory entry* even if the prior
-      // staging entry is a link; it never truncates an external hardlink inode.
       fs.renameSync(tempFile, destination);
       if (stateSha256(fs.readFileSync(destination)) !== entry.fingerprint) {
         throw new StateMigrationError('Staged legacy file failed fingerprint verification: ' + entry.path);
@@ -1341,19 +1362,11 @@ export function restoreLegacyBackup({
       restored.push(entry.path);
     }
 
-    // Seal and flush staged file contents before metadata restoration.
-    // Metadata is replayed post-order so source file owners and descendant
-    // traversal modes do not drift and historical parent atimes are applied
-    // after every directory traversal has finished.
     syncRestoreTree(stage);
     if (rootStat) applyRestoreMetadata(stage, originalMetadata);
 
-    // Durable journal precedes *both* root-directory renames. A crash after
-    // either rename is recoverable by an explicit offline recovery invocation.
     const stageStat = fs.lstatSync(stage, { bigint: true });
-    const journal = restoreJournalPath(resolvedRoot);
-    createRestoreJournal(journal, {
-      schemaVersion: '1.0.0',
+    transaction = {
       transactionId,
       stageName: path.basename(stage),
       targetRoot: resolvedRoot,
@@ -1362,38 +1375,79 @@ export function restoreLegacyBackup({
       originalIno: rootIdentity?.ino.toString() ?? null,
       stageDev: stageStat.dev.toString(),
       stageIno: stageStat.ino.toString(),
+    };
+
+    // W73-01: durable discoverable recovery intent precedes every destructive
+    // root-directory rename.
+    appendRestoreTransactionRecord({
+      targetRoot: resolvedRoot,
+      transaction,
+      phase: 'PREPARED',
     });
 
-    // Moving the existing root out of the way does not follow a symlink.
-    // Verify that the directory moved is still the original preflighted inode
-    // before publishing the staged replacement.
     if (originalRootExists) {
-      fs.renameSync(resolvedRoot, displaced);
-      syncRestoreParent(parent);
+      durableRestoreRename(resolvedRoot, displaced);
       displacedOriginal = true;
-      const moved = fs.lstatSync(displaced);
-      if (moved.dev !== rootStat.dev || moved.ino !== rootStat.ino) {
+
+      const moved = fs.lstatSync(displaced, { bigint: true });
+      if (!sameRestoreIdentity(moved, transaction.originalDev, transaction.originalIno)) {
         throw new StateMigrationError('Legacy backup restore root changed during staging');
       }
+      appendRestoreTransactionRecord({
+        targetRoot: resolvedRoot,
+        transaction,
+        phase: 'ORIGINAL_DISPLACED',
+      });
     }
-    fs.renameSync(stage, resolvedRoot);
-    syncRestoreParent(parent);
+
+    // W73-03: publish candidate using the platform durability primitive.
+    durableRestoreRename(stage, resolvedRoot);
     promoted = true;
     displacedOriginal = false;
-    // Preserve original root as a retained rollback asset. Only after the
-    // new root is durably visible should the journal be acknowledged.
-    fs.unlinkSync(journal);
-    syncRestoreParent(parent);
-    // Promotion is now acknowledged and durable. An old tree kept in the
-    // displaced slot is not needed for this completed transaction.
-    if (originalRootExists) {
-      try { fs.rmSync(displaced, { recursive: true, force: true }); } catch {
-        // Retain rather than damage the newly promoted root if cleanup fails.
+
+    const published = fs.lstatSync(resolvedRoot, { bigint: true });
+    if (!sameRestoreIdentity(published, transaction.stageDev, transaction.stageIno)) {
+      throw new StateMigrationError('Published restore candidate differs from staged identity witness');
+    }
+    appendRestoreTransactionRecord({
+      targetRoot: resolvedRoot,
+      transaction,
+      phase: 'CANDIDATE_PUBLISHED',
+    });
+
+    // Journal acknowledgement is an explicit persistent state transition, not
+    // deletion of the only recovery authority.
+    appendRestoreTransactionRecord({
+      targetRoot: resolvedRoot,
+      transaction,
+      phase: 'PROMOTION_ACKNOWLEDGED',
+    });
+    appendRestoreTransactionRecord({
+      targetRoot: resolvedRoot,
+      transaction,
+      phase: RESTORE_TERMINAL_PHASE,
+      outcome: originalRootExists ? 'promoted-original-retained' : 'promoted-new-root',
+    });
+
+    let cleanupPending = false;
+    if (originalRootExists && fs.existsSync(displaced)) {
+      try {
+        fs.rmSync(displaced, { recursive: true, force: true });
+        syncRestoreParent(parent);
+      } catch {
+        // Cleanup is intentionally post-terminal. Preserve the authenticated
+        // old root rather than turning cleanup failure into data loss.
+        cleanupPending = true;
       }
     }
+
     return Object.freeze({
       restoredFiles: restored.sort(),
       sourceFingerprint: bundle.sourceFingerprint,
+      transactionId,
+      transactionLog: restoreJournalPath(resolvedRoot),
+      cleanupPending,
+      displacedOriginal: cleanupPending && originalRootExists ? displaced : null,
     });
   } finally {
     if (displacedOriginal) {
@@ -1401,10 +1455,21 @@ export function restoreLegacyBackup({
         if (!fs.existsSync(resolvedRoot)) {
           durableRestoreRollbackRename(displaced, resolvedRoot);
         }
-      } catch {}
+      } catch {
+        // Explicit recoverLegacyRestore remains the authority after any
+        // ambiguous/failed in-process rollback.
+      }
     }
     if (!promoted) {
-      try { fs.rmSync(stage, { recursive: true, force: true }); } catch {}
+      try {
+        if (fs.existsSync(stage)) {
+          fs.rmSync(stage, { recursive: true, force: true });
+          syncRestoreParent(parent);
+        }
+      } catch {
+        // Retain orphan stage witness on cleanup failure; future restore will
+        // fail closed if no matching transaction log can be proven.
+      }
     }
   }
 }
