@@ -915,18 +915,146 @@ function syncRestoreTree(directory) {
   syncRestoreParent(directory);
 }
 
-function createRestoreJournal(file, data) {
-  const fd = fs.openSync(file, 'wx', 0o600);
+function inspectRestorePath(file) {
   try {
-    fs.writeFileSync(fd, stablePretty(data));
-    fs.fsyncSync(fd);
-  } finally { fs.closeSync(fd); }
-  syncRestoreParent(path.dirname(file));
+    return fs.lstatSync(file, { bigint: true });
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+function sameRestoreIdentity(stat, dev, ino) {
+  return Boolean(stat)
+    && stat.isDirectory()
+    && !stat.isSymbolicLink()
+    && stat.dev.toString() === dev
+    && stat.ino.toString() === ino;
+}
+
+function appendMissingSuccessfulRestorePhases(targetRoot, transaction, existingRecords, { outcome = 'promoted' } = {}) {
+  const phases = new Set(existingRecords.map((record) => record.phase));
+  if (transaction.existed && !phases.has('ORIGINAL_DISPLACED')) {
+    appendRestoreTransactionRecord({ targetRoot, transaction, phase: 'ORIGINAL_DISPLACED' });
+    phases.add('ORIGINAL_DISPLACED');
+  }
+  if (!phases.has('CANDIDATE_PUBLISHED')) {
+    appendRestoreTransactionRecord({ targetRoot, transaction, phase: 'CANDIDATE_PUBLISHED' });
+    phases.add('CANDIDATE_PUBLISHED');
+  }
+  if (!phases.has('PROMOTION_ACKNOWLEDGED')) {
+    appendRestoreTransactionRecord({ targetRoot, transaction, phase: 'PROMOTION_ACKNOWLEDGED' });
+    phases.add('PROMOTION_ACKNOWLEDGED');
+  }
+  if (!phases.has(RESTORE_TERMINAL_PHASE)) {
+    appendRestoreTransactionRecord({
+      targetRoot,
+      transaction,
+      phase: RESTORE_TERMINAL_PHASE,
+      outcome,
+    });
+  }
+}
+
+function retainRecoveredLegacyRestoreJournal(journalPath, transactionId) {
+  const retained = journalPath + '.retained-' + transactionId + '.json';
+  if (fs.existsSync(retained)) {
+    throw new StateMigrationError('Retained legacy restore journal already exists; refusing ambiguous cleanup', {
+      code: 'LEGACY_RESTORE_RETAINED_JOURNAL_CONFLICT',
+      retained,
+    });
+  }
+  durableRestoreRename(journalPath, retained);
+  return retained;
+}
+
+function recoverLegacyRestoreV1({ root, parent, journalPath }) {
+  const tx = readJson(journalPath, 'Legacy restore journal');
+  const expectedStage = '.dk-legacy-restore-stage-' + tx.transactionId;
+  const stage = path.join(parent, expectedStage);
+  const displaced = stage + '-original';
+  if (!/^[a-f0-9]{32}$/.test(tx.transactionId || '')
+    || tx.targetRoot !== root
+    || tx.schemaVersion !== '1.0.0'
+    || tx.stageName !== expectedStage
+    || (tx.existed !== true && tx.existed !== false)
+    || !/^\d+$/.test(tx.stageDev || '')
+    || !/^\d+$/.test(tx.stageIno || '')
+    || (tx.existed && (!/^\d+$/.test(tx.originalDev || '') || !/^\d+$/.test(tx.originalIno || '')))) {
+    throw new StateMigrationError('Legacy restore journal contains an invalid transaction witness');
+  }
+
+  if (process.platform === 'win32') requireSupportedWindowsRestoreProfile(parent);
+
+  const atRoot = inspectRestorePath(root);
+  const inStage = inspectRestorePath(stage);
+  const inDisplaced = inspectRestorePath(displaced);
+  if (inStage && !sameRestoreIdentity(inStage, tx.stageDev, tx.stageIno)) {
+    throw new StateMigrationError('Unrecognized staged restore directory; refusing v1 recovery');
+  }
+  if (inDisplaced && (!tx.existed || !sameRestoreIdentity(inDisplaced, tx.originalDev, tx.originalIno))) {
+    throw new StateMigrationError('Displaced restore directory differs from v1 original witness');
+  }
+
+  let outcome;
+  if (inDisplaced && !atRoot) {
+    durableRestoreRollbackRename(displaced, root);
+    outcome = 'rolled-back-original';
+  } else if (inDisplaced && sameRestoreIdentity(atRoot, tx.stageDev, tx.stageIno)) {
+    outcome = 'promoted-original-retained';
+  } else if (!inDisplaced && (
+    (!atRoot && !tx.existed)
+    || (tx.existed && sameRestoreIdentity(atRoot, tx.originalDev, tx.originalIno))
+  )) {
+    outcome = 'uncommitted-original-unchanged';
+  } else if (!tx.existed && sameRestoreIdentity(atRoot, tx.stageDev, tx.stageIno)) {
+    outcome = 'promoted-new-root';
+  } else {
+    throw new StateMigrationError('Ambiguous v1 restore journal state; refusing automatic mutation');
+  }
+
+  if (inStage && fs.existsSync(stage)) {
+    fs.rmSync(stage, { recursive: true, force: true });
+    syncRestoreParent(parent);
+  }
+
+  const transaction = {
+    transactionId: tx.transactionId,
+    targetRoot: root,
+    stageName: expectedStage,
+    existed: tx.existed,
+    originalDev: tx.originalDev ?? null,
+    originalIno: tx.originalIno ?? null,
+    stageDev: tx.stageDev,
+    stageIno: tx.stageIno,
+  };
+  appendRestoreTransactionRecord({
+    targetRoot: root,
+    transaction,
+    phase: 'PREPARED',
+    outcome: 'imported-v1-recovery',
+  });
+  appendRestoreTransactionRecord({
+    targetRoot: root,
+    transaction,
+    phase: RESTORE_TERMINAL_PHASE,
+    outcome: 'legacy-v1-' + outcome,
+  });
+
+  const retainedJournal = retainRecoveredLegacyRestoreJournal(journalPath, tx.transactionId);
+  return Object.freeze({
+    recovered: true,
+    legacyJournal: true,
+    outcome,
+    retainedJournal,
+    displacedOriginal: outcome === 'promoted-original-retained' ? displaced : null,
+  });
 }
 
 /**
  * Recover only an interrupted OFFLINE restore for the exact target root.
- * Reject unexpected names, inode witnesses, or concurrent target mutations.
+ * Recovery is witness-driven and never treats absence of a journal entry as
+ * proof that no transaction existed.
  */
 export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}) {
   if (typeof targetRoot !== 'string' || !targetRoot) {
@@ -935,67 +1063,140 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
   if (confirmOffline !== true) {
     throw new StateMigrationError('Explicit offline confirmation is required for restore recovery');
   }
+
   const root = path.resolve(targetRoot);
   const parent = path.dirname(root);
-  const journalPath = restoreJournalPath(root);
-  if (!fs.existsSync(journalPath)) return Object.freeze({ recovered: false });
-  const tx = readJson(journalPath, 'Legacy restore journal');
+  const legacyJournal = legacyRestoreJournalPath(root);
+  if (fs.existsSync(legacyJournal)) {
+    return recoverLegacyRestoreV1({ root, parent, journalPath: legacyJournal });
+  }
+
+  const records = loadRestoreJournal(root);
+  if (records.length === 0) {
+    assertNoUnjournaledRestoreWitness(root);
+    return Object.freeze({ recovered: false });
+  }
+
+  const latest = latestRestoreTransaction(records);
+  const tx = latest.prepared;
   const expectedStage = '.dk-legacy-restore-stage-' + tx.transactionId;
+  if (tx.targetRoot !== root || tx.stageName !== expectedStage) {
+    throw new StateMigrationError('Restore transaction witness does not match requested target root');
+  }
+
   const stage = path.join(parent, expectedStage);
   const displaced = stage + '-original';
-  if (!/^[a-f0-9]{32}$/.test(tx.transactionId || '') ||
-    tx.targetRoot !== root || tx.schemaVersion !== '1.0.0' ||
-    tx.stageName !== expectedStage || tx.existed !== true && tx.existed !== false ||
-    !/^\d+$/.test(tx.stageDev || '') || !/^\d+$/.test(tx.stageIno || '') ||
-    (tx.existed && (!/^\d+$/.test(tx.originalDev || '') || !/^\d+$/.test(tx.originalIno || '')))) {
-    throw new StateMigrationError('Legacy restore journal contains an invalid transaction witness');
+
+  if (latest.last.phase === RESTORE_TERMINAL_PHASE) {
+    return Object.freeze({
+      recovered: false,
+      alreadyComplete: true,
+      transactionId: tx.transactionId,
+      outcome: latest.last.outcome,
+      transactionLog: restoreJournalPath(root),
+    });
   }
-  // The recovery runs in an explicitly quiescent trusted workspace. All
-  // location/inode witnesses are rechecked before any cleanup.
-  const inspect = file => {
-    try { return fs.lstatSync(file, { bigint: true }); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
-  };
-  const atRoot = inspect(root);
-  const inStage = inspect(stage);
-  const inDisplaced = inspect(displaced);
-  const equal = (stat, dev, ino) => stat && stat.isDirectory() && !stat.isSymbolicLink() &&
-    stat.dev.toString() === dev && stat.ino.toString() === ino;
-  if (inStage && !equal(inStage, tx.stageDev, tx.stageIno)) {
+
+  if (process.platform === 'win32') requireSupportedWindowsRestoreProfile(parent);
+
+  const atRoot = inspectRestorePath(root);
+  const inStage = inspectRestorePath(stage);
+  const inDisplaced = inspectRestorePath(displaced);
+
+  if (inStage && !sameRestoreIdentity(inStage, tx.stageDev, tx.stageIno)) {
     throw new StateMigrationError('Unrecognized staged restore directory; refusing recovery');
   }
-  if (inDisplaced && (!tx.existed || !equal(inDisplaced, tx.originalDev, tx.originalIno))) {
+  if (inDisplaced && (!tx.existed || !sameRestoreIdentity(inDisplaced, tx.originalDev, tx.originalIno))) {
     throw new StateMigrationError('Displaced restore directory differs from original witness');
   }
 
-  let outcome;
-  // Pre-mutation capability probe (fails closed with every witness intact).
-  syncRestoreParent(parent);
+  // Crash after original displacement but before candidate publication: restore
+  // the authenticated original and terminate the transaction as rolled back.
   if (inDisplaced && !atRoot) {
-    // The restored root directory entry must be durable before removing the
-    // only journal that permits redoing this rollback after another power loss.
-    durableRestoreRollbackRename(displaced, root); // crash after displacement
-    outcome = 'rolled-back-original';
-  } else if (inDisplaced && equal(atRoot, tx.stageDev, tx.stageIno)) {
-    // Promotion completed; preserve original in displaced directory for
-    // explicit/manual audit rather than silently deleting recovery evidence.
-    outcome = 'promoted-original-retained';
-  } else if (!inDisplaced && (!atRoot && !tx.existed ||
-    (tx.existed && equal(atRoot, tx.originalDev, tx.originalIno)))) {
-    outcome = 'uncommitted-original-unchanged';
-  } else if (!tx.existed && equal(atRoot, tx.stageDev, tx.stageIno)) {
-    outcome = 'promoted-new-root';
-  } else {
-    throw new StateMigrationError('Ambiguous restore journal state; refusing automatic mutation');
+    durableRestoreRollbackRename(displaced, root);
+    if (inStage && fs.existsSync(stage)) {
+      fs.rmSync(stage, { recursive: true, force: true });
+      syncRestoreParent(parent);
+    }
+    appendRestoreTransactionRecord({
+      targetRoot: root,
+      transaction: tx,
+      phase: RESTORE_TERMINAL_PHASE,
+      outcome: 'rolled-back-original',
+    });
+    return Object.freeze({
+      recovered: true,
+      outcome: 'rolled-back-original',
+      transactionId: tx.transactionId,
+      transactionLog: restoreJournalPath(root),
+    });
   }
 
-  if (inStage) {
-    fs.rmSync(stage, { recursive: true, force: true });
-    syncRestoreParent(parent);
+  // Candidate is already visible. Finish only the missing durable state
+  // records, then make old-root cleanup a post-terminal maintenance action.
+  if (sameRestoreIdentity(atRoot, tx.stageDev, tx.stageIno)
+      && ((!tx.existed && !inDisplaced)
+        || (tx.existed && inDisplaced))) {
+    appendMissingSuccessfulRestorePhases(root, tx, latest.records, {
+      outcome: tx.existed ? 'promoted-original-retained' : 'promoted-new-root',
+    });
+
+    let cleanupPending = false;
+    if (tx.existed && fs.existsSync(displaced)) {
+      try {
+        fs.rmSync(displaced, { recursive: true, force: true });
+        syncRestoreParent(parent);
+      } catch {
+        cleanupPending = true;
+      }
+    }
+    if (inStage && fs.existsSync(stage)) {
+      try {
+        fs.rmSync(stage, { recursive: true, force: true });
+        syncRestoreParent(parent);
+      } catch {
+        cleanupPending = true;
+      }
+    }
+
+    return Object.freeze({
+      recovered: true,
+      outcome: tx.existed ? 'promoted-original-retained' : 'promoted-new-root',
+      transactionId: tx.transactionId,
+      transactionLog: restoreJournalPath(root),
+      cleanupPending,
+      displacedOriginal: cleanupPending && tx.existed ? displaced : null,
+    });
   }
-  // Keep any promoted displaced original as a recovery asset: never auto-delete.
-  fs.unlinkSync(journalPath);
-  syncRestoreParent(parent);
-  return Object.freeze({ recovered: true, outcome, displacedOriginal: outcome === 'promoted-original-retained' ? displaced : null });
+
+  // No destructive rename persisted. Preserve the authenticated original, drop
+  // only the authenticated staging copy, and terminally record rollback.
+  if (!inDisplaced && (
+    (tx.existed && sameRestoreIdentity(atRoot, tx.originalDev, tx.originalIno))
+    || (!tx.existed && !atRoot)
+  )) {
+    if (inStage && fs.existsSync(stage)) {
+      fs.rmSync(stage, { recursive: true, force: true });
+      syncRestoreParent(parent);
+    }
+    appendRestoreTransactionRecord({
+      targetRoot: root,
+      transaction: tx,
+      phase: RESTORE_TERMINAL_PHASE,
+      outcome: 'uncommitted-original-unchanged',
+    });
+    return Object.freeze({
+      recovered: true,
+      outcome: 'uncommitted-original-unchanged',
+      transactionId: tx.transactionId,
+      transactionLog: restoreJournalPath(root),
+    });
+  }
+
+  throw new StateMigrationError('Ambiguous restore transaction state; refusing automatic mutation', {
+    code: 'AMBIGUOUS_RESTORE_TRANSACTION',
+    transactionId: tx.transactionId,
+  });
 }
 
 /**
