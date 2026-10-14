@@ -631,6 +631,92 @@ function parseLedger(content) {
   return events;
 }
 
+function acknowledgedSnapshotWitness(paths) {
+  if (!fs.existsSync(paths.snapshot)) return null;
+  try {
+    const snapshot = JSON.parse(fs.readFileSync(paths.snapshot, 'utf8'));
+    validateStateSnapshot(snapshot);
+    return snapshot;
+  } catch {
+    // A corrupt disposable/materialized snapshot cannot authorize destructive
+    // canonical-ledger repair. It will be rebuilt after canonical recovery.
+    return null;
+  }
+}
+
+function repairUnwitnessedTrailingLedgerSuffixLocked(rootDir) {
+  const paths = ensureStateEngineLayout(rootDir);
+  if (fs.existsSync(paths.pending)) {
+    // withStateLock() recovers a valid pending commit before invoking this
+    // function. Seeing one here means recovery did not safely resolve it.
+    throw new StateEngineError('Pending commit remains unresolved during trailing-ledger recovery');
+  }
+
+  const content = fs.readFileSync(paths.events, 'utf8');
+  if (!content || content.endsWith('\n')) return parseLedger(content);
+
+  const boundary = content.lastIndexOf('\n');
+  const prefixContent = boundary === -1 ? '' : content.slice(0, boundary + 1);
+  const tail = content.slice(boundary + 1);
+  const prefixEvents = parseLedger(prefixContent);
+  const previous = prefixEvents.at(-1) ?? null;
+
+  // A fully valid final event that merely lost its record terminator is
+  // recoverable without discarding canonical information.
+  try {
+    const event = JSON.parse(tail);
+    validateStateEvent(event, previous);
+    const fd = fs.openSync(paths.events, 'r+');
+    try {
+      const stat = fs.fstatSync(fd);
+      if (!stat.isFile()) throw new StateEngineError('Canonical ledger repair target is not a regular file');
+      fs.writeSync(fd, Buffer.from('\n'), 0, 1, Buffer.byteLength(content, 'utf8'));
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    return [...prefixEvents, event];
+  } catch (error) {
+    if (error instanceof StateEngineError && !String(error.message).includes('JSON')) {
+      // A parseable event with an invalid sequence/hash is ambiguous
+      // corruption, not a torn byte suffix. Never truncate it automatically.
+      throw error;
+    }
+  }
+
+  // The final suffix is not valid JSON. It may be repaired only when no
+  // already-acknowledged snapshot claims a later canonical event. This keeps
+  // a missing Windows pending-journal directory entry from making a torn
+  // unacknowledged append unrecoverable, while preventing rollback of
+  // previously materialized history.
+  const witness = acknowledgedSnapshotWitness(paths);
+  if (witness && witness.lastEventSequence > prefixEvents.length) {
+    throw new StateEngineError(
+      'Refusing to truncate trailing canonical bytes witnessed by the materialized snapshot',
+      {
+        code: 'ACKNOWLEDGED_LEDGER_TAIL_CORRUPT',
+        snapshotSequence: witness.lastEventSequence,
+        recoverablePrefixSequence: prefixEvents.length,
+      },
+    );
+  }
+  if (witness && witness.lastEventSequence === prefixEvents.length) {
+    const prefixHash = prefixEvents.at(-1)?.eventHash ?? null;
+    if (witness.lastEventHash !== prefixHash) {
+      throw new StateEngineError('Materialized snapshot hash disagrees with recoverable canonical prefix');
+    }
+  }
+
+  const fd = fs.openSync(paths.events, 'r+');
+  try {
+    fs.ftruncateSync(fd, Buffer.byteLength(prefixContent, 'utf8'));
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  return prefixEvents;
+}
+
 export function loadCanonicalEvents(rootDir = process.cwd()) {
   const paths = statePaths(rootDir);
   if (!fs.existsSync(paths.events)) {
@@ -642,11 +728,16 @@ export function loadCanonicalEvents(rootDir = process.cwd()) {
   if (fs.existsSync(paths.pending)) {
     return withStateLock(rootDir, () => parseLedger(fs.readFileSync(paths.events, 'utf8')));
   }
+
   const content = fs.readFileSync(paths.events, 'utf8');
   if (fs.existsSync(paths.pending)) {
     return withStateLock(rootDir, () => parseLedger(fs.readFileSync(paths.events, 'utf8')));
   }
-  return parseLedger(content);
+  if (!content || content.endsWith('\n')) return parseLedger(content);
+
+  // Only a non-terminated final record is eligible for automatic tail
+  // recovery. Mid-ledger corruption and hash-chain failures remain fail-closed.
+  return withStateLock(rootDir, () => repairUnwitnessedTrailingLedgerSuffixLocked(rootDir));
 }
 
 function normalizePathSegments(value) {
