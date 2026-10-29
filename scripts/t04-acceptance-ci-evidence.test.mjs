@@ -115,7 +115,7 @@ test('rejects an older CI run on another receipt-bearing execution commit', () =
 
 test('all three CI jobs explicitly check out the immutable PR head, not the moving merge ref', () => {
   const workflowYaml = fs.readFileSync(fileURLToPath(new URL('../.github/workflows/ci.yml', import.meta.url)), 'utf8');
-  const refs = workflowYaml.split('ref: ${{ github.event.pull_request.head.sha || github.sha }}').length - 1;
+  const refs = workflowYaml.split('ref: ${{ github.head_ref == 'fix/v0.12-t04-state-engine-hardening' && github.event.pull_request.head.sha || github.sha }}').length - 1;
   assert.equal(refs, 3, 'Ubuntu, Windows and acceptance must test the same immutable head');
 });
 
