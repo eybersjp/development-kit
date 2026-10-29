@@ -24,6 +24,10 @@ import { createReviewResult } from '../runtime/orchestration/review-result.mjs';
 import { detectArchitectureDrift } from '../runtime/orchestration/architecture-drift.mjs';
 import { decideAcceptance, validateAcceptanceRecord } from '../runtime/orchestration/acceptance-engine.mjs';
 import {
+  collectT04ValidationRuns, assertT04BlockerIssuesClosed,
+  assertT04ExecutedWorkflowMatchesReviewed,
+} from './t04-acceptance-ci-evidence.mjs';
+import {
   unresolvedReviewThreads,
   requireCanonicalGithubReviewRequest,
   requireCanonicalGithubReviewResponse,
@@ -75,6 +79,23 @@ assert.match(receipts.reviewedCommit || '', /^[a-f0-9]{40}$/,
   'Three independent role-scoped review receipts must bind an immutable reviewed commit');
 assert.ok(Array.isArray(receipts.reviews), 'Review receipts must have a review array');
 const REVIEWED_SOURCE = receipts.reviewedCommit;
+// The reviewed commit R may precede a receipts-only commit C. GitHub's
+// authenticated PR event binds C, and checkout must be exactly C; the complete
+// Git index comparison below proves C and R have identical production source.
+assert.ok(process.env.GITHUB_EVENT_PATH,
+  'Authenticated pull-request event payload is required');
+const githubEvent = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+assert.equal(githubEvent.number, 70,
+  'Acceptance may only evaluate the production T04 PR #70');
+assert.equal(githubEvent.pull_request?.head?.repo?.full_name, 'eybersjp/development-kit');
+const EXECUTION_SOURCE = githubEvent.pull_request?.head?.sha;
+assert.match(EXECUTION_SOURCE || '', /^[a-f0-9]{40}$/,
+  'Authenticated PR execution head SHA is required');
+const checkoutHead = execFileSync('git', ['rev-parse', 'HEAD'], {
+  cwd: ROOT, encoding: 'utf8',
+}).trim();
+assert.equal(checkoutHead, EXECUTION_SOURCE,
+  'Acceptance checkout does not match authenticated PR execution head');
 const BASELINE_CI = 'https://github.com/eybersjp/development-kit/actions/runs/' + process.env.GITHUB_RUN_ID;
 
 async function githubApi(endpoint) {
@@ -106,7 +127,14 @@ async function githubGraphql(query, variables = {}) {
   if (result.errors?.length) throw new Error('GitHub GraphQL query failed: ' + result.errors[0].message);
   return result.data;
 }
-const tree = await githubApi('git/trees/' + REVIEWED_SOURCE + '?recursive=1');
+// Git Trees REST API requires the immutable tree object, not the commit ID.
+// Authenticate the commit-to-tree edge before comparing the entire index.
+const reviewedCommitObject = await githubApi('git/commits/' + REVIEWED_SOURCE);
+assert.equal(reviewedCommitObject?.sha, REVIEWED_SOURCE,
+  'Reviewed Git commit lookup returned a different immutable source');
+assert.match(reviewedCommitObject?.tree?.sha || '', /^[a-f0-9]{40}$/,
+  'Reviewed commit has no authenticated Git tree SHA');
+const tree = await githubApi('git/trees/' + reviewedCommitObject.tree.sha + '?recursive=1');
 assert.ok(!tree.truncated && Array.isArray(tree.tree), 'Reviewed commit tree unavailable or truncated');
 const treeFiles = new Map(tree.tree.filter(item => item.type === 'blob')
   .map(item => [item.path, { sha: item.sha, mode: item.mode }]));
@@ -287,6 +315,26 @@ for (const role of REQUIRED_ROLES) {
   assert.ok(reviewerReceipts.has(role), 'Independent source-bound role receipt absent: ' + role);
 }
 const INDEPENDENT_REVIEW = reviewerReceipts.get('code-reviewer').reviewUrl;
+// The two prerequisite platform jobs must have succeeded twice on identical
+// immutable source. Never turn a single current run into fabricated repeats.
+const VALIDATED_CI = await collectT04ValidationRuns({
+  githubApi, reviewedCommit: REVIEWED_SOURCE,
+  executionCommit: EXECUTION_SOURCE,
+  currentRunId: Number(process.env.GITHUB_RUN_ID),
+});
+// GitHub executes pull_request workflows from the merge ref, even when
+// checkout explicitly selects the immutable PR head. Authenticate that the
+// actual merge-ref workflow blob is exactly the reviewed workflow revision.
+const VERIFIED_WORKFLOW = await assertT04ExecutedWorkflowMatchesReviewed({
+  githubApi,
+  executionCommit: EXECUTION_SOURCE,
+  baseCommit: VALIDATED_CI.commonBaseSha,
+  runHeadSha: VALIDATED_CI.commonHeadSha,
+  reviewedWorkflowBlob: treeFiles.get('.github/workflows/ci.yml')?.sha,
+});
+// An open risk-3 source or Windows crash-durability blocker cannot be
+// converted into a synthetic ACCEPTED verdict by successful hosted CI.
+await assertT04BlockerIssuesClosed({ githubApi });
 
 const contract = loadDevelopmentContract('INC-DKF120-T04', ROOT);
 assert.ok(contract, 'T04 Development Contract was not persisted by the earlier contract validator');
@@ -299,10 +347,11 @@ const evidence = (criterionId) => [{
   type: 'test',
   deterministicVerification: true,
   verificationType: 'test',
-  evidenceId: 'GITHUB-ACTIONS-37974556018-' + criterionId,
+  evidenceId: 'GITHUB-ACTIONS-' + VALIDATED_CI.runIds.join('-') + '-' + criterionId,
   url: BASELINE_CI,
   checkedSource: REVIEWED_SOURCE,
-  assertion: 'Windows and Ubuntu full suites, T04 H01-H31, and repeat executions passed',
+  validatedCiRuns: VALIDATED_CI.runIds,
+  assertion: 'Two authenticated same-source Windows and Ubuntu full release validations passed; physical Windows power-loss durability is not established by CI',
 }];
 const criteria = contract.acceptanceCriteria.map((criterion) => {
   const items = evidence(criterion.id);
@@ -405,9 +454,12 @@ validateAcceptanceRecord(acceptance);
 const audit = Object.freeze({
   ...acceptance,
   evaluatedSourceCommit: REVIEWED_SOURCE,
+  validatedExecutionCommit: EXECUTION_SOURCE,
+  authenticatedWorkflowRevision: VERIFIED_WORKFLOW,
   sourceBlobWitnesses: BLOB_WITNESSES,
   evidenceUrls: {
     currentMatrixValidationRun: BASELINE_CI,
+    repeatedValidatedMatrixRuns: VALIDATED_CI.runIds.map(id => 'https://github.com/eybersjp/development-kit/actions/runs/' + id),
     independentCodeSecurityReview: INDEPENDENT_REVIEW,
     formalInitialRisk3Review: FORMAL_T04_REVIEW,
     trustBoundary: T04_SCOPE,
