@@ -14,7 +14,7 @@ const mkRun = (id, changes = {}) => ({
   workflow_id: workflow,
   head_sha: SOURCE,
   head_repository: { full_name: 'eybersjp/development-kit' },
-  pull_requests: [{ number: 70, head: { sha: SOURCE } }],
+  pull_requests: [{ number: 70, head: { sha: SOURCE }, base: { sha: 'b'.repeat(40) } }],
   jobs: [
     { name: 'Ubuntu full release validation', conclusion: 'success', status: 'completed' },
     { name: 'Windows full release validation', conclusion: 'success', status: 'completed' },
@@ -125,4 +125,12 @@ test('acceptance gate binds actual checked-out HEAD to the authenticated PR even
   assert.match(gate, /rev-parse/);
   assert.match(gate, /HEAD/);
   assert.match(gate, /executionCommit:/);
+});
+
+
+test('refuses a previous PR merge-base revision even when head and run head_sha match', () => {
+  const changedBase = mkRun(199, { pull_requests: [{
+    number: 70, head: { sha: SOURCE }, base: { sha: 'e'.repeat(40) },
+  }] });
+  assert.throws(() => validate([changedBase, mkRun(200)]), /base|source|merge/i);
 });
