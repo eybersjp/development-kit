@@ -23,7 +23,10 @@ import {
 import { createReviewResult } from '../runtime/orchestration/review-result.mjs';
 import { detectArchitectureDrift } from '../runtime/orchestration/architecture-drift.mjs';
 import { decideAcceptance, validateAcceptanceRecord } from '../runtime/orchestration/acceptance-engine.mjs';
-import { collectT04ValidationRuns, assertT04BlockerIssuesClosed } from './t04-acceptance-ci-evidence.mjs';
+import {
+  collectT04ValidationRuns, assertT04BlockerIssuesClosed,
+  assertT04ExecutedWorkflowMatchesReviewed,
+} from './t04-acceptance-ci-evidence.mjs';
 import {
   unresolvedReviewThreads,
   requireCanonicalGithubReviewRequest,
@@ -312,6 +315,16 @@ const VALIDATED_CI = await collectT04ValidationRuns({
   executionCommit: EXECUTION_SOURCE,
   currentRunId: Number(process.env.GITHUB_RUN_ID),
 });
+// GitHub executes pull_request workflows from the merge ref, even when
+// checkout explicitly selects the immutable PR head. Authenticate that the
+// actual merge-ref workflow blob is exactly the reviewed workflow revision.
+const VERIFIED_WORKFLOW = await assertT04ExecutedWorkflowMatchesReviewed({
+  githubApi,
+  executionCommit: EXECUTION_SOURCE,
+  baseCommit: VALIDATED_CI.commonBaseSha,
+  runHeadSha: VALIDATED_CI.commonHeadSha,
+  reviewedWorkflowBlob: treeFiles.get('.github/workflows/ci.yml')?.sha,
+});
 // An open risk-3 source or Windows crash-durability blocker cannot be
 // converted into a synthetic ACCEPTED verdict by successful hosted CI.
 await assertT04BlockerIssuesClosed({ githubApi });
@@ -434,6 +447,8 @@ validateAcceptanceRecord(acceptance);
 const audit = Object.freeze({
   ...acceptance,
   evaluatedSourceCommit: REVIEWED_SOURCE,
+  validatedExecutionCommit: EXECUTION_SOURCE,
+  authenticatedWorkflowRevision: VERIFIED_WORKFLOW,
   sourceBlobWitnesses: BLOB_WITNESSES,
   evidenceUrls: {
     currentMatrixValidationRun: BASELINE_CI,
