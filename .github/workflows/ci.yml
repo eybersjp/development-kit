@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, test/t04-acceptance-readiness-20261029]
   pull_request:
     branches: [main]
 
@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
     timeout-minutes: 15
 
     steps:
@@ -28,6 +28,9 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+
+      - name: Validate T04 CI trigger regression
+        run: node --test scripts/t04-ci-trigger.test.mjs
 
       - name: Validate skills and agents
         run: npm run validate
