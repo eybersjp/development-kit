@@ -23,7 +23,7 @@ import {
 import { createReviewResult } from '../runtime/orchestration/review-result.mjs';
 import { detectArchitectureDrift } from '../runtime/orchestration/architecture-drift.mjs';
 import { decideAcceptance, validateAcceptanceRecord } from '../runtime/orchestration/acceptance-engine.mjs';
-import { collectT04ValidationRuns } from './t04-acceptance-ci-evidence.mjs';
+import { collectT04ValidationRuns, assertT04BlockerIssuesClosed } from './t04-acceptance-ci-evidence.mjs';
 import {
   unresolvedReviewThreads,
   requireCanonicalGithubReviewRequest,
@@ -294,6 +294,9 @@ const VALIDATED_CI = await collectT04ValidationRuns({
   githubApi, reviewedCommit: REVIEWED_SOURCE,
   currentRunId: Number(process.env.GITHUB_RUN_ID),
 });
+// An open risk-3 source or Windows crash-durability blocker cannot be
+// converted into a synthetic ACCEPTED verdict by successful hosted CI.
+await assertT04BlockerIssuesClosed({ githubApi });
 
 const contract = loadDevelopmentContract('INC-DKF120-T04', ROOT);
 assert.ok(contract, 'T04 Development Contract was not persisted by the earlier contract validator');
