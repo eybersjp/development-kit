@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { verifyT04ValidationRuns, assertT04BlockerIssuesClosed } from './t04-acceptance-ci-evidence.mjs';
 
 const SOURCE = 'a'.repeat(40);
+const RECEIPT_EXECUTION = 'd'.repeat(40);
 const workflow = 316663377;
 const mkRun = (id, changes = {}) => ({
   id,
@@ -20,8 +21,8 @@ const mkRun = (id, changes = {}) => ({
   ],
   ...changes,
 });
-const validate = (runs) => verifyT04ValidationRuns({
-  runs, reviewedCommit: SOURCE, currentRunId: 200, expectedWorkflowId: workflow,
+const validate = (runs, executionCommit = SOURCE) => verifyT04ValidationRuns({
+  runs, reviewedCommit: SOURCE, executionCommit, currentRunId: 200, expectedWorkflowId: workflow,
 });
 
 test('accepts only two distinct complete platform matrices on the same reviewed source', () => {
@@ -94,4 +95,33 @@ test('completed mandatory issue resolutions are necessary but not independent ap
   };
   assert.deepEqual(await assertT04BlockerIssuesClosed({ githubApi }), [71, 73]);
   assert.deepEqual(seen, ['issues/71', 'issues/73']);
+});
+
+
+test('allows receipt-only execution C after independently reviewed source R, without conflating identities', () => {
+  const receiptRun = id => mkRun(id, {
+    head_sha: 'c'.repeat(40),
+    pull_requests: [{ number: 70, head: { sha: RECEIPT_EXECUTION }, base: { sha: 'e'.repeat(40) } }],
+  });
+  const result = validate([receiptRun(199), receiptRun(200)], RECEIPT_EXECUTION);
+  assert.equal(result.reviewedCommit, SOURCE);
+  assert.equal(result.executionCommit, RECEIPT_EXECUTION);
+});
+
+test('rejects an older CI run on another receipt-bearing execution commit', () => {
+  const current = mkRun(200, { pull_requests: [{ number: 70, head: { sha: RECEIPT_EXECUTION } }] });
+  assert.throws(() => validate([mkRun(199), current], RECEIPT_EXECUTION), /execution|head|source/i);
+});
+
+test('all three CI jobs explicitly check out the immutable PR head, not the moving merge ref', () => {
+  const workflowYaml = fs.readFileSync(fileURLToPath(new URL('../.github/workflows/ci.yml', import.meta.url)), 'utf8');
+  const refs = workflowYaml.match(/ref:\\s*\\$\\{\\{\\s*github\\.event\\.pull_request\\.head\\.sha\\s*\\|\\|\\s*github\\.sha\\s*\\}\\}/g) || [];
+  assert.equal(refs.length, 3, 'Ubuntu, Windows and acceptance must test the same immutable head');
+});
+
+test('acceptance gate binds actual checked-out HEAD to the authenticated PR event head', () => {
+  const gate = fs.readFileSync(fileURLToPath(new URL('./t04-hardening-acceptance-gate.mjs', import.meta.url)), 'utf8');
+  assert.match(gate, /GITHUB_EVENT_PATH/);
+  assert.match(gate, /rev-parse.*HEAD/);
+  assert.match(gate, /executionCommit:/);
 });
