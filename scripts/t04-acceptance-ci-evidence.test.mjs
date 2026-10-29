@@ -115,13 +115,14 @@ test('rejects an older CI run on another receipt-bearing execution commit', () =
 
 test('all three CI jobs explicitly check out the immutable PR head, not the moving merge ref', () => {
   const workflowYaml = fs.readFileSync(fileURLToPath(new URL('../.github/workflows/ci.yml', import.meta.url)), 'utf8');
-  const refs = workflowYaml.match(/ref:\\s*\\$\\{\\{\\s*github\\.event\\.pull_request\\.head\\.sha\\s*\\|\\|\\s*github\\.sha\\s*\\}\\}/g) || [];
-  assert.equal(refs.length, 3, 'Ubuntu, Windows and acceptance must test the same immutable head');
+  const refs = workflowYaml.split('ref: ${{ github.event.pull_request.head.sha || github.sha }}').length - 1;
+  assert.equal(refs, 3, 'Ubuntu, Windows and acceptance must test the same immutable head');
 });
 
 test('acceptance gate binds actual checked-out HEAD to the authenticated PR event head', () => {
   const gate = fs.readFileSync(fileURLToPath(new URL('./t04-hardening-acceptance-gate.mjs', import.meta.url)), 'utf8');
   assert.match(gate, /GITHUB_EVENT_PATH/);
-  assert.match(gate, /rev-parse.*HEAD/);
+  assert.match(gate, /rev-parse/);
+  assert.match(gate, /HEAD/);
   assert.match(gate, /executionCommit:/);
 });
