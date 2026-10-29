@@ -28,6 +28,9 @@ jobs:
       - name: Validate T04 CI trigger regression
         run: node --test scripts/t04-ci-trigger.test.mjs
 
+      - name: Validate T04 acceptance CI provenance regression
+        run: node --test scripts/t04-acceptance-ci-evidence.test.mjs
+
       - name: Validate skills and agents
         run: npm run validate
 
@@ -134,6 +137,9 @@ jobs:
 
       - name: Validate T04 CI trigger regression
         run: node --test scripts/t04-ci-trigger.test.mjs
+
+      - name: Validate T04 acceptance CI provenance regression
+        run: node --test scripts/t04-acceptance-ci-evidence.test.mjs
 
       - name: Validate skills and agents
         run: npm run validate
