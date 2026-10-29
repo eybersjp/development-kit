@@ -10,7 +10,7 @@ Imported by `scripts/t04-hardening-acceptance-gate.mjs` after authentic source-b
 
 The collector retrieves the current workflow run, an independent previous run from the same workflow and commit, and both runs' actual GitHub job results through the authenticated API. It rejects missing, duplicated, wrong-repository, wrong-event, wrong-workflow, source-mismatched, skipped or failed evidence. The current acceptance job may still be in progress; only its **completed prerequisite platform validations** qualify.
 
-The acceptance gate uses the verified run IDs in criterion evidence instead of a hard-coded historical CI run identifier. Unit and adversarial regression coverage is in `scripts/t04-acceptance-ci-evidence.test.mjs` and runs on both CI platforms.
+The acceptance gate uses the verified run IDs in criterion evidence instead of a hard-coded historical CI run identifier. It also checks that the original T04 source/concurrency blocker Issue #71 and Windows crash-durability Issue #73 are both closed as **completed**, not waived as **not planned**. Issue closure is necessary but does not replace independent source reviews or real physical power-loss evidence. Unit and adversarial regression coverage is in `scripts/t04-acceptance-ci-evidence.test.mjs` and runs on both CI platforms.
 
 ## Limitations
 
