@@ -26,8 +26,8 @@ test('T04 acceptance can execute for the stacked PR #70 even when its base is no
 test('T04 acceptance has only the read-only Actions permission required for authenticated CI evidence', () => {
   const acceptanceJob = workflow.split(/^  t04_acceptance:/m)[1];
   assert.ok(acceptanceJob, 'Acceptance job missing');
-  assert.match(acceptanceJob, /permissions:[\\s\\S]*?actions:\\s*read/);
-  assert.doesNotMatch(acceptanceJob, /actions:\\s*write/);
+  assert.match(acceptanceJob, /permissions:[\s\S]*?actions:\s*read/);
+  assert.doesNotMatch(acceptanceJob, /actions:\s*write/);
 });
 
 test('Acceptance still invokes the independent risk-3 evidence gate', () => {
