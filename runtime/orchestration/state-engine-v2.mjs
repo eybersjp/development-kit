@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 export const STATE_ENGINE_SCHEMA_VERSION = '2.0.0';
@@ -17,6 +18,9 @@ const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const EVENT_TYPE_PATTERN = /^[A-Z][A-Z0-9_]{1,95}$/;
 const ENTITY_TYPE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const MAX_ENTITY_ID_LENGTH = 512;
+// Bounded blocking sleeps avoid starving a contended local state writer.
+const STATE_LOCK_SLEEP = new Int32Array(new SharedArrayBuffer(4));
+function waitStateLock(ms = 25) { Atomics.wait(STATE_LOCK_SLEEP, 0, 0, ms); }
 
 export class StateEngineError extends Error {
   constructor(message, details = null) {
@@ -114,8 +118,12 @@ function statePaths(rootDir = process.cwd()) {
     index: path.join(stateRoot, STATE_INDEX_FILE),
     schema: path.join(stateRoot, STATE_SCHEMA_FILE),
     lock: path.join(stateRoot, 'state.lock'),
+    pending: path.join(stateRoot, 'pending-commit.json'),
   });
-  if (fs.existsSync(stateRoot)) assertStateRootRealpathSafe(paths);
+  if (fs.existsSync(stateRoot)) {
+    assertStateRootRealpathSafe(paths);
+    assertStateFilesNotLinks(paths);
+  }
   return paths;
 }
 
@@ -129,50 +137,331 @@ function assertStateRootRealpathSafe(paths) {
   return stateReal;
 }
 
-function atomicWrite(filePath, content) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tempPath = `${filePath}.tmp-${process.pid}-${crypto.randomUUID()}`;
-  const fd = fs.openSync(tempPath, 'wx');
-  try {
-    fs.writeFileSync(fd, content, 'utf8');
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
+function assertStateFilesNotLinks(paths) {
+  for (const field of ['events', 'snapshot', 'index', 'schema', 'pending', 'lock']) {
+    try {
+      const stat = fs.lstatSync(paths[field]);
+      if (stat.isSymbolicLink() || !stat.isFile()) {
+        throw new StateEngineError('State Engine internal file is not a regular file: ' + field);
+      }
+      if (stat.nlink > 1) {
+        throw new StateEngineError('State Engine internal file has multiple hard links: ' + field);
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
   }
-  fs.renameSync(tempPath, filePath);
-  return filePath;
 }
 
-function acquireStateLock(rootDir, timeoutMs = 5000) {
+/**
+ * Persist directory namespace updates before journal acknowledgement.
+ * POSIX uses the pinned directory FD; Windows must open a write-capable
+ * directory FD for fsync/FlushFileBuffers. Unavailable barriers fail closed.
+ */
+function flushStateDirectory(directory, pinnedDirFd = null) {
+  if (process.platform !== 'win32' && pinnedDirFd !== null) {
+    fs.fsyncSync(pinnedDirFd);
+    return;
+  }
+  let fd;
+  try {
+    fd = fs.openSync(directory, process.platform === 'win32' ? 'r+' : 'r');
+    const stat = fs.fstatSync(fd);
+    if (!stat.isDirectory()) {
+      throw new StateEngineError('State Engine directory flush target is not a directory');
+    }
+    if (pinnedDirFd !== null) {
+      const pinned = fs.fstatSync(pinnedDirFd);
+      if (!pinned.isDirectory() || pinned.dev !== stat.dev || pinned.ino !== stat.ino) {
+        throw new StateEngineError('State Engine directory changed before durability barrier');
+      }
+    }
+    fs.fsyncSync(fd);
+  } catch (error) {
+    throw new StateEngineError('State Engine directory durability barrier failed; refusing acknowledgement', {
+      code: 'STATE_DIRECTORY_FLUSH_FAILED',
+      directory,
+      cause: error.code || error.message,
+    });
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+function fsyncParentDirectory(directory) {
+  flushStateDirectory(directory);
+}
+
+function pinnedUnlinkAndSync(filePath, pinnedDirFd = null) {
+  const directory = path.dirname(filePath);
+  const file = path.basename(filePath);
+  const ownsDirFd = !pinnedDirFd;
+  const dirFd = pinnedDirFd ?? fs.openSync(directory, 'r');
+  try {
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(directory);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed before journal cleanup');
+    }
+    const rootDir = path.dirname(path.dirname(directory));
+    assertStateRootRealpathSafe({ root: rootDir, stateRoot: directory });
+    const target = process.platform === 'linux' ? path.join('/proc/self/fd/' + dirFd, file) : filePath;
+    const preStat = fs.lstatSync(target);
+    if (preStat.isSymbolicLink() || !preStat.isFile() || preStat.nlink > 1) {
+      throw new StateEngineError('Target journal file is not a regular unlinked file');
+    }
+    // Trust model (T04, trusted/exclusive local runtime): two directory entries
+    // cannot be checked-and-unlinked atomically against a hostile same-UID
+    // process, so no ledger-binding check is attempted here. Ledger authority is
+    // enforced instead on every load, which rejects any snapshot/index that is
+    // inconsistent with canonical history (see loadStateSnapshot).
+    // Recheck directory immediately before unlink on platforms without descriptor-relative paths
+    const latest = fs.lstatSync(directory);
+    if (!latest.isDirectory() || latest.isSymbolicLink() ||
+      latest.dev !== pinned.dev || latest.ino !== pinned.ino) {
+      throw new StateEngineError('State Engine directory was replaced before journal cleanup');
+    }
+    fs.unlinkSync(target);
+    flushStateDirectory(directory, dirFd);
+  } finally {
+    if (ownsDirFd) fs.closeSync(dirFd);
+  }
+}
+
+function atomicWrite(filePath, content, pinnedDirFd = null) {
+  const directory = path.dirname(filePath);
+  fs.mkdirSync(directory, { recursive: true });
+  // Pin the already-validated State Engine directory before creating a
+  // journal, snapshot or index. Linux exposes descriptor-relative paths via
+  // /proc/self/fd; renames there cannot follow a subsequently swapped
+  // workspace directory symlink into an external target.
+  const ownsDirFd = !pinnedDirFd;
+  const dirFd = pinnedDirFd ?? fs.openSync(directory, 'r');
+  const file = path.basename(filePath);
+  const pinnedDir = process.platform === 'linux' ? '/proc/self/fd/' + dirFd : directory;
+  const tempPath = path.join(pinnedDir, file + '.tmp-' + process.pid + '-' + crypto.randomUUID());
+  const destination = path.join(pinnedDir, file);
+  let published = false;
+  try {
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(directory);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed during durable write preparation');
+    }
+    const rootDir = path.dirname(path.dirname(directory));
+    assertStateRootRealpathSafe({ root: rootDir, stateRoot: directory });
+    const fd = fs.openSync(tempPath, 'wx', 0o600);
+    try {
+      fs.writeFileSync(fd, content, 'utf8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    // On non-Linux platforms without handle-relative filesystem primitives,
+    // revalidate the directory identity immediately before publication.
+    // Hostile same-UID concurrent processes remain unsupported outside
+    // a trusted offline maintenance environment on those hosts.
+    const latest = fs.lstatSync(directory);
+    if (!latest.isDirectory() || latest.isSymbolicLink() ||
+      latest.dev !== pinned.dev || latest.ino !== pinned.ino) {
+      throw new StateEngineError('State Engine directory was replaced before durable publication');
+    }
+    fs.renameSync(tempPath, destination);
+    published = true;
+    flushStateDirectory(directory, dirFd);
+    return filePath;
+  } finally {
+    if (!published) {
+      try { fs.unlinkSync(tempPath); } catch {}
+    }
+    if (ownsDirFd) fs.closeSync(dirFd);
+  }
+}
+
+function acquireStateLock(rootDir, timeoutMs = 12000) {
   const paths = statePaths(rootDir);
   fs.mkdirSync(paths.stateRoot, { recursive: true });
-  const owner = `state-lock-${crypto.randomUUID()}`;
+  assertStateRootRealpathSafe(paths);
+  const owner = 'state-lock-' + crypto.randomUUID();
   const started = Date.now();
 
   while (Date.now() - started < timeoutMs) {
     try {
       const fd = fs.openSync(paths.lock, 'wx');
       try {
-        fs.writeFileSync(fd, JSON.stringify({ owner, acquiredAt: new Date().toISOString() }), 'utf8');
+        fs.writeFileSync(fd, JSON.stringify({
+          owner,
+          pid: process.pid,
+          hostname: os.hostname(),
+          acquiredAt: new Date().toISOString(),
+        }), 'utf8');
         fs.fsyncSync(fd);
       } finally {
         fs.closeSync(fd);
       }
       return { path: paths.lock, owner };
     } catch (error) {
-      if (error.code !== 'EEXIST') throw new StateEngineError(`Unable to acquire State Engine lock: ${error.message}`);
-      try {
-        const stat = fs.statSync(paths.lock);
-        if (Date.now() - stat.mtimeMs > 15_000) {
-          fs.unlinkSync(paths.lock);
-          continue;
+      if (error.code !== 'EEXIST') {
+        // Windows can briefly deny create/open while another process closes or
+        // removes this exact lock file. Retry a bounded transient sharing
+        // violation; never interpret it as permission to steal the lock.
+        if (process.platform !== 'win32' || !['EPERM', 'EACCES'].includes(error.code)) {
+          throw new StateEngineError('Unable to acquire State Engine lock: ' + error.message);
         }
-      } catch {}
-      const waitStart = Date.now();
-      while (Date.now() - waitStart < 25) {}
+        waitStateLock(25);
+        continue;
+      }
+      let stat;
+      try {
+        stat = fs.statSync(paths.lock);
+      } catch (readError) {
+        if (readError.code === 'ENOENT') continue;
+        throw new StateEngineError('Cannot inspect existing State Engine lock: ' + readError.message);
+      }
+      if (Date.now() - stat.mtimeMs > 15_000) {
+        let prior;
+        try {
+          prior = JSON.parse(fs.readFileSync(paths.lock, 'utf8'));
+        } catch {
+          // Corrupt or incomplete lock metadata must never authorize lock stealing.
+          prior = null;
+        }
+        // A live local PID owns the lock regardless of its age. Remote and legacy
+        // owners are treated as unknown and cannot be stolen automatically.
+        if (prior && prior.hostname === os.hostname() && Number.isSafeInteger(prior.pid) && prior.pid > 0) {
+          let alive = true;
+          try {
+            process.kill(prior.pid, 0);
+          } catch (probeError) {
+            if (probeError.code === 'ESRCH') alive = false;
+          }
+          if (!alive) {
+            // Pathname compare-then-unlink is unsafe: another reclaimer may
+            // install a fresh live lock between the check and unlink. mkdir
+            // gives each local stale-lock reclaimer exclusive ownership of a
+            // recovery guard, so other reclaimers cannot race its unlink.
+            const reclaimGuard = paths.lock + '.reclaim';
+            let guardOwned = false;
+            let guardMarker = null;
+            try {
+              try {
+                fs.mkdirSync(reclaimGuard, { mode: 0o700 });
+                guardOwned = true;
+                guardMarker = path.join(reclaimGuard, 'owner.json');
+                const guardFd = fs.openSync(guardMarker, 'wx', 0o600);
+                try {
+                  fs.writeFileSync(guardFd, JSON.stringify({
+                    pid: process.pid,
+                    hostname: os.hostname(),
+                    owner,
+                    acquiredAt: new Date().toISOString(),
+                  }));
+                  fs.fsyncSync(guardFd);
+                } finally {
+                  fs.closeSync(guardFd);
+                }
+              } catch (guardError) {
+                if (guardError.code !== 'EEXIST') throw guardError;
+              }
+              if (guardOwned) {
+                let latest;
+                try {
+                  latest = fs.statSync(paths.lock);
+                } catch (raceError) {
+                  if (raceError.code !== 'ENOENT') throw raceError;
+                }
+                if (latest && latest.ino === stat.ino && latest.mtimeMs === stat.mtimeMs && latest.size === stat.size) {
+                  let current;
+                  try {
+                    current = JSON.parse(fs.readFileSync(paths.lock, 'utf8'));
+                  } catch (readError) {
+                    if (readError.code !== 'ENOENT') throw readError;
+                  }
+                  if (current?.owner === prior.owner && current?.pid === prior.pid && current?.hostname === prior.hostname) {
+                    // Verify ownership is still dead inside the reclaim guard.
+                    let confirmedDead = false;
+                    try {
+                      process.kill(current.pid, 0);
+                    } catch (probeError) {
+                      confirmedDead = probeError.code === 'ESRCH';
+                    }
+                    if (confirmedDead) {
+                      try {
+                        fs.unlinkSync(paths.lock);
+                      } catch (removeError) {
+                        if (removeError.code !== 'ENOENT') throw removeError;
+                      }
+                    }
+                  }
+                }
+              }
+            } finally {
+              if (guardOwned) {
+                if (guardMarker && fs.existsSync(guardMarker)) fs.unlinkSync(guardMarker);
+                fs.rmdirSync(reclaimGuard);
+              }
+            }
+            if (guardOwned) continue;
+          }
+        }
+      }
+      // Use bounded, synchronous waiting so Node >=18 and current callers remain compatible.
+      waitStateLock(25);
     }
   }
   throw new StateEngineError('State Engine lock acquisition timed out');
+}
+
+/**
+ * Explicit OFFLINE maintenance operation. Never reclaim an orphaned guard in
+ * the normal commit path: proving the reclaimer is gone requires inspecting
+ * owner metadata and ruling out an active writer. The caller must take the
+ * project out of service before acknowledging recovery.
+ */
+export function recoverAbandonedStateLock({ rootDir = process.cwd(), confirmOffline = false } = {}) {
+  if (confirmOffline !== true) {
+    throw new StateEngineError('Explicit offline confirmation is required for abandoned-lock recovery');
+  }
+  const paths = statePaths(rootDir);
+  const guard = paths.lock + '.reclaim';
+  if (!fs.existsSync(guard)) return Object.freeze({ recovered: false, reason: 'no guard' });
+  const stat = fs.lstatSync(guard);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new StateEngineError('Abandoned lock guard is not a regular directory');
+  }
+  if (Date.now() - stat.mtimeMs < 60_000) {
+    throw new StateEngineError('Refusing to reclaim a recently active State Engine guard');
+  }
+  const marker = path.join(guard, 'owner.json');
+  if (fs.existsSync(marker)) {
+    const owner = JSON.parse(fs.readFileSync(marker, 'utf8'));
+    if (owner.hostname !== os.hostname() || !Number.isSafeInteger(owner.pid) || owner.pid <= 0) {
+      throw new StateEngineError('Cannot establish local guard ownership for offline recovery');
+    }
+    try {
+      process.kill(owner.pid, 0);
+      throw new StateEngineError('Refusing to remove a live State Engine recovery guard');
+    } catch (probe) {
+      if (probe.code !== 'ESRCH') throw probe;
+    }
+  }
+  if (fs.existsSync(paths.lock)) {
+    const lock = JSON.parse(fs.readFileSync(paths.lock, 'utf8'));
+    if (lock.hostname !== os.hostname() || !Number.isSafeInteger(lock.pid) || lock.pid <= 0) {
+      throw new StateEngineError('Offline guard recovery requires a provably local dead state lock');
+    }
+    try {
+      process.kill(lock.pid, 0);
+      throw new StateEngineError('Refusing to recover a guard while state lock owner is alive');
+    } catch (probe) {
+      if (probe.code !== 'ESRCH') throw probe;
+    }
+  }
+  if (fs.existsSync(marker)) fs.unlinkSync(marker);
+  fs.rmdirSync(guard);
+  return Object.freeze({ recovered: true, mode: 'confirmed-offline' });
 }
 
 function releaseStateLock(lock) {
@@ -222,7 +511,12 @@ export function ensureStateEngineLayout(rootDir = process.cwd()) {
     atomicWrite(paths.schema, expectedSchema);
   }
 
-  if (!fs.existsSync(paths.events)) atomicWrite(paths.events, '');
+  if (!fs.existsSync(paths.events)) {
+    if (fs.existsSync(paths.pending)) {
+      throw new StateEngineError('State Engine events.jsonl is missing while pending-commit.json is present; state integrity compromised');
+    }
+    atomicWrite(paths.events, '');
+  }
   if (!fs.existsSync(paths.snapshot)) atomicWrite(paths.snapshot, stablePretty(emptySnapshot()));
   if (!fs.existsSync(paths.index)) atomicWrite(paths.index, stablePretty(buildStateIndex(emptySnapshot())));
 
@@ -339,8 +633,20 @@ function parseLedger(content) {
 
 export function loadCanonicalEvents(rootDir = process.cwd()) {
   const paths = statePaths(rootDir);
-  if (!fs.existsSync(paths.events)) return [];
-  return parseLedger(fs.readFileSync(paths.events, 'utf8'));
+  if (!fs.existsSync(paths.events)) {
+    if (fs.existsSync(paths.pending)) {
+      throw new StateEngineError('State Engine events.jsonl is missing while pending-commit.json is present; state integrity compromised');
+    }
+    return [];
+  }
+  if (fs.existsSync(paths.pending)) {
+    return withStateLock(rootDir, () => parseLedger(fs.readFileSync(paths.events, 'utf8')));
+  }
+  const content = fs.readFileSync(paths.events, 'utf8');
+  if (fs.existsSync(paths.pending)) {
+    return withStateLock(rootDir, () => parseLedger(fs.readFileSync(paths.events, 'utf8')));
+  }
+  return parseLedger(content);
 }
 
 function normalizePathSegments(value) {
@@ -589,32 +895,57 @@ export function validateStateIndex(index, snapshot = null) {
   return true;
 }
 
-function persistDerived(snapshot, rootDir) {
+function persistDerived(snapshot, rootDir, pinnedDirFd = null) {
   validateStateSnapshot(snapshot);
-  const paths = ensureStateEngineLayout(rootDir);
+  const paths = pinnedDirFd ? statePaths(rootDir) : ensureStateEngineLayout(rootDir);
   const index = buildStateIndex(snapshot);
-  atomicWrite(paths.snapshot, stablePretty(snapshot));
-  atomicWrite(paths.index, stablePretty(index));
+  atomicWrite(paths.snapshot, stablePretty(snapshot), pinnedDirFd);
+  atomicWrite(paths.index, stablePretty(index), pinnedDirFd);
   return { snapshot, index };
 }
 
+function repairDerivedLocked(rootDir) {
+  // Snapshot repair replays the *current* ledger under the writer lock, never a
+  // stale cached history from before another writer committed a later event.
+  const paths = ensureStateEngineLayout(rootDir);
+  const canonical = rebuildSnapshotFromEvents(parseLedger(fs.readFileSync(paths.events, 'utf8')));
+  if (fs.existsSync(paths.snapshot)) {
+    let witness = null;
+    try {
+      witness = JSON.parse(fs.readFileSync(paths.snapshot, 'utf8'));
+      validateStateSnapshot(witness);
+    } catch {
+      witness = null;
+    }
+    if (witness && witness.lastEventSequence > canonical.lastEventSequence) {
+      throw new StateEngineError('Canonical state history appears truncated relative to the materialized snapshot');
+    }
+    if (witness && witness.lastEventSequence === canonical.lastEventSequence
+      && witness.lastEventHash !== canonical.lastEventHash) {
+      throw new StateEngineError('Canonical state history hash differs from the materialized snapshot integrity witness');
+    }
+  }
+  persistDerived(canonical, rootDir);
+  return canonical;
+}
+
 export function rebuildStateSnapshot(rootDir = process.cwd()) {
-  const events = loadCanonicalEvents(rootDir);
-  const snapshot = rebuildSnapshotFromEvents(events);
-  persistDerived(snapshot, rootDir);
-  return snapshot;
+  return withStateLock(rootDir, () => repairDerivedLocked(rootDir));
 }
 
 export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = true } = {}) {
   const paths = statePaths(rootDir);
-  if (!fs.existsSync(paths.events)) return null;
-  const events = loadCanonicalEvents(rootDir);
-  const canonical = rebuildSnapshotFromEvents(events);
+  if (!fs.existsSync(paths.events)) {
+    if (fs.existsSync(paths.pending)) {
+      throw new StateEngineError('State Engine events.jsonl is missing while pending-commit.json is present; state integrity compromised');
+    }
+    return null;
+  }
+  const canonical = rebuildSnapshotFromEvents(loadCanonicalEvents(rootDir));
 
   if (!fs.existsSync(paths.snapshot)) {
     if (!rebuildIfNeeded) return null;
-    persistDerived(canonical, rootDir);
-    return canonical;
+    return withStateLock(rootDir, () => repairDerivedLocked(rootDir));
   }
 
   let current;
@@ -623,11 +954,21 @@ export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = t
     validateStateSnapshot(current);
   } catch (error) {
     if (!rebuildIfNeeded) throw error;
-    persistDerived(canonical, rootDir);
-    return canonical;
+    return withStateLock(rootDir, () => repairDerivedLocked(rootDir));
   }
 
   if (current.lastEventSequence > canonical.lastEventSequence) {
+    // A legitimate writer can advance the snapshot between a reader's ledger
+    // and snapshot reads. Check the latest canonical history before declaring
+    // truncation, without silencing a genuine witnessed history regression.
+    if (rebuildIfNeeded) {
+      const refreshed = rebuildSnapshotFromEvents(loadCanonicalEvents(rootDir));
+      if (refreshed.lastEventSequence > current.lastEventSequence
+        || (refreshed.lastEventSequence === current.lastEventSequence
+          && refreshed.lastEventHash === current.lastEventHash)) {
+        return refreshed;
+      }
+    }
     throw new StateEngineError(
       'Canonical state history appears truncated relative to the materialized snapshot',
       {
@@ -638,11 +979,8 @@ export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = t
       },
     );
   }
-
-  if (
-    current.lastEventSequence === canonical.lastEventSequence
-    && current.lastEventHash !== canonical.lastEventHash
-  ) {
+  if (current.lastEventSequence === canonical.lastEventSequence
+    && current.lastEventHash !== canonical.lastEventHash) {
     throw new StateEngineError(
       'Canonical state history hash differs from the materialized snapshot integrity witness',
       {
@@ -652,21 +990,21 @@ export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = t
       },
     );
   }
-
   if (stableJson(current) !== stableJson(canonical)) {
     if (!rebuildIfNeeded) throw new StateEngineError('Materialized snapshot does not match canonical history');
-    persistDerived(canonical, rootDir);
-    return canonical;
+    return withStateLock(rootDir, () => repairDerivedLocked(rootDir));
   }
   return current;
 }
 
 export function rebuildStateIndex(rootDir = process.cwd()) {
-  const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
-  const paths = ensureStateEngineLayout(rootDir);
-  const index = buildStateIndex(snapshot);
-  atomicWrite(paths.index, stablePretty(index));
-  return index;
+  return withStateLock(rootDir, () => {
+    const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
+    const paths = ensureStateEngineLayout(rootDir);
+    const index = buildStateIndex(snapshot);
+    atomicWrite(paths.index, stablePretty(index));
+    return index;
+  });
 }
 
 export function loadStateIndex(rootDir = process.cwd(), { rebuildIfNeeded = true } = {}) {
@@ -720,39 +1058,299 @@ function buildEvent({
   return event;
 }
 
-function writeLedgerAtomically(existingContent, newEvents, rootDir) {
-  const paths = ensureStateEngineLayout(rootDir);
-  let prefix = existingContent;
-  if (prefix && !prefix.endsWith('\n')) prefix += '\n';
-  const suffix = newEvents.map((event) => JSON.stringify(stable(event))).join('\n');
-  const nextContent = suffix ? `${prefix}${suffix}\n` : prefix;
-  atomicWrite(paths.events, nextContent);
+function appendDurably(filePath, appendedText, expectedIdentity = null, pinnedDirFd = null, heldLedgerFd = null) {
+  const directory = path.dirname(filePath);
+  const file = path.basename(filePath);
+  const ownsDirFd = !pinnedDirFd;
+  const dirFd = pinnedDirFd ?? fs.openSync(directory, 'r');
+  try {
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(directory);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed before durable append');
+    }
+    const rootDir = path.dirname(path.dirname(directory));
+    assertStateRootRealpathSafe({ root: rootDir, stateRoot: directory });
+    const target = process.platform === 'linux' ? path.join('/proc/self/fd/' + dirFd, file) : filePath;
+    // O_NOFOLLOW rejects a final-component symlink on supported POSIX hosts.
+    // On Windows, verify the opened inode and current directory entry before
+    // writing because path-only preflight cannot prevent a replacement race.
+    const flags = fs.constants.O_WRONLY | fs.constants.O_APPEND | (fs.constants.O_NOFOLLOW ?? 0);
+    const fd = fs.openSync(target, flags);
+    try {
+      const stat = fs.fstatSync(fd);
+      const entry = fs.lstatSync(target);
+      if (!stat.isFile() || stat.nlink !== 1 || entry.isSymbolicLink() ||
+        !entry.isFile() || entry.nlink !== 1 ||
+        entry.dev !== stat.dev || entry.ino !== stat.ino) {
+        throw new StateEngineError('Canonical event file symlink/inode mismatch or multiple hard links');
+      }
+      if (heldLedgerFd !== null) {
+        const heldStat = fs.fstatSync(heldLedgerFd);
+        if (heldStat.dev !== stat.dev || heldStat.ino !== stat.ino) {
+          throw new StateEngineError('Canonical ledger inode changed while holding preparation descriptor');
+        }
+      }
+      if (expectedIdentity && (stat.dev !== expectedIdentity.dev ||
+        stat.ino !== expectedIdentity.ino || stat.size !== expectedIdentity.size)) {
+        throw new StateEngineError('Canonical event inode changed between event preparation and append');
+      }
+      // Recheck directory immediately before write on platforms without descriptor-relative paths
+      const latest = fs.lstatSync(directory);
+      if (!latest.isDirectory() || latest.isSymbolicLink() ||
+        latest.dev !== pinned.dev || latest.ino !== pinned.ino) {
+        throw new StateEngineError('State Engine directory was replaced before durable append');
+      }
+      const bytes = Buffer.from(appendedText, 'utf8');
+      let written = 0;
+      while (written < bytes.length) {
+        const amount = fs.writeSync(fd, bytes, written, bytes.length - written);
+        if (amount <= 0) throw new StateEngineError('Canonical event append made no forward progress');
+        written += amount;
+      }
+      fs.fsyncSync(fd);
+      // Re-verify the directory entry after fsync to guarantee the canonical
+      // path still references this exact inode and was not unlinked or swapped
+      // during write (PRRC_kwDOTd-YNM79WYGR).
+      const finalEntry = fs.lstatSync(target);
+      const finalStat = fs.fstatSync(fd);
+      if (!finalEntry.isFile() || finalEntry.isSymbolicLink() || finalEntry.nlink !== 1 ||
+        finalEntry.dev !== finalStat.dev || finalEntry.ino !== finalStat.ino) {
+        throw new StateEngineError('Canonical ledger directory entry was displaced during durable append');
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+    flushStateDirectory(directory, dirFd);
+  } finally {
+    if (ownsDirFd) fs.closeSync(dirFd);
+  }
 }
 
-function commitPreparedEvents(newEvents, rootDir = process.cwd()) {
+function recoverPendingCommitLocked(rootDir) {
+  const paths = ensureStateEngineLayout(rootDir);
+  const dirFd = fs.openSync(paths.stateRoot, 'r');
+  try {
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(paths.stateRoot);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed before recovery preparation');
+    }
+    const pendingTarget = process.platform === 'linux'
+      ? path.join('/proc/self/fd/' + dirFd, path.basename(paths.pending))
+      : paths.pending;
+    const eventsTarget = process.platform === 'linux'
+      ? path.join('/proc/self/fd/' + dirFd, path.basename(paths.events))
+      : paths.events;
+    const snapshotTarget = process.platform === 'linux'
+      ? path.join('/proc/self/fd/' + dirFd, path.basename(paths.snapshot))
+      : paths.snapshot;
+
+    if (!fs.existsSync(pendingTarget)) return;
+    if (!fs.existsSync(eventsTarget)) {
+      throw new StateEngineError('Cannot recover pending commit: canonical ledger events.jsonl is missing');
+    }
+    let pending;
+    try {
+      pending = JSON.parse(fs.readFileSync(pendingTarget, 'utf8'));
+    } catch (error) {
+      throw new StateEngineError('Pending State Engine commit is invalid: ' + error.message);
+    }
+    if (
+      pending.schemaVersion !== '1.0.0'
+      || !Number.isSafeInteger(pending.previousByteLength)
+      || pending.previousByteLength < 0
+      || !SHA256_PATTERN.test(pending.previousHash)
+      || typeof pending.suffix !== 'string'
+      || !pending.suffix.endsWith('\n')
+    ) {
+      throw new StateEngineError('Pending State Engine commit metadata is invalid');
+    }
+    // Bind every recovery operation to the same verified canonical descriptor.
+    // Pathname truncation can otherwise modify a hardlinked external file when
+    // an attacker replaces events.jsonl after the prefix has been inspected.
+    const flags = fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW ?? 0);
+    const fd = fs.openSync(eventsTarget, flags);
+    let canonical;
+    let canonicalStat;
+    try {
+      const opened = fs.fstatSync(fd);
+      canonicalStat = opened;
+      const entry = fs.lstatSync(eventsTarget);
+      if (!opened.isFile() || !entry.isFile() || entry.isSymbolicLink() ||
+        opened.nlink !== 1 || entry.nlink !== 1 ||
+        opened.dev !== entry.dev || opened.ino !== entry.ino) {
+        throw new StateEngineError('Recovery canonical ledger inode/symlink/hardlink integrity failed');
+      }
+      const bytes = Buffer.alloc(opened.size);
+      let read = 0;
+      while (read < bytes.length) {
+        const amount = fs.readSync(fd, bytes, read, bytes.length - read, read);
+        if (amount <= 0) throw new StateEngineError('Canonical ledger changed while recovering pending commit');
+        read += amount;
+      }
+      if (bytes.length < pending.previousByteLength) {
+        throw new StateEngineError('Canonical state history was truncated during a pending commit');
+      }
+      if (sha256(bytes.subarray(0, pending.previousByteLength)) !== pending.previousHash) {
+        throw new StateEngineError('Canonical state prefix differs from pending commit integrity witness');
+      }
+      const existingSuffix = bytes.subarray(pending.previousByteLength);
+      const expectedSuffix = Buffer.from(pending.suffix, 'utf8');
+      if (!expectedSuffix.subarray(0, existingSuffix.length).equals(existingSuffix)) {
+        throw new StateEngineError('Canonical state suffix conflicts with pending commit; refusing recovery');
+      }
+      if (existingSuffix.length < expectedSuffix.length) {
+        // Truncate and repair through this FD, never a separately resolved path.
+        fs.ftruncateSync(fd, pending.previousByteLength);
+        let written = 0;
+        while (written < expectedSuffix.length) {
+          const amount = fs.writeSync(fd, expectedSuffix, written,
+            expectedSuffix.length - written, pending.previousByteLength + written);
+          if (amount <= 0) throw new StateEngineError('Pending recovery append made no forward progress');
+          written += amount;
+        }
+      }
+      // Recovery can observe a fully written suffix that was never fsynced by
+      // the interrupted writer. Flush the canonical ledger unconditionally
+      // before publishing derived views or acknowledging the pending journal.
+      fs.fsyncSync(fd);
+      // Re-verify the directory entry after fsync to ensure the canonical path
+      // still names the repaired inode before publishing derived views (PRRC_kwDOTd-YNM79WYGR).
+      const finalEntry = fs.lstatSync(eventsTarget);
+      const finalStat = fs.fstatSync(fd);
+      if (!finalEntry.isFile() || finalEntry.isSymbolicLink() || finalEntry.nlink !== 1 ||
+        finalEntry.dev !== finalStat.dev || finalEntry.ino !== finalStat.ino) {
+        throw new StateEngineError('Canonical ledger directory entry was displaced during pending recovery');
+      }
+      canonical = rebuildSnapshotFromEvents(
+        parseLedger(Buffer.concat([bytes.subarray(0, pending.previousByteLength), expectedSuffix]).toString('utf8')),
+      );
+      // Reconstruct both derived views before acknowledging the durable commit.
+      let witness = null;
+      try {
+        witness = JSON.parse(fs.readFileSync(snapshotTarget, 'utf8'));
+        validateStateSnapshot(witness);
+      } catch {
+        witness = null;
+      }
+      if (witness && witness.lastEventSequence > canonical.lastEventSequence) {
+        throw new StateEngineError('Cannot recover a pending commit over a later snapshot integrity witness');
+      }
+      if (witness && witness.lastEventSequence === canonical.lastEventSequence
+        && witness.lastEventHash !== canonical.lastEventHash) {
+        throw new StateEngineError('Pending recovery conflicts with snapshot integrity witness');
+      }
+      persistDerived(canonical, rootDir, dirFd);
+      pinnedUnlinkAndSync(paths.pending, dirFd);
+    } finally {
+      fs.closeSync(fd);
+    }
+  } finally {
+    fs.closeSync(dirFd);
+  }
+}
+
+const ACTIVE_STATE_LOCKS = new Set();
+function withStateLock(rootDir, task) {
+  const key = path.resolve(rootDir);
+  if (ACTIVE_STATE_LOCKS.has(key)) return task();
+  const lock = acquireStateLock(rootDir);
+  ACTIVE_STATE_LOCKS.add(key);
+  try {
+    recoverPendingCommitLocked(rootDir);
+    return task();
+  } finally {
+    ACTIVE_STATE_LOCKS.delete(key);
+    releaseStateLock(lock);
+  }
+}
+
+function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
   if (!Array.isArray(newEvents) || newEvents.length === 0) {
     const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
     return { events: [], snapshot, index: loadStateIndex(rootDir, { rebuildIfNeeded: true }) };
   }
 
-  const lock = acquireStateLock(rootDir);
+  const paths = ensureStateEngineLayout(rootDir);
+  const dirFd = fs.openSync(paths.stateRoot, 'r');
   try {
-    const paths = ensureStateEngineLayout(rootDir);
-    const existingContent = fs.readFileSync(paths.events, 'utf8');
-    const existing = parseLedger(existingContent);
-    let previous = existing.at(-1) ?? null;
-    for (const event of newEvents) {
-      validateStateEvent(event, previous);
-      previous = event;
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(paths.stateRoot);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed before durable write preparation');
     }
+    const rootDirParent = path.dirname(path.dirname(paths.stateRoot));
+    assertStateRootRealpathSafe({ root: rootDirParent, stateRoot: paths.stateRoot });
 
-    writeLedgerAtomically(existingContent, newEvents, rootDir);
-    const allEvents = [...existing, ...newEvents];
-    const snapshot = rebuildSnapshotFromEvents(allEvents);
-    const { index } = persistDerived(snapshot, rootDir);
-    return { events: newEvents, snapshot, index };
+    const ledgerPath = process.platform === 'linux'
+      ? path.join('/proc/self/fd/' + dirFd, path.basename(paths.events))
+      : paths.events;
+
+    // Open ledger with descriptor-bound flags and read through this descriptor
+    // so preparation and identity witness come from the exact same descriptor.
+    // Retain this descriptor open across atomicWrite and appendDurably so the inode
+    // cannot be unlinked and recycled while the commit is in flight (PRRT_kwDOTd-YNM6ri6bH).
+    const readFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0);
+    const readFd = fs.openSync(ledgerPath, readFlags);
+    let existingContent;
+    let expectedIdentity;
+    try {
+      const openedStat = fs.fstatSync(readFd);
+      const entryStat = fs.lstatSync(ledgerPath);
+      if (!openedStat.isFile() || openedStat.nlink !== 1 || entryStat.isSymbolicLink() ||
+        !entryStat.isFile() || entryStat.nlink !== 1 ||
+        openedStat.dev !== entryStat.dev || openedStat.ino !== entryStat.ino) {
+        throw new StateEngineError('Canonical event file symlink/inode mismatch or multiple hard links');
+      }
+      expectedIdentity = { dev: openedStat.dev, ino: openedStat.ino, size: openedStat.size };
+      const bytes = Buffer.alloc(openedStat.size);
+      let read = 0;
+      while (read < bytes.length) {
+        const amount = fs.readSync(readFd, bytes, read, bytes.length - read, read);
+        if (amount <= 0 && read < bytes.length) {
+          throw new StateEngineError('Canonical ledger changed while reading during preparation');
+        }
+        if (amount <= 0) break;
+        read += amount;
+      }
+      existingContent = bytes.toString('utf8');
+
+      const existing = parseLedger(existingContent);
+      let previous = existing.at(-1) ?? null;
+      for (const event of newEvents) {
+        validateStateEvent(event, previous);
+        previous = event;
+      }
+      const allEvents = [...existing, ...newEvents];
+      // Validate and reconstruct before beginning a durable state mutation.
+      const nextSnapshot = rebuildSnapshotFromEvents(allEvents);
+      // A valid last event may lack the optional terminating newline. Preserve
+      // record separation when appending, including in the crash-recovery journal.
+      const separator = existingContent.length > 0 && !existingContent.endsWith('\n') ? '\n' : '';
+      const suffix = separator + newEvents.map((event) => JSON.stringify(stable(event))).join('\n') + '\n';
+      const pending = {
+        schemaVersion: '1.0.0',
+        previousByteLength: Buffer.byteLength(existingContent, 'utf8'),
+        previousHash: sha256(Buffer.from(existingContent, 'utf8')),
+        suffix,
+      };
+
+      atomicWrite(paths.pending, stablePretty(pending), dirFd);
+      // Physical append avoids O(history) rewrites; the pending journal permits
+      // deterministic repair after a torn write or interrupted snapshot persist.
+      appendDurably(paths.events, suffix, expectedIdentity, dirFd, readFd);
+      const { index } = persistDerived(nextSnapshot, rootDir, dirFd);
+      pinnedUnlinkAndSync(paths.pending, dirFd);
+      return { events: newEvents, snapshot: nextSnapshot, index };
+    } finally {
+      fs.closeSync(readFd);
+    }
   } finally {
-    releaseStateLock(lock);
+    fs.closeSync(dirFd);
   }
 }
 
@@ -780,45 +1378,34 @@ export function appendEntityState({
   const nextState = cloneSerializable(state, 'Entity state');
   const revision = stateRevision(nextState.stateRevision);
 
-  ensureStateEngineLayout(rootDir);
-  const currentSnapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
-  const current = currentSnapshot.entities[normalizedType]?.[normalizedId] ?? null;
+  return withStateLock(rootDir, () => {
+    const currentSnapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
+    const current = currentSnapshot.entities[normalizedType]?.[normalizedId] ?? null;
 
-  if (current && revision < current.stateRevision) {
-    throw new StateEngineError(`Refusing stateRevision regression for ${normalizedType}/${normalizedId}`);
-  }
-  if (current && stableJson(current.state) === stableJson(nextState)) {
-    return Object.freeze({ changed: false, event: null, snapshot: currentSnapshot });
-  }
+    if (current && revision < current.stateRevision) {
+      throw new StateEngineError('Refusing stateRevision regression for ' + normalizedType + '/' + normalizedId);
+    }
+    if (current && stableJson(current.state) === stableJson(nextState)) {
+      return Object.freeze({ changed: false, event: null, snapshot: currentSnapshot });
+    }
 
-  const context = nextEventContext(rootDir);
-  const payload = current
-    ? {
-        stateRevision: revision,
-        operations: diffValues(current.state, nextState),
-      }
-    : {
-        stateRevision: revision,
-        state: nextState,
-      };
-
-  const event = buildEvent({
-    sequence: context.sequence,
-    previousEventHash: context.previousEventHash,
-    timestamp: at,
-    actorClass,
-    type: current ? 'ENTITY_STATE_UPDATED' : 'ENTITY_STATE_INITIALIZED',
-    id: normalizedId,
-    entity: normalizedType,
-    refs,
-    payload,
-  });
-
-  const committed = commitPreparedEvents([event], rootDir);
-  return Object.freeze({
-    changed: true,
-    event,
-    snapshot: committed.snapshot,
+    const context = nextEventContext(rootDir);
+    const payload = current
+      ? { stateRevision: revision, operations: diffValues(current.state, nextState) }
+      : { stateRevision: revision, state: nextState };
+    const event = buildEvent({
+      sequence: context.sequence,
+      previousEventHash: context.previousEventHash,
+      timestamp: at,
+      actorClass,
+      type: current ? 'ENTITY_STATE_UPDATED' : 'ENTITY_STATE_INITIALIZED',
+      id: normalizedId,
+      entity: normalizedType,
+      refs,
+      payload,
+    });
+    const committed = commitPreparedEventsLocked([event], rootDir);
+    return Object.freeze({ changed: true, event, snapshot: committed.snapshot });
   });
 }
 
@@ -830,21 +1417,22 @@ export function appendMetadataEvent({
   actorClass = 'runtime',
   timestamp: at = new Date().toISOString(),
 } = {}) {
-  ensureStateEngineLayout(rootDir);
-  const context = nextEventContext(rootDir);
-  const event = buildEvent({
-    sequence: context.sequence,
-    previousEventHash: context.previousEventHash,
-    timestamp: at,
-    actorClass,
-    type,
-    id: null,
-    entity: null,
-    refs,
-    payload,
+  return withStateLock(rootDir, () => {
+    const context = nextEventContext(rootDir);
+    const event = buildEvent({
+      sequence: context.sequence,
+      previousEventHash: context.previousEventHash,
+      timestamp: at,
+      actorClass,
+      type,
+      id: null,
+      entity: null,
+      refs,
+      payload,
+    });
+    const committed = commitPreparedEventsLocked([event], rootDir);
+    return Object.freeze({ event, snapshot: committed.snapshot });
   });
-  const committed = commitPreparedEvents([event], rootDir);
-  return Object.freeze({ event, snapshot: committed.snapshot });
 }
 
 export function loadEntityState(type, id, rootDir = process.cwd()) {
@@ -965,7 +1553,7 @@ export function countStateEngineFiles(rootDir = process.cwd()) {
   const paths = statePaths(rootDir);
   if (!fs.existsSync(paths.stateRoot)) return 0;
   return fs.readdirSync(paths.stateRoot, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name !== 'state.lock' && !entry.name.includes('.tmp-'))
+    .filter((entry) => entry.isFile() && entry.name !== 'state.lock' && entry.name !== 'pending-commit.json' && !entry.name.includes('.tmp-'))
     .length;
 }
 

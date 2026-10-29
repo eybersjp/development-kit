@@ -4,28 +4,29 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read
+  pull-requests: read
+  issues: read
 
 jobs:
-  validate:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    timeout-minutes: 15
+  validate_ubuntu:
+    name: Ubuntu full release validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+
+      - name: Validate T04 CI trigger regression
+        run: node --test scripts/t04-ci-trigger.test.mjs
 
       - name: Validate skills and agents
         run: npm run validate
@@ -101,6 +102,13 @@ jobs:
       - name: Validate v0.12 State Engine V2 increment
         run: npm run state-engine-v2:test
 
+      - name: Validate cross-owner legacy restore metadata
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        run: sudo "$(command -v node)" --test --test-name-pattern='T04-H30' scripts/state-engine-v2-migration.test.mjs
+
+      - name: Benchmark v0.12 State Engine V2 append endurance
+        run: npm run state-engine-v2:benchmark
+
       - name: Validate Design Authority governance
         run: npm run design-authority:validate
 
@@ -109,3 +117,142 @@ jobs:
 
       - name: Validate exact release command
         run: npm run release:validate
+
+  validate_windows:
+    name: Windows full release validation
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Validate T04 CI trigger regression
+        run: node --test scripts/t04-ci-trigger.test.mjs
+
+      - name: Validate skills and agents
+        run: npm run validate
+
+      - name: Check plugin manifest synchronization
+        run: npm run doctor
+
+      - name: Test plugin synchronization invariants
+        run: npm run sync:validate:test
+
+      - name: Validate installer integrity
+        run: npm run installer:validate:test
+
+      - name: Validate Development Contract orchestration foundation
+        run: npm run orchestration:validate
+
+      - name: Validate execution safety foundation
+        run: npm run execution-safety:validate
+
+      - name: Validate evidence and control coverage
+        run: npm run evidence:validate
+
+      - name: Validate core orchestration runtime
+        run: npm run orchestration-core:validate
+
+      - name: Validate orchestration command integration
+        run: npm run orchestration-integration:validate
+
+      - name: Validate v0.9 reliability regressions
+        run: npm run v09-reliability:validate
+
+      - name: Validate documentation
+        run: npm run docs:validate
+
+      - name: Test documentation validator
+        run: npm run docs:validate:test
+
+      - name: Validate OpenCode configuration
+        run: npm run opencode:validate
+
+      - name: Validate platform template adapters
+        run: npm run platform:validate
+
+      - name: Validate external research contract
+        run: npm run research:validate
+
+      - name: Validate v0.7.1 regression suite
+        run: npm run v071:validate
+
+      - name: Validate Live UI Preview runtime
+        run: npm run ui-preview:test
+
+      - name: Validate token and context efficiency
+        run: |
+          npm run token-efficiency:test
+          npm run token:audit:check
+
+      - name: Run Scale/Context Phase 0-1 baseline
+        run: node scripts/phase01-scale-context-baseline.mjs
+
+      - name: Validate Scale/Context v0.12 Phase 2 PLAN
+        run: node scripts/phase02-scale-context-plan-validate.mjs
+
+      - name: Validate v0.12 Cost Observatory increment
+        run: npm run cost-observatory:test
+
+      - name: Validate v0.12 Workspace Target Engine increment
+        run: npm run workspace-targets:test
+
+      - name: Validate v0.12 Execution Capsules & Context Cache increment
+        run: npm run execution-capsule:test
+
+      - name: Validate v0.12 State Engine V2 increment
+        run: npm run state-engine-v2:test
+
+      - name: Benchmark v0.12 State Engine V2 append endurance
+        run: npm run state-engine-v2:benchmark
+
+      - name: Validate Design Authority governance
+        run: npm run design-authority:validate
+
+      - name: Validate Autopilot runtime and evaluations
+        run: npm run autopilot:validate
+
+      - name: Validate exact release command
+        run: npm run release:validate
+
+  t04_acceptance:
+    name: T04 independently reviewed acceptance
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/v0.12-t04-state-engine-hardening' }}
+    needs: [validate_ubuntu, validate_windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Check out validated source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Materialize source-bound T04 Development Contract
+        run: node scripts/phase06-state-engine-v2-contract.mjs
+
+      - name: Verify independent reviews and compute deterministic T04 acceptance
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/t04-hardening-acceptance-gate.mjs
+
+      - name: Retain independent risk-3 acceptance evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
+        with:
+          name: t04-hardening-acceptance
+          path: .development-kit/runs/INC-DKF120-T04/T04-HARDENING-REVIEWED-20261009/
+          retention-days: 30
+          include-hidden-files: true
+          if-no-files-found: error

@@ -12,6 +12,19 @@ import { selectRequiredGates } from '../runtime/orchestration/gate-selector.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+const T04_REQUIREMENTS = [
+  'Persist canonical runtime state history as an inspectable append-only event ledger with monotonic sequence and hash-chain integrity.',
+  'Materialise current runtime snapshot state from canonical events and permit deterministic snapshot rebuild.',
+  'Maintain a disposable rebuildable index whose deletion cannot destroy canonical state.',
+  'Perform canonical state commits atomically so interrupted temporary writes cannot partially advance canonical history.',
+  'Migrate supported legacy Autopilot and orchestration run-state revisions with semantic equivalence.',
+  'Make supported migration idempotent and fail closed on corrupt or semantically inconsistent legacy input.',
+  'Preserve recoverable legacy state and a deterministic backup until verified cutover; do not delete legacy state in T04.',
+  'Preserve current acceptance state/meaning during migration.',
+  'Keep public simple-project workflows backward compatible and permit legacy fallback where State Engine V2 is not active.',
+  'Measure representative transition-generated state micro-file reduction against the Phase 1 baseline and report the result even if the >=80% objective is missed.',
+];
+
 const task = {
   id: 'DKF120-T04',
   projectId: 'proj_cad505c1-901d-46f0-a0d1-297598bdae18',
@@ -49,21 +62,11 @@ const task = {
       'Application-specific or industry-specific state semantics',
     ],
   },
-  requirements: [
-    'Persist canonical runtime state history as an inspectable append-only event ledger with monotonic sequence and hash-chain integrity.',
-    'Materialise current runtime snapshot state from canonical events and permit deterministic snapshot rebuild.',
-    'Maintain a disposable rebuildable index whose deletion cannot destroy canonical state.',
-    'Perform canonical state commits atomically so interrupted temporary writes cannot partially advance canonical history.',
-    'Migrate supported legacy Autopilot and orchestration run-state revisions with semantic equivalence.',
-    'Make supported migration idempotent and fail closed on corrupt or semantically inconsistent legacy input.',
-    'Preserve recoverable legacy state and a deterministic backup until verified cutover; do not delete legacy state in T04.',
-    'Preserve current acceptance state/meaning during migration.',
-    'Keep public simple-project workflows backward compatible and permit legacy fallback where State Engine V2 is not active.',
-    'Measure representative transition-generated state micro-file reduction against the Phase 1 baseline and report the result even if the >=80% objective is missed.',
-  ],
+  requirements: T04_REQUIREMENTS,
   acceptanceCriteria: [
     {
       id: 'DKF-120-AC-012',
+      requirementIds: [T04_REQUIREMENTS[0], T04_REQUIREMENTS[3]],
       statement: 'Canonical runtime history is append-only and reconstructable.',
       source: 'DKF-120-AC-012',
       verificationType: ['test'],
@@ -71,6 +74,7 @@ const task = {
     },
     {
       id: 'DKF-120-AC-013',
+      requirementIds: [T04_REQUIREMENTS[1]],
       statement: 'Current snapshot can be rebuilt from canonical history.',
       source: 'DKF-120-AC-013',
       verificationType: ['test'],
@@ -78,6 +82,7 @@ const task = {
     },
     {
       id: 'DKF-120-AC-014',
+      requirementIds: [T04_REQUIREMENTS[2]],
       statement: 'Disposable index deletion/rebuild produces semantically equivalent query state.',
       source: 'DKF-120-AC-014',
       verificationType: ['test'],
@@ -85,6 +90,7 @@ const task = {
     },
     {
       id: 'DKF-120-AC-015',
+      requirementIds: [T04_REQUIREMENTS[4], T04_REQUIREMENTS[5], T04_REQUIREMENTS[6], T04_REQUIREMENTS[7], T04_REQUIREMENTS[8]],
       statement: 'Supported legacy migration is idempotent, fail-closed, and recoverable before cutover acceptance.',
       source: 'DKF-120-AC-015',
       verificationType: ['test', 'migration'],
@@ -92,6 +98,7 @@ const task = {
     },
     {
       id: 'DKF-120-AC-034',
+      requirementIds: [T04_REQUIREMENTS[9]],
       statement: 'Representative migrated runtime state achieves the state micro-file reduction objective or reports the miss explicitly.',
       source: 'DKF-120-AC-034',
       verificationType: ['test'],
