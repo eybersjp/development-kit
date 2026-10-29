@@ -7,7 +7,11 @@ const workflow = fs.readFileSync(fileURLToPath(new URL('../.github/workflows/ci.
 
 test('T04 acceptance is restricted to pull requests and depends on both platform validations', () => {
   assert.match(workflow, /t04_acceptance:\s*\n/);
-  assert.match(workflow, /needs:\s*validate/);
+  assert.match(workflow, /^  validate_ubuntu:\s*$/m);
+  assert.match(workflow, /^  validate_windows:\s*$/m);
+  assert.match(workflow, /needs:\s*\[validate_ubuntu,\s*validate_windows\]/);
+  assert.match(workflow, /runs-on:\s*ubuntu-latest/);
+  assert.match(workflow, /runs-on:\s*windows-latest/);
   assert.match(workflow, /github\.event_name\s*==\s*'pull_request'/);
 });
 
