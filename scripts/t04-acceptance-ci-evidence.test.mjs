@@ -67,3 +67,8 @@ test('production acceptance gate consumes verified CI runs instead of asserting 
   assert.match(gate, /validatedCiRuns: VALIDATED_CI\.runIds/);
   assert.doesNotMatch(gate, /GITHUB-ACTIONS-37974556018-/);
 });
+
+test('acceptance refuses unresolved risk-3 issue #71 and Windows durability P1 #73', () => {
+  const gate = fs.readFileSync(fileURLToPath(new URL('./t04-hardening-acceptance-gate.mjs', import.meta.url)), 'utf8');
+  assert.match(gate, /await assertT04BlockerIssuesClosed/);
+});
