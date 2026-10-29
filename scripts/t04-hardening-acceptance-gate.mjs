@@ -127,7 +127,14 @@ async function githubGraphql(query, variables = {}) {
   if (result.errors?.length) throw new Error('GitHub GraphQL query failed: ' + result.errors[0].message);
   return result.data;
 }
-const tree = await githubApi('git/trees/' + REVIEWED_SOURCE + '?recursive=1');
+// Git Trees REST API requires the immutable tree object, not the commit ID.
+// Authenticate the commit-to-tree edge before comparing the entire index.
+const reviewedCommitObject = await githubApi('git/commits/' + REVIEWED_SOURCE);
+assert.equal(reviewedCommitObject?.sha, REVIEWED_SOURCE,
+  'Reviewed Git commit lookup returned a different immutable source');
+assert.match(reviewedCommitObject?.tree?.sha || '', /^[a-f0-9]{40}$/,
+  'Reviewed commit has no authenticated Git tree SHA');
+const tree = await githubApi('git/trees/' + reviewedCommitObject.tree.sha + '?recursive=1');
 assert.ok(!tree.truncated && Array.isArray(tree.tree), 'Reviewed commit tree unavailable or truncated');
 const treeFiles = new Map(tree.tree.filter(item => item.type === 'blob')
   .map(item => [item.path, { sha: item.sha, mode: item.mode }]));
