@@ -262,3 +262,18 @@ test('collector searches a second authenticated page for an older qualifying mat
   });
   assert.deepEqual(result.runIds, [198, 200]);
 });
+
+
+test('collector refuses an authenticated workflow ID pointing to a different YAML file', async () => {
+  const { collectT04ValidationRuns } = await import('./t04-acceptance-ci-evidence.mjs');
+  const githubApi = async endpoint => {
+    if (endpoint === 'actions/runs/200') return mkRun(200);
+    if (endpoint === 'actions/workflows/' + workflow) return {
+      id: workflow, name: 'CI', path: '.github/workflows/other.yml',
+    };
+    throw Error('Unexpected endpoint: ' + endpoint);
+  };
+  await assert.rejects(() => collectT04ValidationRuns({
+    githubApi, reviewedCommit: SOURCE, executionCommit: SOURCE, currentRunId: 200,
+  }), /workflow|reviewed|path/i);
+});
