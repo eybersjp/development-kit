@@ -23,6 +23,7 @@ import {
 import { createReviewResult } from '../runtime/orchestration/review-result.mjs';
 import { detectArchitectureDrift } from '../runtime/orchestration/architecture-drift.mjs';
 import { decideAcceptance, validateAcceptanceRecord } from '../runtime/orchestration/acceptance-engine.mjs';
+import { collectT04ValidationRuns } from './t04-acceptance-ci-evidence.mjs';
 import {
   unresolvedReviewThreads,
   requireCanonicalGithubReviewRequest,
@@ -287,6 +288,12 @@ for (const role of REQUIRED_ROLES) {
   assert.ok(reviewerReceipts.has(role), 'Independent source-bound role receipt absent: ' + role);
 }
 const INDEPENDENT_REVIEW = reviewerReceipts.get('code-reviewer').reviewUrl;
+// The two prerequisite platform jobs must have succeeded twice on identical
+// immutable source. Never turn a single current run into fabricated repeats.
+const VALIDATED_CI = await collectT04ValidationRuns({
+  githubApi, reviewedCommit: REVIEWED_SOURCE,
+  currentRunId: Number(process.env.GITHUB_RUN_ID),
+});
 
 const contract = loadDevelopmentContract('INC-DKF120-T04', ROOT);
 assert.ok(contract, 'T04 Development Contract was not persisted by the earlier contract validator');
@@ -299,10 +306,11 @@ const evidence = (criterionId) => [{
   type: 'test',
   deterministicVerification: true,
   verificationType: 'test',
-  evidenceId: 'GITHUB-ACTIONS-37974556018-' + criterionId,
+  evidenceId: 'GITHUB-ACTIONS-' + VALIDATED_CI.runIds.join('-') + '-' + criterionId,
   url: BASELINE_CI,
   checkedSource: REVIEWED_SOURCE,
-  assertion: 'Windows and Ubuntu full suites, T04 H01-H31, and repeat executions passed',
+  validatedCiRuns: VALIDATED_CI.runIds,
+  assertion: 'Two authenticated same-source Windows and Ubuntu full release validations passed; physical Windows power-loss durability is not established by CI',
 }];
 const criteria = contract.acceptanceCriteria.map((criterion) => {
   const items = evidence(criterion.id);
@@ -408,6 +416,7 @@ const audit = Object.freeze({
   sourceBlobWitnesses: BLOB_WITNESSES,
   evidenceUrls: {
     currentMatrixValidationRun: BASELINE_CI,
+    repeatedValidatedMatrixRuns: VALIDATED_CI.runIds.map(id => 'https://github.com/eybersjp/development-kit/actions/runs/' + id),
     independentCodeSecurityReview: INDEPENDENT_REVIEW,
     formalInitialRisk3Review: FORMAL_T04_REVIEW,
     trustBoundary: T04_SCOPE,
