@@ -81,3 +81,21 @@ export async function collectT04ValidationRuns({ githubApi, reviewedCommit, curr
     runs, reviewedCommit, currentRunId, expectedWorkflowId: current.workflow_id,
   });
 }
+
+/**
+ * Necessary, not sufficient: no risk-3 ACCEPTED verdict while the original
+ * source/concurrency blocker or Windows crash-durability P1 is still open.
+ * A not_planned closure is a waiver and cannot satisfy this gate.
+ */
+export async function assertT04BlockerIssuesClosed({ githubApi }) {
+  const closed = [];
+  for (const number of [71, 73]) {
+    const issue = await githubApi('issues/' + number);
+    assert.equal(issue?.state, 'closed',
+      'Mandatory T04 blocker issue #' + number + ' is still open');
+    assert.equal(issue?.state_reason, 'completed',
+      'Mandatory T04 blocker issue #' + number + ' must be resolved, not waived');
+    closed.push(number);
+  }
+  return Object.freeze(closed);
+}
