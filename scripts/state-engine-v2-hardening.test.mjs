@@ -1042,7 +1042,7 @@ for (const crashPoint of ['after-journal-rename', 'after-ledger-write']) {
     const rootDir = tempProject(t);
     appendMetadataEvent({ rootDir, eventType: 'H51_BASELINE', payload: { step: 1 } });
     const paths = getStateEnginePaths(rootDir);
-    const childScript = String.raw\`
+    const childScript = String.raw`
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -1075,7 +1075,7 @@ fs.writeSync = function (fd, ...args) {
 };
 appendMetadataEvent({ rootDir, eventType: 'H51_INTERRUPTED', payload: { step: 2 } });
 throw Error('Expected forced termination at the selected filesystem boundary');
-\`;
+`;
     const result = await new Promise((resolve, reject) => {
       const child = spawn(process.execPath, ['--input-type=module', '-e', childScript], {
         cwd: process.cwd(),
