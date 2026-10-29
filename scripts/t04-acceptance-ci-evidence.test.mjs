@@ -134,3 +134,62 @@ test('refuses a previous PR merge-base revision even when head and run head_sha 
   }] });
   assert.throws(() => validate([changedBase, mkRun(200)]), /base|source|merge/i);
 });
+
+
+test('collector skips a cancelled matching run and finds an earlier successful full matrix', async () => {
+  const cancelled = mkRun(199, { jobs: mkRun(199).jobs.map(j => ({
+    ...j, conclusion: 'cancelled',
+  })) });
+  const current = mkRun(200);
+  const prior = mkRun(198);
+  const githubApi = async endpoint => {
+    if (endpoint === 'actions/runs/200') return { ...current };
+    if (endpoint.startsWith('actions/workflows/')) return {
+      workflow_runs: [{ ...cancelled }, { ...prior }, { ...current }],
+    };
+    const match = endpoint.match(/^actions\\/runs\\/(\\d+)\\/jobs\\?per_page=100$/);
+    if (match) {
+      const run = [cancelled, prior, current].find(x => x.id === Number(match[1]));
+      return { total_count: run.jobs.length, jobs: run.jobs };
+    }
+    throw Error('Unexpected GitHub endpoint: ' + endpoint);
+  };
+  const { collectT04ValidationRuns } = await import('./t04-acceptance-ci-evidence.mjs');
+  const result = await collectT04ValidationRuns({
+    githubApi, reviewedCommit: SOURCE, executionCommit: SOURCE, currentRunId: 200,
+  });
+  assert.deepEqual(result.runIds, [198, 200]);
+});
+
+test('rejects an executed PR merge workflow blob that differs from reviewed source', async () => {
+  const module = await import('./t04-acceptance-ci-evidence.mjs');
+  assert.equal(typeof module.assertT04ExecutedWorkflowMatchesReviewed, 'function',
+    'An authenticated merge-workflow source check is mandatory');
+  const merge = 'e'.repeat(40);
+  const base = 'b'.repeat(40);
+  const tree = '1'.repeat(40);
+  const reviewedWorkflowBlob = 'f'.repeat(40);
+  const githubApi = async endpoint => {
+    if (endpoint === 'git/ref/pull/70/merge') return {
+      ref: 'refs/pull/70/merge', object: { sha: merge },
+    };
+    if (endpoint === 'git/commits/' + merge) return {
+      parents: [{ sha: base }, { sha: SOURCE }], tree: { sha: tree },
+    };
+    if (endpoint === 'git/trees/' + tree + '?recursive=1') return {
+      truncated: false, tree: [{
+        path: '.github/workflows/ci.yml', type: 'blob', sha: 'c'.repeat(40),
+      }],
+    };
+    throw Error('Unexpected endpoint: ' + endpoint);
+  };
+  await assert.rejects(() => module.assertT04ExecutedWorkflowMatchesReviewed({
+    githubApi, executionCommit: SOURCE, baseCommit: base,
+    runHeadSha: SOURCE, reviewedWorkflowBlob,
+  }), /workflow|reviewed|source/i);
+});
+
+test('acceptance gate authenticates merge-ref workflow blob before producing a verdict', () => {
+  const gate = fs.readFileSync(fileURLToPath(new URL('./t04-hardening-acceptance-gate.mjs', import.meta.url)), 'utf8');
+  assert.match(gate, /await assertT04ExecutedWorkflowMatchesReviewed/);
+});
