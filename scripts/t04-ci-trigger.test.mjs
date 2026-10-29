@@ -23,6 +23,13 @@ test('T04 acceptance can execute for the stacked PR #70 even when its base is no
   assert.doesNotMatch(workflow, /^  pull_request:\s*\n\s*branches:/m);
 });
 
+test('T04 acceptance has only the read-only Actions permission required for authenticated CI evidence', () => {
+  const acceptanceJob = workflow.split(/^  t04_acceptance:/m)[1];
+  assert.ok(acceptanceJob, 'Acceptance job missing');
+  assert.match(acceptanceJob, /permissions:[\\s\\S]*?actions:\\s*read/);
+  assert.doesNotMatch(acceptanceJob, /actions:\\s*write/);
+});
+
 test('Acceptance still invokes the independent risk-3 evidence gate', () => {
   assert.match(workflow, /node scripts\/t04-hardening-acceptance-gate\.mjs/);
   assert.match(workflow, /name:\s*t04-hardening-acceptance/);
