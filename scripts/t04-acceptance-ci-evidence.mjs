@@ -15,9 +15,10 @@ const JOB_NAMES = Object.freeze([
  * durability, and this verifier never claims otherwise.
  */
 export function verifyT04ValidationRuns({
-  runs, reviewedCommit, currentRunId, expectedWorkflowId,
+  runs, reviewedCommit, executionCommit, currentRunId, expectedWorkflowId,
 }) {
   assert.match(reviewedCommit || '', /^[a-f0-9]{40}$/, 'Reviewed source commit is required');
+  assert.match(executionCommit || '', /^[a-f0-9]{40}$/, 'Exact PR execution commit is required');
   assert.ok(Number.isSafeInteger(currentRunId) && currentRunId > 0, 'Current run ID is required');
   assert.ok(Number.isSafeInteger(expectedWorkflowId) && expectedWorkflowId > 0,
     'Trusted workflow identity is required');
@@ -26,6 +27,7 @@ export function verifyT04ValidationRuns({
 
   const ids = new Set();
   let commonHeadSha = null;
+  let commonBaseSha = null;
   for (const run of runs) {
     assert.ok(Number.isSafeInteger(run?.id) && run.id > 0, 'Invalid GitHub CI run ID');
     assert.ok(!ids.has(run.id), 'Duplicate run ID cannot prove two distinct executions');
@@ -38,8 +40,20 @@ export function verifyT04ValidationRuns({
     if (commonHeadSha === null) commonHeadSha = run.head_sha;
     assert.equal(run.head_sha, commonHeadSha,
       'The two CI runs did not validate the same immutable source/merge commit');
-    assert.ok(run.pull_requests?.some(pr => pr.number === 70 && pr.head?.sha === reviewedCommit),
-      'CI run does not bind PR #70 to the exact reviewed source head');
+    // PR #70 runs deliberately check out the immutable head, not the moving
+    // pull/70/merge ref. Bind BOTH executions to the receipt-bearing checkout
+    // commit C. The gate separately proves that C differs from reviewed R only
+    // by the authenticated receipts file. Do not require C === R here.
+    const matching = run.pull_requests?.filter(pr => pr.number === 70 &&
+      pr.head?.sha === executionCommit) || [];
+    assert.equal(matching.length, 1,
+      'CI run does not bind PR #70 to the exact execution source head');
+    const baseSha = matching[0].base?.sha;
+    assert.match(baseSha || '', /^[a-f0-9]{40}$/,
+      'Authenticated PR merge base SHA is required');
+    if (commonBaseSha === null) commonBaseSha = baseSha;
+    assert.equal(baseSha, commonBaseSha,
+      'PR base changed between validations; repeat both full matrices');
     assert.ok(Array.isArray(run.jobs), 'Authenticated CI jobs are required');
     for (const name of JOB_NAMES) {
       const jobs = run.jobs.filter(job => job.name === name);
@@ -51,6 +65,8 @@ export function verifyT04ValidationRuns({
   assert.ok(ids.has(currentRunId), 'Current acceptance run is absent from validated matrices');
   return Object.freeze({
     reviewedCommit,
+    executionCommit,
+    commonBaseSha,
     runIds: Object.freeze([...ids].sort((a, b) => a - b)),
     workflowId: expectedWorkflowId,
     commonHeadSha,
@@ -58,7 +74,7 @@ export function verifyT04ValidationRuns({
 }
 
 /** Read GitHub-hosted CI records, never a self-authored PASS assertion. */
-export async function collectT04ValidationRuns({ githubApi, reviewedCommit, currentRunId }) {
+export async function collectT04ValidationRuns({ githubApi, reviewedCommit, executionCommit, currentRunId }) {
   const current = await githubApi('actions/runs/' + currentRunId);
   assert.ok(Number.isSafeInteger(current.workflow_id), 'Current workflow ID is unavailable');
   const response = await githubApi('actions/workflows/' + current.workflow_id +
@@ -68,7 +84,10 @@ export async function collectT04ValidationRuns({ githubApi, reviewedCommit, curr
     run.id !== currentRunId &&
     run.workflow_id === current.workflow_id &&
     run.head_sha === current.head_sha &&
-    run.pull_requests?.some(pr => pr.number === 70 && pr.head?.sha === reviewedCommit));
+    run.pull_requests?.some(pr => pr.number === 70 &&
+      pr.head?.sha === executionCommit &&
+      pr.base?.sha === current.pull_requests?.find(p => p.number === 70 &&
+        p.head?.sha === executionCommit)?.base?.sha));
   assert.ok(prior, 'A second exact-source CI run is missing; repeat the full matrix');
   const runs = [prior, current];
   for (const run of runs) {
@@ -78,7 +97,8 @@ export async function collectT04ValidationRuns({ githubApi, reviewedCommit, curr
     run.jobs = data.jobs;
   }
   return verifyT04ValidationRuns({
-    runs, reviewedCommit, currentRunId, expectedWorkflowId: current.workflow_id,
+    runs, reviewedCommit, executionCommit, currentRunId,
+    expectedWorkflowId: current.workflow_id,
   });
 }
 
