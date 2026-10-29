@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 const REPO = 'eybersjp/development-kit';
+const CI_WORKFLOW_PATH = '.github/workflows/ci.yml';
 const JOB_NAMES = Object.freeze([
   'Ubuntu full release validation',
   'Windows full release validation',
@@ -34,6 +35,8 @@ export function verifyT04ValidationRuns({
     ids.add(run.id);
     assert.equal(run.workflow_id, expectedWorkflowId, 'Unexpected CI workflow identity');
     assert.equal(run.name, 'CI', 'Unexpected workflow name');
+    assert.equal(run.path, CI_WORKFLOW_PATH,
+      'Authenticated CI run came from a different workflow path');
     assert.equal(run.event, 'pull_request', 'Only authenticated pull_request CI runs qualify');
     assert.equal(run.head_repository?.full_name, REPO, 'CI run from another repository');
     assert.match(run.head_sha || '', /^[a-f0-9]{40}$/, 'Missing source/merge commit SHA');
@@ -77,28 +80,20 @@ export function verifyT04ValidationRuns({
 export async function collectT04ValidationRuns({ githubApi, reviewedCommit, executionCommit, currentRunId }) {
   const current = await githubApi('actions/runs/' + currentRunId);
   assert.ok(Number.isSafeInteger(current.workflow_id), 'Current workflow ID is unavailable');
-  const response = await githubApi('actions/workflows/' + current.workflow_id +
-    '/runs?event=pull_request&per_page=100');
-  assert.ok(Array.isArray(response.workflow_runs), 'Authenticated workflow runs unavailable');
-  const matching = response.workflow_runs.filter(run =>
-    run.id !== currentRunId &&
-    run.workflow_id === current.workflow_id &&
-    run.head_sha === current.head_sha &&
-    run.event === 'pull_request' &&
-    run.name === 'CI' &&
-    run.head_repository?.full_name === REPO &&
-    run.pull_requests?.some(pr => pr.number === 70 &&
-      pr.head?.sha === executionCommit &&
-      pr.base?.sha === current.pull_requests?.find(p => p.number === 70 &&
-        p.head?.sha === executionCommit)?.base?.sha));
-  assert.ok(matching.length > 0,
-    'A second exact-source CI run is missing; repeat the full matrix');
+  assert.equal(current.path, CI_WORKFLOW_PATH,
+    'Current acceptance run used an unreviewed workflow path');
+  const workflow = await githubApi('actions/workflows/' + current.workflow_id);
+  assert.equal(workflow?.id, current.workflow_id,
+    'GitHub workflow ID does not match authenticated workflow metadata');
+  assert.equal(workflow?.path, CI_WORKFLOW_PATH,
+    'GitHub workflow ID does not resolve to the reviewed CI workflow file');
+  assert.equal(workflow?.name, 'CI', 'Unexpected authenticated workflow name');
 
   const readJobs = async run => {
     const data = await githubApi('actions/runs/' + run.id + '/jobs?per_page=100');
     assert.ok(Array.isArray(data.jobs) && Number.isSafeInteger(data.total_count) &&
       data.total_count <= data.jobs.length,
-    'Complete authenticated GitHub job evidence is required');
+      'Complete authenticated GitHub job evidence is required');
     return { ...run, jobs: data.jobs };
   };
   const currentWithJobs = await readJobs(current);
@@ -109,16 +104,44 @@ export async function collectT04ValidationRuns({ githubApi, reviewedCommit, exec
   });
   assert.ok(hasFullMatrix(currentWithJobs),
     'Current acceptance execution has no successful complete Ubuntu/Windows matrix');
-  // A cancelled or failed older execution cannot prove a second matrix, but
-  // must not hide an earlier authenticated successful execution either.
-  // Malformed/paginated GitHub evidence still fails closed in readJobs.
-  for (const candidate of matching) {
-    const prior = await readJobs(candidate);
-    if (!hasFullMatrix(prior)) continue;
-    return verifyT04ValidationRuns({
-      runs: [prior, currentWithJobs], reviewedCommit, executionCommit,
-      currentRunId, expectedWorkflowId: current.workflow_id,
-    });
+  const baseSha = current.pull_requests?.find(pr => pr.number === 70 &&
+    pr.head?.sha === executionCommit)?.base?.sha;
+  assert.match(baseSha || '', /^[a-f0-9]{40}$/,
+    'Authenticated current PR base SHA is required');
+
+  // Search all authenticated pages for the same immutable source. A cancelled
+  // prior run does not qualify, but cannot hide an older successful run.
+  // Fail closed on malformed pages, incomplete job lists, duplicate run IDs,
+  // or excessive pagination; do not invent a repeat from the current run.
+  const seenIds = new Set();
+  for (let page = 1; page <= 20; page++) {
+    const response = await githubApi('actions/workflows/' + current.workflow_id +
+      '/runs?event=pull_request&head_sha=' + encodeURIComponent(current.head_sha) +
+      '&per_page=100&page=' + page);
+    assert.ok(Array.isArray(response?.workflow_runs) && response.workflow_runs.length <= 100,
+      'Authenticated workflow-run page is malformed');
+    for (const run of response.workflow_runs) {
+      assert.ok(Number.isSafeInteger(run?.id) && run.id > 0 && !seenIds.has(run.id),
+        'Invalid or duplicate paginated workflow run ID');
+      seenIds.add(run.id);
+      if (run.id === currentRunId ||
+          run.workflow_id !== current.workflow_id ||
+          run.head_sha !== current.head_sha ||
+          run.event !== 'pull_request' ||
+          run.name !== 'CI' ||
+          run.path !== CI_WORKFLOW_PATH ||
+          run.head_repository?.full_name !== REPO ||
+          !run.pull_requests?.some(pr => pr.number === 70 &&
+            pr.head?.sha === executionCommit && pr.base?.sha === baseSha)) continue;
+      const prior = await readJobs(run);
+      if (!hasFullMatrix(prior)) continue;
+      return verifyT04ValidationRuns({
+        runs: [prior, currentWithJobs], reviewedCommit, executionCommit,
+        currentRunId, expectedWorkflowId: current.workflow_id,
+      });
+    }
+    if (response.workflow_runs.length < 100) break;
+    assert.ok(page < 20, 'Authenticated workflow-run pagination exceeded safe bound');
   }
   assert.fail('No second successful complete Ubuntu/Windows CI matrix exists');
 }
