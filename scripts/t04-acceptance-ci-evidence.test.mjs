@@ -147,9 +147,10 @@ test('collector skips a cancelled matching run and finds an earlier successful f
     if (endpoint.startsWith('actions/workflows/')) return {
       workflow_runs: [{ ...cancelled }, { ...prior }, { ...current }],
     };
-    const match = endpoint.match(/^actions\\/runs\\/(\\d+)\\/jobs\\?per_page=100$/);
-    if (match) {
-      const run = [cancelled, prior, current].find(x => x.id === Number(match[1]));
+    const isJobs = endpoint.startsWith('actions/runs/') && endpoint.endsWith('/jobs?per_page=100');
+    if (isJobs) {
+      const runId = Number(endpoint.slice('actions/runs/'.length).split('/')[0]);
+      const run = [cancelled, prior, current].find(x => x.id === runId);
       return { total_count: run.jobs.length, jobs: run.jobs };
     }
     throw Error('Unexpected GitHub endpoint: ' + endpoint);
