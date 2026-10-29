@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { verifyT04ValidationRuns } from './t04-acceptance-ci-evidence.mjs';
+import { verifyT04ValidationRuns, assertT04BlockerIssuesClosed } from './t04-acceptance-ci-evidence.mjs';
 
 const SOURCE = 'a'.repeat(40);
 const workflow = 316663377;
@@ -71,4 +71,27 @@ test('production acceptance gate consumes verified CI runs instead of asserting 
 test('acceptance refuses unresolved risk-3 issue #71 and Windows durability P1 #73', () => {
   const gate = fs.readFileSync(fileURLToPath(new URL('./t04-hardening-acceptance-gate.mjs', import.meta.url)), 'utf8');
   assert.match(gate, /await assertT04BlockerIssuesClosed/);
+});
+
+test('open or waived Windows durability issue prevents risk-3 acceptance', async () => {
+  const githubApi = async endpoint => ({
+    state: endpoint === 'issues/73' ? 'open' : 'closed',
+    state_reason: 'completed',
+  });
+  await assert.rejects(() => assertT04BlockerIssuesClosed({ githubApi }), /#73.*open/i);
+  const waived = async endpoint => ({
+    state: 'closed',
+    state_reason: endpoint === 'issues/73' ? 'not_planned' : 'completed',
+  });
+  await assert.rejects(() => assertT04BlockerIssuesClosed({ githubApi: waived }), /#73.*waived/i);
+});
+
+test('completed mandatory issue resolutions are necessary but not independent approval', async () => {
+  const seen = [];
+  const githubApi = async endpoint => {
+    seen.push(endpoint);
+    return { state: 'closed', state_reason: 'completed' };
+  };
+  assert.deepEqual(await assertT04BlockerIssuesClosed({ githubApi }), [71, 73]);
+  assert.deepEqual(seen, ['issues/71', 'issues/73']);
 });
