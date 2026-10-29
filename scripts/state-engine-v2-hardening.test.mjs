@@ -1094,6 +1094,9 @@ throw Error('Expected forced termination at the selected filesystem boundary');
     });
     assert.notEqual(result.code, 0,
       'The child must terminate abruptly before the commit can acknowledge: ' + result.stderr);
+    assert.doesNotMatch(result.stderr,
+      /Process termination unexpectedly returned|Expected forced termination at the selected filesystem boundary/,
+      'The child must actually terminate, not merely throw an expected-error sentinel');
     assert.equal(fs.existsSync(paths.pending), true,
       'The interrupted commit must retain its pending recovery journal');
     assert.equal(fs.existsSync(paths.lock), true,
@@ -1104,7 +1107,7 @@ throw Error('Expected forced termination at the selected filesystem boundary');
     const old = new Date(Date.now() - 30_000);
     fs.utimesSync(paths.lock, old, old);
     appendMetadataEvent({ rootDir, eventType: 'H51_RECOVERED', payload: { step: 3 } });
-    assert.deepEqual(loadCanonicalEvents(rootDir).map(event => event.type), [
+    assert.deepEqual(loadCanonicalEvents(rootDir).map(event => event.eventType), [
       'H51_BASELINE', 'H51_INTERRUPTED', 'H51_RECOVERED',
     ]);
     assert.equal(fs.existsSync(paths.pending), false);
