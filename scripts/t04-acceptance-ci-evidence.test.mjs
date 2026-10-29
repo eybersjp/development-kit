@@ -194,3 +194,34 @@ test('acceptance gate authenticates merge-ref workflow blob before producing a v
   const gate = fs.readFileSync(fileURLToPath(new URL('./t04-hardening-acceptance-gate.mjs', import.meta.url)), 'utf8');
   assert.match(gate, /await assertT04ExecutedWorkflowMatchesReviewed/);
 });
+
+
+test('accepts only the exact reviewed workflow blob on the authenticated merge commit', async () => {
+  const { assertT04ExecutedWorkflowMatchesReviewed } = await import('./t04-acceptance-ci-evidence.mjs');
+  const merge = 'e'.repeat(40), base = 'b'.repeat(40), treeSha = '1'.repeat(40);
+  const workflowBlob = 'f'.repeat(40);
+  const githubApi = async endpoint => {
+    if (endpoint === 'git/ref/pull/70/merge') return {
+      ref: 'refs/pull/70/merge', object: { sha: merge },
+    };
+    if (endpoint === 'git/commits/' + merge) return {
+      parents: [{ sha: base }, { sha: SOURCE }], tree: { sha: treeSha },
+    };
+    if (endpoint === 'git/trees/' + treeSha + '?recursive=1') return {
+      truncated: false, tree: [{
+        path: '.github/workflows/ci.yml', type: 'blob', sha: workflowBlob,
+      }],
+    };
+    throw Error('Unexpected endpoint: ' + endpoint);
+  };
+  const valid = await assertT04ExecutedWorkflowMatchesReviewed({
+    githubApi, executionCommit: SOURCE, baseCommit: base,
+    runHeadSha: merge, reviewedWorkflowBlob: workflowBlob,
+  });
+  assert.equal(valid.workflowBlob, workflowBlob);
+  assert.equal(valid.mergeCommit, merge);
+  await assert.rejects(() => assertT04ExecutedWorkflowMatchesReviewed({
+    githubApi, executionCommit: SOURCE, baseCommit: 'c'.repeat(40),
+    runHeadSha: merge, reviewedWorkflowBlob: workflowBlob,
+  }), /parent|base|source/i);
+});
