@@ -237,6 +237,7 @@ jobs:
       contents: read
       issues: read
       pull-requests: read
+      actions: read
     steps:
       - name: Check out validated source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
