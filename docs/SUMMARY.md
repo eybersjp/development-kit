@@ -196,6 +196,7 @@
 * [phase05-execution-capsule-contract](03-reference/scripts/phase05-execution-capsule-contract.md)
 * [phase06-state-engine-v2-contract](03-reference/scripts/phase06-state-engine-v2-contract.md)
 * [state-engine-v2-benchmark](03-reference/scripts/state-engine-v2-benchmark.md)
+* [t04-acceptance-ci-evidence](03-reference/scripts/t04-acceptance-ci-evidence.md)
 * [t04-hardening-acceptance-gate](03-reference/scripts/t04-hardening-acceptance-gate.md)
 * [t04-review-thread-blockers](03-reference/scripts/t04-review-thread-blockers.md)
 * [windows-durable-rename](03-reference/scripts/windows-durable-rename.md)
