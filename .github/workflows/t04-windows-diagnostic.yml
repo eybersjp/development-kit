@@ -1,0 +1,29 @@
+name: T04 Windows diagnostic
+on:
+  pull_request:
+    branches: [fix/v0.12-t04-state-engine-hardening]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows_diagnostic:
+    name: Windows T04 filesystem and release validation
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact PR source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+      - name: Setup Node 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: T04 migration and restore regressions
+        run: node --test scripts/state-engine-v2-migration.test.mjs
+      - name: T04 hardening regressions
+        run: node --test scripts/state-engine-v2-hardening.test.mjs
+      - name: T04 workflow regression
+        run: node --test scripts/t04-ci-trigger.test.mjs
+      - name: Full release validation
+        run: npm run release:validate
