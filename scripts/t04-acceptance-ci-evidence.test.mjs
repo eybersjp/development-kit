@@ -283,7 +283,7 @@ test('acceptance resolves the reviewed commit object to its immutable Git tree S
   const gate = fs.readFileSync(fileURLToPath(new URL('./t04-hardening-acceptance-gate.mjs', import.meta.url)), 'utf8');
   assert.match(gate, /githubApi\('git\/commits\/' \+ REVIEWED_SOURCE\)/,
     'Git Trees REST endpoint must receive a tree SHA resolved from reviewed commit');
-  assert.match(gate, /githubApi\('git\/trees\/' \+ reviewedCommitObject\.tree\.sha \+ '\\?recursive=1'\)/,
+  assert.match(gate, /githubApi\('git\/trees\/' \+ reviewedCommitObject\.tree\.sha \+ '\?recursive=1'\)/,
     'Do not use a commit SHA as a Git Trees API tree identifier');
   assert.doesNotMatch(gate, /githubApi\('git\/trees\/' \+ REVIEWED_SOURCE/,
     'Undocumented commit-SHA-as-tree coercion must not authorize reviewed source');
