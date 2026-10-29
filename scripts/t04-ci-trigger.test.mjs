@@ -15,7 +15,8 @@ test('T04 acceptance can execute for the stacked PR #70 even when its base is no
   // Regression: the current workflow only triggers pull_request events targeting main.
   // The T04 hardening branch is stacked, so the acceptance job cannot be reached
   // on its own PR, regardless of its job-level head_ref predicate.
-  assert.match(workflow, /pull_request:\s*\n\s*branches:\s*\[(?:[^\]]*fix\/v0\.12[^\]]*)\]/);
+  assert.match(workflow, /^  pull_request:\s*$/m);
+  assert.doesNotMatch(workflow, /^  pull_request:\s*\n\s*branches:/m);
 });
 
 test('Acceptance still invokes the independent risk-3 evidence gate', () => {
