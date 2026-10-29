@@ -12,6 +12,7 @@ const mkRun = (id, changes = {}) => ({
   name: 'CI',
   event: 'pull_request',
   workflow_id: workflow,
+  path: '.github/workflows/ci.yml',
   head_sha: SOURCE,
   head_repository: { full_name: 'eybersjp/development-kit' },
   pull_requests: [{ number: 70, head: { sha: SOURCE }, base: { sha: 'b'.repeat(40) } }],
@@ -144,6 +145,9 @@ test('collector skips a cancelled matching run and finds an earlier successful f
   const prior = mkRun(198);
   const githubApi = async endpoint => {
     if (endpoint === 'actions/runs/200') return { ...current };
+    if (endpoint === 'actions/workflows/' + workflow) return {
+      id: workflow, path: '.github/workflows/ci.yml', name: 'CI',
+    };
     if (endpoint.startsWith('actions/workflows/')) return {
       workflow_runs: [{ ...cancelled }, { ...prior }, { ...current }],
     };
@@ -224,4 +228,37 @@ test('accepts only the exact reviewed workflow blob on the authenticated merge c
     githubApi, executionCommit: SOURCE, baseCommit: 'c'.repeat(40),
     runHeadSha: merge, reviewedWorkflowBlob: workflowBlob,
   }), /parent|base|source/i);
+});
+
+
+test('rejects CI evidence from a different workflow file even if job names and ID look valid', () => {
+  assert.throws(() => validate([
+    mkRun(199, { path: '.github/workflows/other.yml' }), mkRun(200),
+  ]), /workflow|path/i);
+});
+
+test('collector searches a second authenticated page for an older qualifying matrix', async () => {
+  const current = mkRun(200), prior = mkRun(198);
+  const unrelated = Array.from({ length: 100 }, (_, i) => mkRun(300 + i, {
+    head_sha: 'c'.repeat(40),
+  }));
+  const githubApi = async endpoint => {
+    if (endpoint === 'actions/runs/200') return { ...current };
+    if (endpoint === 'actions/workflows/' + workflow) return {
+      id: workflow, path: '.github/workflows/ci.yml', name: 'CI',
+    };
+    if (endpoint.startsWith('actions/workflows/') && endpoint.includes('/runs?')) {
+      return { workflow_runs: endpoint.includes('page=2') ? [prior] : unrelated };
+    }
+    if (endpoint === 'actions/runs/200/jobs?per_page=100' ||
+        endpoint === 'actions/runs/198/jobs?per_page=100') return {
+      total_count: 2, jobs: current.jobs,
+    };
+    throw Error('Unexpected GitHub endpoint: ' + endpoint);
+  };
+  const { collectT04ValidationRuns } = await import('./t04-acceptance-ci-evidence.mjs');
+  const result = await collectT04ValidationRuns({
+    githubApi, reviewedCommit: SOURCE, executionCommit: SOURCE, currentRunId: 200,
+  });
+  assert.deepEqual(result.runIds, [198, 200]);
 });
