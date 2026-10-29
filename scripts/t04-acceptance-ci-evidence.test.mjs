@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { verifyT04ValidationRuns } from './t04-acceptance-ci-evidence.mjs';
 
 const SOURCE = 'a'.repeat(40);
@@ -56,4 +58,12 @@ test('refuses a run with a different merge/source commit even when PR head match
 
 test('refuses evidence if current acceptance run is absent', () => {
   assert.throws(() => validate([mkRun(198), mkRun(199)]), /current/i);
+});
+
+
+test('production acceptance gate consumes verified CI runs instead of asserting synthetic repeats', () => {
+  const gate = fs.readFileSync(fileURLToPath(new URL('./t04-hardening-acceptance-gate.mjs', import.meta.url)), 'utf8');
+  assert.match(gate, /await collectT04ValidationRuns\\(/);
+  assert.match(gate, /validatedCiRuns: VALIDATED_CI\\.runIds/);
+  assert.doesNotMatch(gate, /GITHUB-ACTIONS-37974556018-/);
 });
