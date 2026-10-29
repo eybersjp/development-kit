@@ -76,6 +76,23 @@ assert.match(receipts.reviewedCommit || '', /^[a-f0-9]{40}$/,
   'Three independent role-scoped review receipts must bind an immutable reviewed commit');
 assert.ok(Array.isArray(receipts.reviews), 'Review receipts must have a review array');
 const REVIEWED_SOURCE = receipts.reviewedCommit;
+// The reviewed commit R may precede a receipts-only commit C. GitHub's
+// authenticated PR event binds C, and checkout must be exactly C; the complete
+// Git index comparison below proves C and R have identical production source.
+assert.ok(process.env.GITHUB_EVENT_PATH,
+  'Authenticated pull-request event payload is required');
+const githubEvent = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+assert.equal(githubEvent.number, 70,
+  'Acceptance may only evaluate the production T04 PR #70');
+assert.equal(githubEvent.pull_request?.head?.repo?.full_name, 'eybersjp/development-kit');
+const EXECUTION_SOURCE = githubEvent.pull_request?.head?.sha;
+assert.match(EXECUTION_SOURCE || '', /^[a-f0-9]{40}$/,
+  'Authenticated PR execution head SHA is required');
+const checkoutHead = execFileSync('git', ['rev-parse', 'HEAD'], {
+  cwd: ROOT, encoding: 'utf8',
+}).trim();
+assert.equal(checkoutHead, EXECUTION_SOURCE,
+  'Acceptance checkout does not match authenticated PR execution head');
 const BASELINE_CI = 'https://github.com/eybersjp/development-kit/actions/runs/' + process.env.GITHUB_RUN_ID;
 
 async function githubApi(endpoint) {
@@ -292,6 +309,7 @@ const INDEPENDENT_REVIEW = reviewerReceipts.get('code-reviewer').reviewUrl;
 // immutable source. Never turn a single current run into fabricated repeats.
 const VALIDATED_CI = await collectT04ValidationRuns({
   githubApi, reviewedCommit: REVIEWED_SOURCE,
+  executionCommit: EXECUTION_SOURCE,
   currentRunId: Number(process.env.GITHUB_RUN_ID),
 });
 // An open risk-3 source or Windows crash-durability blocker cannot be
