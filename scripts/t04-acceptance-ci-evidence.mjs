@@ -80,25 +80,85 @@ export async function collectT04ValidationRuns({ githubApi, reviewedCommit, exec
   const response = await githubApi('actions/workflows/' + current.workflow_id +
     '/runs?event=pull_request&per_page=100');
   assert.ok(Array.isArray(response.workflow_runs), 'Authenticated workflow runs unavailable');
-  const prior = response.workflow_runs.find(run =>
+  const matching = response.workflow_runs.filter(run =>
     run.id !== currentRunId &&
     run.workflow_id === current.workflow_id &&
     run.head_sha === current.head_sha &&
+    run.event === 'pull_request' &&
+    run.name === 'CI' &&
+    run.head_repository?.full_name === REPO &&
     run.pull_requests?.some(pr => pr.number === 70 &&
       pr.head?.sha === executionCommit &&
       pr.base?.sha === current.pull_requests?.find(p => p.number === 70 &&
         p.head?.sha === executionCommit)?.base?.sha));
-  assert.ok(prior, 'A second exact-source CI run is missing; repeat the full matrix');
-  const runs = [prior, current];
-  for (const run of runs) {
+  assert.ok(matching.length > 0,
+    'A second exact-source CI run is missing; repeat the full matrix');
+
+  const readJobs = async run => {
     const data = await githubApi('actions/runs/' + run.id + '/jobs?per_page=100');
-    assert.ok(Array.isArray(data.jobs) && data.total_count <= data.jobs.length,
-      'Complete authenticated GitHub job evidence is required');
-    run.jobs = data.jobs;
+    assert.ok(Array.isArray(data.jobs) && Number.isSafeInteger(data.total_count) &&
+      data.total_count <= data.jobs.length,
+    'Complete authenticated GitHub job evidence is required');
+    return { ...run, jobs: data.jobs };
+  };
+  const currentWithJobs = await readJobs(current);
+  const hasFullMatrix = run => JOB_NAMES.every(name => {
+    const jobs = run.jobs.filter(job => job.name === name);
+    return jobs.length === 1 && jobs[0].status === 'completed' &&
+      jobs[0].conclusion === 'success';
+  });
+  assert.ok(hasFullMatrix(currentWithJobs),
+    'Current acceptance execution has no successful complete Ubuntu/Windows matrix');
+  // A cancelled or failed older execution cannot prove a second matrix, but
+  // must not hide an earlier authenticated successful execution either.
+  // Malformed/paginated GitHub evidence still fails closed in readJobs.
+  for (const candidate of matching) {
+    const prior = await readJobs(candidate);
+    if (!hasFullMatrix(prior)) continue;
+    return verifyT04ValidationRuns({
+      runs: [prior, currentWithJobs], reviewedCommit, executionCommit,
+      currentRunId, expectedWorkflowId: current.workflow_id,
+    });
   }
-  return verifyT04ValidationRuns({
-    runs, reviewedCommit, executionCommit, currentRunId,
-    expectedWorkflowId: current.workflow_id,
+  assert.fail('No second successful complete Ubuntu/Windows CI matrix exists');
+}
+
+/**
+ * Authenticate the workflow GitHub executed for PR #70, not merely the YAML
+ * in the explicitly checked-out head. pull_request workflows are selected
+ * from the merge ref; the merge commit must have the same exact parents as
+ * both validated executions, and its CI workflow blob must match reviewed R.
+ * A changed merge-ref or missing tree is a fail-closed source mismatch.
+ */
+export async function assertT04ExecutedWorkflowMatchesReviewed({
+  githubApi, executionCommit, baseCommit, runHeadSha, reviewedWorkflowBlob,
+}) {
+  for (const [label, sha] of Object.entries({
+    executionCommit, baseCommit, runHeadSha, reviewedWorkflowBlob,
+  })) assert.match(sha || '', /^[a-f0-9]{40}$/, label + ' must be an immutable SHA');
+  const ref = await githubApi('git/ref/pull/70/merge');
+  assert.equal(ref?.ref, 'refs/pull/70/merge', 'Unexpected PR merge ref');
+  const mergeSha = ref.object?.sha;
+  assert.match(mergeSha || '', /^[a-f0-9]{40}$/, 'PR merge SHA unavailable');
+  assert.ok(runHeadSha === executionCommit || runHeadSha === mergeSha,
+    'CI run head does not match the authenticated execution or merge commit');
+  const commit = await githubApi('git/commits/' + mergeSha);
+  assert.deepEqual(commit?.parents?.map(p => p.sha), [baseCommit, executionCommit],
+    'PR merge ref parents differ from validated CI source and base');
+  assert.match(commit?.tree?.sha || '', /^[a-f0-9]{40}$/, 'PR merge tree missing');
+  const tree = await githubApi('git/trees/' + commit.tree.sha + '?recursive=1');
+  assert.ok(!tree?.truncated && Array.isArray(tree?.tree),
+    'Authenticated PR merge workflow tree missing or truncated');
+  const blobs = tree.tree.filter(item => item.path === '.github/workflows/ci.yml' &&
+    item.type === 'blob');
+  assert.equal(blobs.length, 1, 'CI workflow missing from authenticated PR merge tree');
+  assert.equal(blobs[0].sha, reviewedWorkflowBlob,
+    'Executed PR merge workflow differs from independently reviewed workflow source');
+  return Object.freeze({
+    mergeCommit: mergeSha,
+    executionCommit,
+    baseCommit,
+    workflowBlob: reviewedWorkflowBlob,
   });
 }
 
