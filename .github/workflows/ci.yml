@@ -19,6 +19,10 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+        with:
+          # T04 risk-3 verification must test immutable PR head, not a moving
+          # pull-request merge ref. Other PRs retain merge-integration testing.
+          ref: ${{ github.head_ref == 'fix/v0.12-t04-state-engine-hardening' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -129,6 +133,10 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+        with:
+          # T04 risk-3 verification must test immutable PR head, not a moving
+          # pull-request merge ref. Other PRs retain merge-integration testing.
+          ref: ${{ github.head_ref == 'fix/v0.12-t04-state-engine-hardening' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -241,6 +249,10 @@ jobs:
     steps:
       - name: Check out validated source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+        with:
+          # T04 risk-3 verification must test immutable PR head, not a moving
+          # pull-request merge ref. Other PRs retain merge-integration testing.
+          ref: ${{ github.head_ref == 'fix/v0.12-t04-state-engine-hardening' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
