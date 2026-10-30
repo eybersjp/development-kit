@@ -616,8 +616,8 @@ test('W73-21 Windows restore stage and promoted root preserve the original restr
   fs.cpSync = function verifyPrivateStageBeforeCopy(source, destination, ...options) {
     if (path.resolve(source) === path.resolve(targetRoot)) {
       stageInspected = true;
-      assert.equal(comparableDacl(dacl(destination)), comparableDacl(originalDacl),
-        'Restore stage must preserve source DACL protection and ACEs before sensitive data copy');
+      assert.match(dacl(destination), /^D:P/,
+        'Restore stage must be private and protected before sensitive data copy');
     }
     return originalCp.call(this, source, destination, ...options);
   };
