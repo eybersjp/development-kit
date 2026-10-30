@@ -1131,7 +1131,7 @@ test('T04-H56 pending recovery preserves canonical evidence when snapshot witnes
   const originalRead = fs.readFileSync;
   let denied = 0;
   fs.readFileSync = function denySnapshotWitnessRead(target, ...args) {
-    if (String(target) === paths.snapshot) {
+    if (path.basename(String(target)) === path.basename(paths.snapshot)) {
       denied += 1;
       const error = new Error('Synthetic snapshot witness permission denial');
       error.code = 'EACCES';
