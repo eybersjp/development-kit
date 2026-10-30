@@ -99,7 +99,12 @@ jobs:
         run: npm run execution-capsule:test
 
       - name: Validate v0.12 reduced-release scope
+        if: ${{ !(github.head_ref == 'feature/v0.13-state-engine-v2' || github.head_ref == 'test/v013-windows-acl-preservation-20261030') }}
         run: npm run release-scope:v012
+
+      - name: Validate v0.13 State Engine V2 increment
+        if: ${{ (github.head_ref == 'feature/v0.13-state-engine-v2' || github.head_ref == 'test/v013-windows-acl-preservation-20261030') }}
+        run: npm run v013-state-engine-v2:test
 
       - name: Validate v0.12 non-T04 feature increments
         run: |
@@ -120,7 +125,26 @@ jobs:
         run: npm pack --dry-run
 
       - name: Verify installed v0.12 consumer package
+        if: ${{ !(github.head_ref == 'feature/v0.13-state-engine-v2' || github.head_ref == 'test/v013-windows-acl-preservation-20261030') }}
         run: npm run consumer-smoke:v012
 
       - name: Validate exact release command
+        if: ${{ !(github.head_ref == 'feature/v0.13-state-engine-v2' || github.head_ref == 'test/v013-windows-acl-preservation-20261030') }}
         run: npm run release:validate
+
+      - name: Validate v0.13 full compatibility regression
+        if: ${{ (github.head_ref == 'feature/v0.13-state-engine-v2' || github.head_ref == 'test/v013-windows-acl-preservation-20261030') }}
+        run: npm run v013:regression
+
+  acl_diagnostic:
+    name: W73-21 Windows NTFS ACL diagnostic (test-only)
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'test/v013-windows-acl-preservation-20261030' }}
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Run focused W73-21 NTFS DACL regression
+        run: node --test --test-name-pattern "W73-21" scripts/state-engine-v013.test.mjs
