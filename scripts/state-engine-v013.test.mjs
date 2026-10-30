@@ -468,3 +468,30 @@ test('W73-18 recovery cannot acknowledge candidate promotion without retrying pa
   assert.equal(recovered.outcome, 'promoted-original-retained');
   assert.equal(fs.existsSync(recovered.displacedOriginal), true);
 });
+
+
+test('W73-19 Windows case alias cannot bypass the existing restore transaction witness', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('NTFS case-insensitive alias behavior requires Windows'); return;
+  }
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-ntfs-case-alias-');
+  const targetRoot = path.join(parent, 'MixedCaseProject');
+  const aliasRoot = path.join(parent, 'mixedcaseproject');
+  fs.mkdirSync(targetRoot);
+  fs.writeFileSync(path.join(targetRoot, 'original.txt'), 'ORIGINAL-CASE-ALIAS');
+  const first = restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true });
+  assert.ok(first.displacedOriginal);
+  const journalBefore = fs.readFileSync(first.transactionLog, 'utf8');
+  const moved = path.join(parent, 'unpersisted-published-root');
+  fs.renameSync(targetRoot, moved);
+  assert.throws(
+    () => restoreLegacyBackup({ backupPath, targetRoot: aliasRoot, confirmOffline: true }),
+    /terminal.*(root|witness)|incomplete restore|restore witnesses/i,
+    'Case alias must not start a new transaction over an unresolved original',
+  );
+  assert.equal(fs.readFileSync(first.transactionLog, 'utf8'), journalBefore);
+  assert.equal(fs.existsSync(aliasRoot), false);
+  assert.equal(fs.readFileSync(path.join(first.displacedOriginal, 'original.txt'), 'utf8'),
+    'ORIGINAL-CASE-ALIAS');
+});
