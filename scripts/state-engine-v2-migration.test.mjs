@@ -734,7 +734,7 @@ test('T04-H28 restore journals preserve original after a simulated process death
     'if(process.platform==="win32") {',
     ' fs.writeFileSync=function(fd,content,...rest){',
     '  const out=write.call(this,fd,content,...rest);',
-    '  if(typeof fd==="number" && String(content).includes(\\\'"phase":"ORIGINAL_DISPLACED"\\\')) process.exit(91);',
+    '  if(typeof fd==="number" && String(content).includes(\'"phase":"ORIGINAL_DISPLACED"\')) process.exit(91);',
     '  return out;',
     ' };',
     '} else {',
