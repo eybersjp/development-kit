@@ -124,10 +124,15 @@ for (;;) {
 }
 // A closed issue is necessary, not sufficient: retain independent physical
 // power-loss evidence and externally verified artifact provenance.
-for (const issueNumber of [71, 73]) {
-  const issue = await api('issues/' + issueNumber);
-  assert.equal(issue.state, 'closed', 'Mandatory T04 blocker remains open: #' + issueNumber);
-}
+const durabilityIssue = await api('issues/73');
+assert.equal(durabilityIssue.state, 'closed', 'Physical NTFS durability blocker #73 remains open');
+assert.notEqual(durabilityIssue.state_reason, 'not_planned',
+  'Issue #73 cannot be waived instead of resolved');
+const acceptanceTrackingIssue = await api('issues/71');
+assert.notEqual(acceptanceTrackingIssue.state_reason, 'not_planned',
+  'Risk-3 acceptance blocker #71 cannot be waived');
+// Issue #71 is the acceptance tracking ticket and may be closed AFTER the
+// persisted ACCEPTED verdict; requiring closure here would deadlock the gate.
 const physical = receipts.windowsPhysicalPowerLoss;
 assert.ok(physical && physical.reviewedCommit === reviewedCommit
   && typeof physical.artifactUrl === 'string'
