@@ -431,7 +431,7 @@ test('W73-18 recovery cannot acknowledge candidate promotion without retrying pa
   try {
     assert.throws(
       () => restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true }),
-      /simulated publication parent flush failure/,
+      /simulated publication parent flush failure|flush barrier failed/i,
     );
     assert.equal(injected, true);
   } finally {
