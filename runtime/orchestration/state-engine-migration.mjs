@@ -933,8 +933,12 @@ export function validateWindowsDurabilityHelperResult(operation, result, expecte
     try {
       const a = fs.lstatSync(actual, { bigint: true });
       const b = fs.lstatSync(requested, { bigint: true });
-      return a.isDirectory() && b.isDirectory() &&
-        !a.isSymbolicLink() && !b.isSymbolicLink() &&
+      // Rename also applies to the retained V1 journal file, not only to
+      // directories. Both aliases must identify the same ordinary object
+      // of the same kind; never follow a symlink or accept a missing path.
+      const sameKind = (a.isDirectory() && b.isDirectory()) ||
+        (a.isFile() && b.isFile());
+      return sameKind && !a.isSymbolicLink() && !b.isSymbolicLink() &&
         a.ino !== 0n && a.dev === b.dev && a.ino === b.ino;
     } catch {
       return false;
