@@ -540,14 +540,14 @@ test('W73-21 Windows restore stage and promoted root preserve the original restr
   }
   const restrict = aclScript([
     "$ErrorActionPreference='Stop'",
-    '$acl=Get-Acl -LiteralPath $env:DKF_TEST_ACL_PATH',
+    '$acl=[System.IO.Directory]::GetAccessControl($env:DKF_TEST_ACL_PATH)',
     '$acl.SetAccessRuleProtection($true,$false)',
     '$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User',
     '$rights=[System.Security.AccessControl.FileSystemRights]::FullControl',
     '$flags=[System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit',
     '$rule=[System.Security.AccessControl.FileSystemAccessRule]::new($sid,$rights,$flags,[System.Security.AccessControl.PropagationFlags]::None,[System.Security.AccessControl.AccessControlType]::Allow)',
     '$acl.SetAccessRule($rule)',
-    'Set-Acl -LiteralPath $env:DKF_TEST_ACL_PATH -AclObject $acl',
+    '[System.IO.Directory]::SetAccessControl($env:DKF_TEST_ACL_PATH,$acl)',
   ].join(';'), targetRoot);
   if (restrict.status !== 0) {
     t.skip('Host cannot create restrictive NTFS DACL fixture: ' + String(restrict.stderr).slice(0, 200));
@@ -555,7 +555,7 @@ test('W73-21 Windows restore stage and promoted root preserve the original restr
   }
   function dacl(location) {
     const result = aclScript(
-      "$ErrorActionPreference='Stop'; (Get-Acl -LiteralPath $env:DKF_TEST_ACL_PATH).GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)",
+      "$ErrorActionPreference='Stop'; ([System.IO.Directory]::GetAccessControl($env:DKF_TEST_ACL_PATH)).GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)",
       location,
     );
     assert.equal(result.status, 0, String(result.stderr));
