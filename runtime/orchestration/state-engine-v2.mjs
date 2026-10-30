@@ -1032,7 +1032,9 @@ export function buildStateIndex(snapshot) {
 
   for (const [type, bucket] of Object.entries(snapshot.entities).sort(([a], [b]) => a.localeCompare(b))) {
     for (const [id, record] of Object.entries(bucket).sort(([a], [b]) => a.localeCompare(b))) {
-      const key = `${type}::${id}`;
+      // Encode the tuple rather than concatenating: both identity fields may contain '::'.
+      // This disposable index must never let a filter match another entity's record.
+      const key = JSON.stringify([type, id]);
       records.push({
         key,
         entityType: type,
