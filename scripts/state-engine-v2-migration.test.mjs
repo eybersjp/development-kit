@@ -1047,3 +1047,49 @@ test('T04-H39 backup with trailing dot or space path alias is refused before res
   );
   assert.deepEqual(fs.readdirSync(targetRoot), []);
 });
+
+
+test('W73-27 Windows 8.3 ancestor alias cannot bypass an existing restore journal', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('NTFS 8.3 alias regression requires Windows'); return;
+  }
+  const home = os.homedir();
+  const systemRoot = process.env.SystemRoot;
+  assert.ok(systemRoot && path.win32.isAbsolute(systemRoot),
+    'A trusted absolute Windows system directory is required');
+  const cmd = path.win32.join(systemRoot, 'System32', 'cmd.exe');
+  const shortResult = requireSpawnSync(cmd,
+    ['/d', '/c', 'for %I in ("' + home + '") do @echo %~sI'],
+    { encoding: 'utf8', windowsHide: true, timeout: 10_000 });
+  assert.equal(shortResult.status, 0, shortResult.stderr);
+  const shortHome = shortResult.stdout.trim().split(/\\r?\\n/).at(-1).trim();
+  if (!shortHome || shortHome.toLowerCase() === home.toLowerCase()) {
+    t.skip('NTFS 8.3 short names are not enabled for this test volume'); return;
+  }
+  const originalHome = fs.statSync(home, { bigint: true });
+  const aliasHome = fs.statSync(shortHome, { bigint: true });
+  assert.equal(aliasHome.dev, originalHome.dev);
+  assert.equal(aliasHome.ino, originalHome.ino);
+
+  const source = tempProject(t, 'dk-win-short-journal-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const parent = fs.mkdtempSync(path.join(home, 'dk-win-short-journal-'));
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  const target = path.join(parent, 'project');
+  restoreLegacyBackup({
+    confirmOffline: true, backupPath: migrated.backupPath, targetRoot: target,
+  });
+  const sentinel = path.join(target, 'preserve.txt');
+  fs.writeFileSync(sentinel, 'ORIGINAL-PRESERVED', 'utf8');
+  const shortTarget = path.join(shortHome, path.relative(home, target));
+  assert.notEqual(shortTarget.toLowerCase(), target.toLowerCase(),
+    'The alias test must use a different textual path for the same physical project');
+
+  assert.throws(() => restoreLegacyBackup({
+    confirmOffline: true, backupPath: migrated.backupPath,
+    targetRoot: shortTarget, overwrite: true,
+  }), /alias|journal|witness|recovery|incomplete/i,
+  'A differently spelled ancestor must not bypass an existing terminal journal');
+  assert.equal(fs.readFileSync(sentinel, 'utf8'), 'ORIGINAL-PRESERVED');
+});
