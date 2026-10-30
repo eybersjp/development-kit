@@ -928,17 +928,32 @@ export function validateWindowsDurabilityHelperResult(operation, result, expecte
         path.win32.normalize(requested).toLowerCase()) return true;
     // Windows may expand an 8.3 path component (RUNNER~1 -> runneradmin)
     // while producing the helper response. Require both spellings to resolve
-    // to the same ordinary directory identity; never accept mere textual
-    // similarity, a reparse point, or a nonexistent destination.
+    // to the same ordinary directory or file identity; never accept mere
+    // textual similarity, a reparse point, or a nonexistent destination.
     try {
       const a = fs.lstatSync(actual, { bigint: true });
       const b = fs.lstatSync(requested, { bigint: true });
-      return a.isDirectory() && b.isDirectory() &&
-        !a.isSymbolicLink() && !b.isSymbolicLink() &&
+      // Rename also applies to the retained V1 journal file, not only to
+      // directories. Both aliases must identify the same ordinary object
+      // of the same kind; never follow a symlink or accept a missing path.
+      const sameKind = (a.isDirectory() && b.isDirectory()) ||
+        (a.isFile() && b.isFile());
+      return sameKind && !a.isSymbolicLink() && !b.isSymbolicLink() &&
         a.ino !== 0n && a.dev === b.dev && a.ino === b.ino;
     } catch {
       return false;
     }
+  };
+  // After a successful rename the source no longer exists, so its inode
+  // cannot be compared directly. An expanded Windows 8.3 ancestor alias is
+  // safe to recognize by the identical leaf name and the live identity of
+  // the source parent directory. Never accept a different leaf or parent.
+  const sameRenamedSource = (actual, requested) => {
+    if (samePath(actual, requested)) return true;
+    if (typeof actual !== 'string' || typeof requested !== 'string') return false;
+    return path.win32.basename(actual).toLowerCase() ===
+        path.win32.basename(requested).toLowerCase() &&
+      samePath(path.win32.dirname(actual), path.win32.dirname(requested));
   };
   if (operation === 'CreateSecureStage') {
     if (result.operation !== operation || result.protected !== true ||
@@ -957,11 +972,32 @@ export function validateWindowsDurabilityHelperResult(operation, result, expecte
       || String(profile.fileSystem || '').toUpperCase() !== 'NTFS') {
     invalid('storage profile');
   }
-  if (operation === 'Probe') return result;
+  // The helper's success flags alone are insufficient: the response must
+  // attest to the exact paths requested for this transaction. On Windows,
+  // samePath also accepts a verified ordinary-directory 8.3 alias.
+  if (operation === 'Probe') {
+    if (expected.Path !== undefined && !samePath(profile.path, expected.Path)) {
+      invalid('storage profile path');
+    }
+    return result;
+  }
   if (result.operation !== operation) invalid('operation');
   if (operation === 'FlushDirectory') {
+    if (expected.Path !== undefined && !samePath(profile.path, expected.Path)) {
+      invalid('directory flush path');
+    }
     if (result.flushed !== true) invalid('directory flush');
   } else if (operation === 'Rename') {
+    if (expected.From !== undefined && !sameRenamedSource(result.source, expected.From)) {
+      invalid('rename source path');
+    }
+    if (expected.To !== undefined && !samePath(result.destination, expected.To)) {
+      invalid('rename destination path');
+    }
+    if (expected.To !== undefined &&
+        !samePath(profile.path, path.win32.dirname(expected.To))) {
+      invalid('rename parent-directory flush path');
+    }
     if (result.renamed !== true || result.parentFlushCompleted !== true) {
       invalid('rename or parent-directory flush');
     }
