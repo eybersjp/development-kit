@@ -506,6 +506,8 @@ function schemaDocument() {
 function createInitialStateFile(filePath, content) {
   const directory = path.dirname(filePath);
   const dirFd = fs.openSync(directory, 'r');
+  let temporary = null;
+  let fd;
   try {
     const pinned = fs.fstatSync(dirFd);
     const observed = fs.lstatSync(directory);
@@ -515,21 +517,49 @@ function createInitialStateFile(filePath, content) {
     }
     const root = path.dirname(path.dirname(directory));
     assertStateRootRealpathSafe({ root, stateRoot: directory });
-    const destination = process.platform === 'linux'
-      ? path.join('/proc/self/fd/' + dirFd, path.basename(filePath))
-      : filePath;
-    let fd;
-    try {
-      fd = fs.openSync(destination, 'wx', 0o600);
-    } catch (error) {
-      if (error.code === 'EEXIST') return false;
-      throw error;
-    }
-    try {
+    const pinnedDirectory = process.platform === 'linux' ? '/proc/self/fd/' + dirFd : directory;
+    const destination = path.join(pinnedDirectory, path.basename(filePath));
+
+    if (content === '') {
+      // An empty ledger is already a complete valid file at exclusive create.
+      // O_EXCL ensures a competing writer's committed ledger is never replaced.
+      try {
+        fd = fs.openSync(destination, 'wx', 0o600);
+      } catch (error) {
+        if (error.code === 'EEXIST') return false;
+        throw error;
+      }
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+      fd = undefined;
+    } else {
+      // Publishing a non-empty schema/snapshot/index with O_EXCL exposes an
+      // incomplete file to concurrent readers and leaves invalid state if the
+      // process dies before fsync. Prepare and fsync privately, then create
+      // the canonical name with an atomic, non-replacing same-directory link.
+      // No rename-overwrite is allowed; on unsupported filesystems fail closed.
+      temporary = path.join(pinnedDirectory,
+        path.basename(filePath) + '.tmp-' + process.pid + '-' + crypto.randomUUID());
+      fd = fs.openSync(temporary, 'wx', 0o600);
       fs.writeFileSync(fd, content, 'utf8');
       fs.fsyncSync(fd);
-    } finally {
       fs.closeSync(fd);
+      fd = undefined;
+      const beforePublish = fs.lstatSync(directory);
+      if (!beforePublish.isDirectory() || beforePublish.isSymbolicLink() ||
+        beforePublish.dev !== pinned.dev || beforePublish.ino !== pinned.ino) {
+        throw new StateEngineError('State Engine directory changed before initial publication');
+      }
+      try {
+        fs.linkSync(temporary, destination);
+      } catch (error) {
+        if (error.code === 'EEXIST') return false;
+        throw error;
+      }
+      // Remove the staging name immediately, before any observer can treat
+      // a temporary second hard link as an enduring canonical-file hazard.
+      fs.unlinkSync(temporary);
+      temporary = null;
     }
     const latest = fs.lstatSync(directory);
     if (!latest.isDirectory() || latest.isSymbolicLink() ||
@@ -539,6 +569,12 @@ function createInitialStateFile(filePath, content) {
     flushStateDirectory(directory, dirFd);
     return true;
   } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+    if (temporary !== null) {
+      try { fs.unlinkSync(temporary); } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+    }
     fs.closeSync(dirFd);
   }
 }
@@ -877,8 +913,13 @@ function applyOperations(previousState, operations) {
   return next;
 }
 
+function ownValue(object, key) {
+  return object !== null && object !== undefined && Object.hasOwn(object, key)
+    ? object[key] : undefined;
+}
+
 function ensureEntityBucket(snapshot, type) {
-  if (!snapshot.entities[type]) snapshot.entities[type] = {};
+  if (!Object.hasOwn(snapshot.entities, type)) defineOwnPatchValue(snapshot.entities, type, {});
   return snapshot.entities[type];
 }
 
@@ -893,10 +934,10 @@ export function rebuildSnapshotFromEvents(events) {
     if (event.eventType === 'ENTITY_STATE_INITIALIZED') {
       if (event.entityType === null || event.entityId === null) throw new StateEngineError('State initialization event requires entity identity');
       const bucket = ensureEntityBucket(snapshot, event.entityType);
-      if (bucket[event.entityId]) throw new StateEngineError(`Entity is initialized more than once: ${event.entityType}/${event.entityId}`);
+      if (Object.hasOwn(bucket, event.entityId)) throw new StateEngineError(`Entity is initialized more than once: ${event.entityType}/${event.entityId}`);
       const state = cloneSerializable(event.payload.state, 'Initialized state');
       const revision = stateRevision(event.payload.stateRevision);
-      bucket[event.entityId] = {
+      defineOwnPatchValue(bucket, event.entityId, {
         stateRevision: revision,
         state,
         lastEventSequence: event.sequence,
@@ -907,11 +948,11 @@ export function rebuildSnapshotFromEvents(events) {
           contractId: event.contractId,
           runId: event.runId,
         },
-      };
+      });
     } else if (event.eventType === 'ENTITY_STATE_UPDATED') {
       if (event.entityType === null || event.entityId === null) throw new StateEngineError('State update event requires entity identity');
       const bucket = ensureEntityBucket(snapshot, event.entityType);
-      const current = bucket[event.entityId];
+      const current = ownValue(bucket, event.entityId);
       if (!current) throw new StateEngineError(`State update references unknown entity: ${event.entityType}/${event.entityId}`);
       const revision = stateRevision(event.payload.stateRevision);
       if (revision < current.stateRevision) {
@@ -977,7 +1018,7 @@ export function validateStateSnapshot(snapshot) {
 
 function indexArrayPush(map, key, value) {
   if (!key) return;
-  if (!map[key]) map[key] = [];
+  if (!Object.hasOwn(map, key)) defineOwnPatchValue(map, key, []);
   if (!map[key].includes(value)) map[key].push(value);
 }
 
@@ -1528,7 +1569,7 @@ export function appendEntityState({
 
   return withStateLock(rootDir, () => {
     const currentSnapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
-    const current = currentSnapshot.entities[normalizedType]?.[normalizedId] ?? null;
+    const current = ownValue(ownValue(currentSnapshot.entities, normalizedType), normalizedId) ?? null;
 
     if (current && revision < current.stateRevision) {
       throw new StateEngineError('Refusing stateRevision regression for ' + normalizedType + '/' + normalizedId);
@@ -1587,14 +1628,14 @@ export function loadEntityState(type, id, rootDir = process.cwd()) {
   const normalizedType = entityType(type);
   const normalizedId = entityId(id);
   const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true });
-  const record = snapshot?.entities?.[normalizedType]?.[normalizedId];
+  const record = ownValue(ownValue(snapshot?.entities, normalizedType), normalizedId);
   return record ? structuredClone(record.state) : null;
 }
 
 export function listEntityRecords(type, rootDir = process.cwd()) {
   const normalizedType = entityType(type);
   const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true });
-  const bucket = snapshot?.entities?.[normalizedType] ?? {};
+  const bucket = ownValue(snapshot?.entities, normalizedType) ?? {};
   return Object.entries(bucket)
     .map(([id, record]) => ({
       entityId: id,
@@ -1608,7 +1649,7 @@ export function listEntityRecords(type, rootDir = process.cwd()) {
 export function loadLatestEntityState(type, rootDir = process.cwd()) {
   const normalizedType = entityType(type);
   const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true });
-  const bucket = snapshot?.entities?.[normalizedType] ?? {};
+  const bucket = ownValue(snapshot?.entities, normalizedType) ?? {};
   const records = Object.entries(bucket)
     .map(([id, record]) => ({ id, record }))
     .sort((a, b) => b.record.lastEventSequence - a.record.lastEventSequence || a.id.localeCompare(b.id));
@@ -1647,7 +1688,7 @@ export function queryStateIndex({
 
   let keys = null;
   for (const [field, value] of filters) {
-    const current = new Set(index[field][String(value)] ?? []);
+    const current = new Set(ownValue(index[field], String(value)) ?? []);
     keys = keys === null ? current : new Set([...keys].filter((key) => current.has(key)));
   }
   return index.records.filter((record) => keys.has(record.key)).map((record) => structuredClone(record));
