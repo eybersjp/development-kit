@@ -1325,3 +1325,26 @@ for (const scenario of [
     assert.equal(recoverLegacyRestore({ targetRoot: root, confirmOffline: true }).recovered, false);
   });
 }
+
+
+/**
+ * T04-H55/H56 negative control: a normal exception is NOT a forced SIGKILL.
+ * A crash-test assertion must reject this even when the process exits nonzero.
+ */
+test('T04-H55/H56 forced-termination witness rejects ordinary exception exit', (t) => {
+  const witnessDir = tempProject(t, 'dk-false-kill-witness-');
+  const exitWitness = path.join(witnessDir, 'ordinary-exit.txt');
+  const script = [
+    'import fs from "node:fs";',
+    'process.on("exit",()=>fs.writeFileSync(process.argv[1],"ORDINARY_EXIT"));',
+    'throw Error("ordinary recovery failure");',
+  ].join('\n');
+  const child = requireSpawnSync(process.execPath,
+    ['--input-type=module', '-e', script, exitWitness], { encoding: 'utf8' });
+  assert.equal(fs.existsSync(exitWitness), true, 'Negative control must execute its normal exit hook');
+  assert.throws(
+    () => assertForcedTermination(child, exitWitness, 'ordinary exception negative control'),
+    /forced termination|SIGKILL/i,
+    'A nonzero ordinary exception must not be accepted as a real process kill',
+  );
+});
