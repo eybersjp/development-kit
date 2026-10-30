@@ -940,6 +940,17 @@ export function validateWindowsDurabilityHelperResult(operation, result, expecte
       return false;
     }
   };
+  // After a successful rename the source no longer exists, so its inode
+  // cannot be compared directly. An expanded Windows 8.3 ancestor alias is
+  // safe to recognize by the identical leaf name and the live identity of
+  // the source parent directory. Never accept a different leaf or parent.
+  const sameRenamedSource = (actual, requested) => {
+    if (samePath(actual, requested)) return true;
+    if (typeof actual !== 'string' || typeof requested !== 'string') return false;
+    return path.win32.basename(actual).toLowerCase() ===
+        path.win32.basename(requested).toLowerCase() &&
+      samePath(path.win32.dirname(actual), path.win32.dirname(requested));
+  };
   if (operation === 'CreateSecureStage') {
     if (result.operation !== operation || result.protected !== true ||
         !samePath(result.path, expected.Path)) invalid('private stage or path');
@@ -973,7 +984,7 @@ export function validateWindowsDurabilityHelperResult(operation, result, expecte
     }
     if (result.flushed !== true) invalid('directory flush');
   } else if (operation === 'Rename') {
-    if (expected.From !== undefined && !samePath(result.source, expected.From)) {
+    if (expected.From !== undefined && !sameRenamedSource(result.source, expected.From)) {
       invalid('rename source path');
     }
     if (expected.To !== undefined && !samePath(result.destination, expected.To)) {
