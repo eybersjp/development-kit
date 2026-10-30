@@ -591,7 +591,7 @@ test('W73-25 native Windows helper cannot acknowledge an unrelated filesystem pa
 
   const rename = {
     operation: 'Rename', source: 'C:\\dk\\stage', destination: 'C:\\dk\\project',
-    profile, renamed: true, parentFlushCompleted: true,
+    profile: { ...profile, path: 'C:\\dk' }, renamed: true, parentFlushCompleted: true,
   };
   assert.deepEqual(
     validateWindowsDurabilityHelperResult('Rename', rename, {
