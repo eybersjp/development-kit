@@ -85,7 +85,16 @@ test('TEST B: First lifecycle interaction -> Require persistent lifecycle state 
   const saved = getCurrentState(rootDir);
   assert.ok(saved, 'State must be persisted to disk');
   assert.equal(saved.currentStage, 'UNDERSTAND');
-  assert.ok(existsSync(join(rootDir, '.development-kit', 'autopilot', 'state', 'current.json')));
+  // v0.13 fresh projects persist in the canonical append-only ledger, not
+  // the pre-migration legacy current.json pointer. The round-trip assertion
+  // above must remain true without inventing a legacy authority file.
+  const canonicalRoot = join(rootDir, '.development-kit', 'state');
+  assert.ok(existsSync(join(canonicalRoot, 'events.jsonl')),
+    'Fresh-project lifecycle history must be durably represented in the canonical ledger');
+  assert.ok(existsSync(join(canonicalRoot, 'snapshot.json')),
+    'The canonical lifecycle snapshot must be materialized');
+  assert.equal(existsSync(join(rootDir, '.development-kit', 'autopilot', 'state', 'current.json')), false,
+    'Fresh V2 projects must not silently create a legacy current.json authority');
 });
 
 test('TEST C: Store a decision naturally -> Destroy in-memory service -> Reinitialize -> Require recall succeeds', async (t) => {

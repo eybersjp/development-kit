@@ -2,12 +2,22 @@
 
 ## Published Baseline
 
-- **Current published release candidate:** v0.11.2 (1 October 2026).
-- **Package version:** 0.11.2.
+- **Current published release baseline:** v0.12.1 (October 2026).
+- **Package version:** 0.12.1.
 - **Core lifecycle:** `UNDERSTAND → DEFINE → DESIGN → PLAN → IMPLEMENT → VERIFY → REVIEW → SIMPLIFY → COMPLETE`.
 - **Public command surface:** 16 workflow commands.
 - **Engineering skills:** 48.
 - **Primary position:** DKF is the reliability control plane for agentic software development — **AI can write it. DKF proves it.**
+
+## v0.13.0 P0 — State Engine V2 T04 (30 October 2026)
+
+- **Actual integration candidate:** draft PR #92, branch `feature/v0.13-state-engine-v2`, based on released v0.12.1. Historical PR #70 and diagnostics #94–#99 are **not** release merge targets.
+- **Test-first diagnostic:** PR #99 reproduced the Windows NTFS case-alias restore-journal bypass (W73-19, CI #41010567167) and orphan displaced-original bypass after journal loss (W73-20, CI #41015062706). Both failed as expected before their narrow corrections.
+- **Validated candidate:** PR #99 commit `51556f841bb07e9ed27436e9156bfff022487de1`, CI #41015133002: Ubuntu and Windows v0.13 regression lanes PASS. Earlier W73-19-only candidate also passed both platforms in CI #41014994052. Hosted CI establishes API/test behavior, **not physical NTFS power-loss durability**.
+- **Ported to PR #92:** commit `37d1d22d94d2fdf005c35bb1d807c059883fc50b` carries 11 verified source/test/documentation files, excluding PR #99's diagnostic-only workflow exception. PR #92 requires fresh exact-head CI after this port.
+- **Safety boundary:** retain original directories, hash-chained restore journals, full Windows legacy-backup restoration, fail-closed publication and recovery, exact-source provenance and v0.12.1 compatibility.
+- **Outstanding blockers:** Issue #73 Windows physical crash-durability evidence; independent P1 review findings on Windows DACL inheritance/preservation and recovery publication-barrier retry; Issues #71/#84 acceptance and distinct independent code, architecture and security approvals. No `ACCEPTED` verdict, merge or release is claimed.
+- Older v0.11/v0.12 sections below preserve their historical engineering snapshots; their then-current release-status statements do not supersede the v0.12.1 baseline above.
 
 ## v0.11.2 Reliability Controls
 
