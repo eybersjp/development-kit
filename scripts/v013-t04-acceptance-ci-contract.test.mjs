@@ -67,10 +67,10 @@ test('T04-A16 acceptance workflow reads exact PR head with least privilege', () 
 });
 
 test('T04-A17 both platform validations execute the immutable PR head, never a synthetic merge', () => {
-  const validate = workflow.split(/^  validate:\\s*$/m)[1]?.split(/^  [a-z][\\w-]*:\\s*$/m)[0] ?? '';
-  const checkout = validate.split(/      - name: Check out repository\\s*\\n/)[1]?.split(/      - name: /)[0] ?? '';
-  assert.match(checkout, /uses: actions\\/checkout@v7/);
-  assert.match(checkout, /ref: \\$\\{\\{ github\\.event\\.pull_request\\.head\\.sha \\|\\| github\\.sha \\}\\}/,
+  const validate = workflow.split(/^  validate:\s*$/m)[1]?.split(/^  [a-z][\w-]*:\s*$/m)[0] ?? '';
+  const checkout = validate.split(/      - name: Check out repository\s*\n/)[1]?.split(/      - name: /)[0] ?? '';
+  assert.match(checkout, /uses: actions\/checkout@v7/);
+  assert.match(checkout, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/,
     'Both Ubuntu and Windows must validate the exact reviewed head, not refs/pull/N/merge');
   assert.match(checkout, /persist-credentials: false/,
     'Validation must not retain checkout credentials from untrusted PR source');
