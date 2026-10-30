@@ -455,3 +455,38 @@ test('V13-CONC-SCHEMA-01 another initializer never observes an incomplete publis
   assert.equal(interleaved, true, 'Fixture must interleave at schema publication');
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+
+test('V13-CONC-BOOTSTRAP-02 interrupted initial hard-link publication is safely recoverable', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-bootstrap-link-');
+  const moduleUrl = new URL('../runtime/orchestration/state-engine-v2.mjs', import.meta.url).href;
+  const childCode = [
+    'import fs from "node:fs";',
+    'import { ensureStateEngineLayout } from ' + JSON.stringify(moduleUrl) + ';',
+    'const link = fs.linkSync;',
+    'fs.linkSync = (...args) => { link(...args); process.exit(77); };',
+    'ensureStateEngineLayout(process.argv[1]);',
+    'process.exit(99);',
+  ].join('\n');
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', childCode, rootDir],
+    { encoding: 'utf8', timeout: 20000 });
+  assert.equal(child.status, 77, 'Fixture must terminate after publication but before staging unlink: ' + child.stderr);
+  const stateRoot = path.join(rootDir, '.development-kit', 'state');
+  const tempNames = fs.readdirSync(stateRoot).filter((name) => name.startsWith('schema.json.tmp-'));
+  assert.equal(tempNames.length, 1, 'Interrupted bootstrap staging link must remain');
+  assert.equal(fs.statSync(path.join(stateRoot, 'schema.json')).nlink, 2);
+  ensureStateEngineLayout(rootDir);
+  assert.equal(fs.statSync(path.join(stateRoot, 'schema.json')).nlink, 1);
+  assert.equal(fs.existsSync(path.join(stateRoot, tempNames[0])), false);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
+
+test('V13-CONC-BOOTSTRAP-03 unrelated hard links remain fail-closed and preserved', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-bootstrap-untrusted-');
+  const paths = ensureStateEngineLayout(rootDir);
+  const external = path.join(rootDir, 'unrelated-schema-link');
+  fs.linkSync(paths.schema, external);
+  assert.throws(() => ensureStateEngineLayout(rootDir), /hard links|multiple hard links/i);
+  assert.equal(fs.existsSync(external), true, 'Unrelated hard link must never be deleted');
+  assert.equal(fs.statSync(paths.schema).nlink, 2);
+});
