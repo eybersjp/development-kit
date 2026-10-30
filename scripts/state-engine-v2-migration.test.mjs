@@ -1062,7 +1062,7 @@ test('W73-27 Windows 8.3 ancestor alias cannot bypass an existing restore journa
     ['/d', '/c', 'for %I in ("' + home + '") do @echo %~sI'],
     { encoding: 'utf8', windowsHide: true, timeout: 10_000 });
   assert.equal(shortResult.status, 0, shortResult.stderr);
-  const shortHome = shortResult.stdout.trim().split(/\\r?\\n/).at(-1).trim();
+  const shortHome = shortResult.stdout.trim().split(/\r?\n/).at(-1).trim();
   if (!shortHome || shortHome.toLowerCase() === home.toLowerCase()) {
     t.skip('NTFS 8.3 short names are not enabled for this test volume'); return;
   }
