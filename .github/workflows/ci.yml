@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, feature/v0.13-state-engine-v2]
-  pull_request:
     branches: [main]
+  pull_request:
+    branches: [main, feature/v0.13-state-engine-v2]
 
 permissions:
   contents: read
