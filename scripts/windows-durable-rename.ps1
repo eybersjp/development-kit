@@ -108,8 +108,8 @@ public static class DkfWindowsDurability {
 
     // Legacy DACLs without SE_DACL_AUTO_INHERITED must not be silently
     // converted into auto-inheriting descriptors by SetNamedSecurityInfoW.
-    // SetFileSecurityW is used only for unprotected legacy DACLs without
-    // the auto-inherited control bit; protected DACLs use the modern API.
+    // SetFileSecurityW is used only for legacy DACLs without the
+    // auto-inherited control bit; exact protected status is verified after.
     [DllImport("advapi32.dll", EntryPoint = "SetFileSecurityW",
         CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -132,7 +132,7 @@ public static class DkfWindowsDurability {
             if (dacl == IntPtr.Zero) {
                 throw new InvalidOperationException("Source has a NULL DACL; refusing staged ACL publication");
             }
-            if (autoInherited || protectedDacl) {
+            if (autoInherited) {
                 uint flags = DACL_SECURITY_INFORMATION |
                     (protectedDacl ? PROTECTED_DACL_SECURITY_INFORMATION :
                                      UNPROTECTED_DACL_SECURITY_INFORMATION);
