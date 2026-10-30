@@ -519,3 +519,70 @@ test('W73-20 Windows case alias cannot bypass an orphan displaced original after
   assert.equal(fs.existsSync(aliasRoot), false);
   assert.equal(fs.readFileSync(path.join(first.displacedOriginal, 'original.txt'), 'utf8'), 'ORIGINAL-ORPHAN');
 });
+
+
+test('W73-21 Windows restore stage and promoted root preserve the original restrictive NTFS DACL', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('NTFS ACL fixture requires Windows'); return;
+  }
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-ntfs-acl-');
+  const targetRoot = path.join(parent, 'restricted-project');
+  fs.mkdirSync(targetRoot);
+  fs.writeFileSync(path.join(targetRoot, 'confidential.txt'), 'CONFIDENTIAL-ORIGINAL');
+
+  function aclScript(script, location) {
+    return spawnSync('powershell.exe',
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+      { encoding: 'utf8', windowsHide: true, shell: false, timeout: 30000,
+        env: { ...process.env, DKF_TEST_ACL_PATH: location } });
+  }
+  const restrict = aclScript([
+    "$ErrorActionPreference='Stop'",
+    '$acl=[System.IO.Directory]::GetAccessControl($env:DKF_TEST_ACL_PATH)',
+    '$acl.SetAccessRuleProtection($true,$false)',
+    '$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User',
+    '$rights=[System.Security.AccessControl.FileSystemRights]::FullControl',
+    '$flags=[System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit',
+    '$rule=[System.Security.AccessControl.FileSystemAccessRule]::new($sid,$rights,$flags,[System.Security.AccessControl.PropagationFlags]::None,[System.Security.AccessControl.AccessControlType]::Allow)',
+    '$acl.SetAccessRule($rule)',
+    '[System.IO.Directory]::SetAccessControl($env:DKF_TEST_ACL_PATH,$acl)',
+  ].join(';'), targetRoot);
+  if (restrict.status !== 0) {
+    t.skip('Host cannot create restrictive NTFS DACL fixture: ' + String(restrict.stderr).slice(0, 200));
+    return;
+  }
+  function dacl(location) {
+    const result = aclScript(
+      "$ErrorActionPreference='Stop'; ([System.IO.Directory]::GetAccessControl($env:DKF_TEST_ACL_PATH)).GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)",
+      location,
+    );
+    assert.equal(result.status, 0, String(result.stderr));
+    return result.stdout.trim();
+  }
+  const originalDacl = dacl(targetRoot);
+  assert.notEqual(originalDacl, dacl(parent), 'Fixture must differ from inherited parent DACL');
+
+  const originalCp = fs.cpSync;
+  let stageInspected = false;
+  fs.cpSync = function verifyPrivateStageBeforeCopy(source, destination, ...options) {
+    if (path.resolve(source) === path.resolve(targetRoot)) {
+      stageInspected = true;
+      assert.equal(dacl(destination), originalDacl,
+        'Restore stage must inherit the original restrictive DACL before sensitive files are copied');
+    }
+    return originalCp.call(this, source, destination, ...options);
+  };
+  try {
+    try {
+      restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true });
+    } catch (error) {
+      assert.fail('W73-21 restore error: ' + error.message + ' details=' + JSON.stringify(error.details));
+    }
+  } finally {
+    fs.cpSync = originalCp;
+  }
+  assert.equal(stageInspected, true);
+  assert.equal(dacl(targetRoot), originalDacl, 'Promoted root must preserve original DACL');
+  assert.equal(fs.readFileSync(path.join(targetRoot, 'confidential.txt'), 'utf8'), 'CONFIDENTIAL-ORIGINAL');
+});
