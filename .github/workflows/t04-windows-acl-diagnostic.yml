@@ -1,0 +1,20 @@
+name: T04 Windows ACL diagnostic (not acceptance)
+on:
+  push:
+    branches: [test/v013-t04-windows-acl-20261030]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  ntfs-acl:
+    if: ${{ github.head_ref == 'test/v013-t04-windows-acl-20261030' || github.ref_name == 'test/v013-t04-windows-acl-20261030' }}
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Focused real NTFS restore, ACL and compatibility fixtures
+        run: node --test --test-name-pattern="W73-21|W73-09|T04-H32|AC-015 bundled|W73-12" scripts/state-engine-v013.test.mjs scripts/state-engine-v2-migration.test.mjs
