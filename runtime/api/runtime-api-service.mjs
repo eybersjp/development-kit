@@ -296,7 +296,7 @@ export class RuntimeApiService {
       if (v2Active) {
         try {
           const hasLegacyRevisions = fs.existsSync(directory) &&
-            fs.readdirSync(directory).some((name) => /^revision-\\d{6}\\.json$/.test(name));
+            fs.readdirSync(directory).some((name) => /^revision-\d{6}\.json$/.test(name));
           if (hasLegacyRevisions) {
             v2WorkflowAuthority = hasCompletedStateMigration(this.rootDir) &&
               loadLatestEntityState('autopilot-workflow', this.rootDir) !== null;
