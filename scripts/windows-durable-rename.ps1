@@ -181,29 +181,36 @@ function New-DkfSecureStage([string]$StagePath, [string]$SourcePath) {
     if ([System.IO.Directory]::Exists($stage) -or [System.IO.File]::Exists($stage)) {
         throw 'Secure stage already exists'
     }
-    if (-not [string]::IsNullOrWhiteSpace($SourcePath) -and
-        [System.IO.Directory]::Exists($SourcePath)) {
-        # The stage is a sibling: applying the source descriptor atomically
-        # preserves its custom NTFS access policy before any sensitive copy.
-        $acl = [System.IO.Directory]::GetAccessControl($SourcePath)
-    } else {
-        $acl = New-Object System.Security.AccessControl.DirectorySecurity
-        $acl.SetAccessRuleProtection($true, $false)
-        $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-        $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+
+    # Supply a private maintenance-only DACL *at creation*, never inherit the
+    # sibling parent's potentially wider DACL while private data is staged.
+    $privateAcl = New-Object System.Security.AccessControl.DirectorySecurity
+    $privateAcl.SetAccessRuleProtection($true, $false)
+    $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
         $sid,
         [System.Security.AccessControl.FileSystemRights]::FullControl,
         ([System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
          [System.Security.AccessControl.InheritanceFlags]::ObjectInherit),
         [System.Security.AccessControl.PropagationFlags]::None,
         [System.Security.AccessControl.AccessControlType]::Allow)
-        $acl.AddAccessRule($rule)
+    $privateAcl.AddAccessRule($rule)
+    [System.IO.Directory]::CreateDirectory($stage, $privateAcl) | Out-Null
+
+    $expectedAcl = $privateAcl
+    if (-not [string]::IsNullOrWhiteSpace($SourcePath)) {
+        if (-not [System.IO.Directory]::Exists($SourcePath)) {
+            throw 'Original source root is missing before staging'
+        }
+        # Apply the original security descriptor while the stage is EMPTY.
+        # Failure leaves the original untouched; no data has been copied.
+        $expectedAcl = [System.IO.Directory]::GetAccessControl($SourcePath)
+        [System.IO.Directory]::SetAccessControl($stage, $expectedAcl)
     }
-    [System.IO.Directory]::CreateDirectory($stage, $acl) | Out-Null
     $actual = [System.IO.Directory]::GetAccessControl($stage)
     $access = [System.Security.AccessControl.AccessControlSections]::Access
     if ($actual.GetSecurityDescriptorSddlForm($access) -cne
-        $acl.GetSecurityDescriptorSddlForm($access)) {
+        $expectedAcl.GetSecurityDescriptorSddlForm($access)) {
         throw 'Stage DACL differs from required source security descriptor'
     }
     return $stage
