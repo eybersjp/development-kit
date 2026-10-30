@@ -631,7 +631,7 @@ function validateRestoreRecord(record, previous = null) {
   if (typeof record.targetRoot !== 'string' || path.resolve(record.targetRoot) !== record.targetRoot) {
     throw new StateMigrationError('Restore transaction targetRoot is invalid');
   }
-  if (typeof record.stageName !== 'string' || !/^\.dk-legacy-restore-stage-[a-f0-9]{32}$/.test(record.stageName)) {
+  if (typeof record.stageName !== 'string' || !/^\.dk-legacy-restore-stage-(?:[a-f0-9]{24}-)?[a-f0-9]{32}$/.test(record.stageName)) {
     throw new StateMigrationError('Restore transaction stageName is invalid');
   }
   if (record.existed !== true && record.existed !== false) {
@@ -749,8 +749,16 @@ function orphanRestoreWitnesses(targetRoot) {
   const root = path.resolve(targetRoot);
   const parent = path.dirname(root);
   if (!fs.existsSync(parent)) return [];
+  const scopedPrefix = '.dk-legacy-restore-stage-' + restoreJournalDigest(root) + '-';
   return fs.readdirSync(parent)
-    .filter((name) => /^\.dk-legacy-restore-stage-[a-f0-9]{32}(?:-original)?$/.test(name))
+    .filter((name) =>
+      // New v0.13 stages are bound to this exact target; retained originals
+      // belonging to another sibling project must not block its restore.
+      (name.startsWith(scopedPrefix) &&
+        /^[a-f0-9]{32}(?:-original)?$/.test(name.slice(scopedPrefix.length))) ||
+      // Pre-scoped witnesses cannot be safely attributed without a journal.
+      // Keep the historical conservative fail-closed behavior for those.
+      /^\.dk-legacy-restore-stage-[a-f0-9]{32}(?:-original)?$/.test(name))
     .map((name) => path.join(parent, name))
     .sort();
 }
@@ -1082,12 +1090,13 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
 
   const latest = latestRestoreTransaction(records);
   const tx = latest.prepared;
-  const expectedStage = '.dk-legacy-restore-stage-' + tx.transactionId;
-  if (tx.targetRoot !== root || tx.stageName !== expectedStage) {
+  const legacyStage = '.dk-legacy-restore-stage-' + tx.transactionId;
+  const scopedStage = '.dk-legacy-restore-stage-' + restoreJournalDigest(root) + '-' + tx.transactionId;
+  if (tx.targetRoot !== root || ![legacyStage, scopedStage].includes(tx.stageName)) {
     throw new StateMigrationError('Restore transaction witness does not match requested target root');
   }
 
-  const stage = path.join(parent, expectedStage);
+  const stage = path.join(parent, tx.stageName);
   const displaced = stage + '-original';
 
   if (latest.last.phase === RESTORE_TERMINAL_PHASE) {
@@ -1338,7 +1347,8 @@ export function restoreLegacyBackup({
   syncRestoreParent(parent);
 
   const transactionId = crypto.randomBytes(16).toString('hex');
-  const stage = path.join(parent, '.dk-legacy-restore-stage-' + transactionId);
+  const stage = path.join(parent, '.dk-legacy-restore-stage-' +
+    restoreJournalDigest(resolvedRoot) + '-' + transactionId);
   const displaced = stage + '-original';
   fs.mkdirSync(stage, { mode: 0o700 });
 
