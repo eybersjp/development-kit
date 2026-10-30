@@ -308,32 +308,32 @@ export class RuntimeApiService {
         // V2 metadata is present but invalid or cannot be trusted.
         stateHealth = 'degraded';
       } else {
-      if (fs.existsSync(pointerPath)) {
-        try {
-          const pointer = JSON.parse(fs.readFileSync(pointerPath, 'utf8'));
-          if (!Number.isSafeInteger(pointer.currentRevision) ||
-              !/^revision-\d{6}\.json$/.test(pointer.currentRevisionFile) ||
-              Number(pointer.currentRevisionFile.slice(9, 15)) !== pointer.currentRevision) {
-            throw new Error('Invalid revision pointer');
-          }
-          const revisionPath = path.join(directory, pointer.currentRevisionFile);
-          if (!fs.existsSync(revisionPath)) {
-            stateHealth = 'recovery-required';
-          } else {
-            const revision = JSON.parse(fs.readFileSync(revisionPath, 'utf8'));
-            validateWorkflowState(revision);
-            if (revision.stateRevision !== pointer.currentRevision) {
-              throw new Error('Pointer revision mismatch');
+        if (fs.existsSync(pointerPath)) {
+          try {
+            const pointer = JSON.parse(fs.readFileSync(pointerPath, 'utf8'));
+            if (!Number.isSafeInteger(pointer.currentRevision) ||
+                !/^revision-\d{6}\.json$/.test(pointer.currentRevisionFile) ||
+                Number(pointer.currentRevisionFile.slice(9, 15)) !== pointer.currentRevision) {
+              throw new Error('Invalid revision pointer');
             }
-            stateHealth = 'unverified';
-            state = { active: true, currentStage: revision.currentStage, revision: revision.stateRevision };
-            activeContractId = typeof revision.orchestration?.activeContractId === 'string'
-              ? revision.orchestration.activeContractId : null;
+            const revisionPath = path.join(directory, pointer.currentRevisionFile);
+            if (!fs.existsSync(revisionPath)) {
+              stateHealth = 'recovery-required';
+            } else {
+              const revision = JSON.parse(fs.readFileSync(revisionPath, 'utf8'));
+              validateWorkflowState(revision);
+              if (revision.stateRevision !== pointer.currentRevision) {
+                throw new Error('Pointer revision mismatch');
+              }
+              stateHealth = 'unverified';
+              state = { active: true, currentStage: revision.currentStage, revision: revision.stateRevision };
+              activeContractId = typeof revision.orchestration?.activeContractId === 'string'
+                ? revision.orchestration.activeContractId : null;
+            }
+          } catch {
+            stateHealth = 'degraded';
           }
-        } catch {
-          stateHealth = 'degraded';
         }
-      }
       }
       const modules = {
         workspaceTargets: 'workspace-targets.mjs',
