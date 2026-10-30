@@ -22,6 +22,7 @@ const task = {
       'runtime/orchestration/state-engine-v2.mjs',
       'runtime/orchestration/state-engine-migration.mjs',
       'runtime/autopilot/state-store.mjs',
+      'runtime/api/runtime-api-service.mjs',
       'runtime/orchestration/orchestration-run.mjs',
       'runtime/orchestration/index.mjs',
       'schemas/state-engine-*.schema.json',
