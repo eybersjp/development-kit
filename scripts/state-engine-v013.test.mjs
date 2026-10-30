@@ -575,7 +575,11 @@ test('W73-21 Windows restore stage and promoted root preserve the original restr
     return originalCp.call(this, source, destination, ...options);
   };
   try {
-    restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true });
+    try {
+      restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true });
+    } catch (error) {
+      assert.fail('W73-21 restore error: ' + error.message + ' details=' + JSON.stringify(error.details));
+    }
   } finally {
     fs.cpSync = originalCp;
   }
