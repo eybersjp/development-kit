@@ -1095,12 +1095,15 @@ test('T04-H52 killed restore after promotion retains displaced original and jour
   const migrated = migrateLegacyStateToV2({ rootDir: source });
   const root = tempProject(t, 'dk-h52-target-');
   const sentinel = path.join(root, 'original-witness.txt');
+  const exitWitnessDir = tempProject(t, 'dk-h52-kill-witness-');
+  const exitWitness = path.join(exitWitnessDir, 'child-exit.txt');
   fs.writeFileSync(sentinel, 'ORIGINAL-H52', 'utf8');
   const script = [
     'import fs from "node:fs";',
     'import { restoreLegacyBackup } from ' +
       JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href) + ';',
     'const backup=process.argv[1],root=process.argv[2],rename=fs.renameSync;',
+    'process.on("exit",()=>fs.writeFileSync(process.argv[3],"H52_ORDINARY_EXIT"));',
     'fs.renameSync=function(from,to,...rest){',
     ' const result=rename.call(this,from,to,...rest);',
     ' if(to===root && String(from).includes(".dk-legacy-restore-stage-")) {',
@@ -1113,12 +1116,9 @@ test('T04-H52 killed restore after promotion retains displaced original and jour
     'throw Error("H52 restore unexpectedly acknowledged");',
   ].join('\n');
   const result = requireSpawnSync(process.execPath,
-    ['--input-type=module', '-e', script, migrated.backupPath, root],
+    ['--input-type=module', '-e', script, migrated.backupPath, root, exitWitness],
     { encoding: 'utf8' });
-  assert.notEqual(result.status, 0, 'The child must terminate before restore acknowledgement');
-  assert.doesNotMatch(result.stderr || '',
-    /H52 kill returned unexpectedly|H52 restore unexpectedly acknowledged/,
-    'The child must really terminate rather than throwing a sentinel');
+  assertForcedTermination(result, exitWitness, 'T04-H52 restore');
 
   const parent = path.dirname(root);
   const journalName = '.dk-restore-journal-' +
@@ -1159,6 +1159,8 @@ for (const scenario of [
     const migrated = migrateLegacyStateToV2({ rootDir: source });
     const root = tempProject(t, 'dk-restore-kill-target-');
     const sentinel = path.join(root, 'original-witness.txt');
+    const exitWitnessDir = tempProject(t, 'dk-h53-h54-kill-witness-');
+    const exitWitness = path.join(exitWitnessDir, 'child-exit.txt');
     fs.writeFileSync(sentinel, scenario.id + '-ORIGINAL', 'utf8');
     const parent = path.dirname(root);
     const journalPath = path.join(parent, '.dk-restore-journal-' +
@@ -1168,6 +1170,7 @@ for (const scenario of [
       'import { restoreLegacyBackup } from ' +
         JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href) + ';',
       'const backup=process.argv[1],root=process.argv[2],journal=process.argv[3],boundary=process.argv[4];',
+      'process.on("exit",()=>fs.writeFileSync(process.argv[5],"RESTORE_ORDINARY_EXIT"));',
       'const rename=fs.renameSync,open=fs.openSync,fsync=fs.fsyncSync; let journalFd=null;',
       'fs.openSync=function(file,...args){',
       ' const fd=open.call(this,file,...args);',
@@ -1194,13 +1197,9 @@ for (const scenario of [
       'throw Error("restore unexpectedly acknowledged");',
     ].join('\n');
     const child = requireSpawnSync(process.execPath,
-      ['--input-type=module', '-e', script, migrated.backupPath, root, journalPath, scenario.boundary],
+      ['--input-type=module', '-e', script, migrated.backupPath, root, journalPath, scenario.boundary, exitWitness],
       { encoding: 'utf8' });
-    assert.equal(child.error, undefined, 'Child must launch successfully');
-    assert.notEqual(child.status, 0, 'Child must terminate before restore acknowledgement');
-    assert.doesNotMatch(child.stderr || '',
-      /restore kill returned unexpectedly|restore unexpectedly acknowledged/,
-      'The child must terminate, not return through a thrown sentinel');
+    assertForcedTermination(child, exitWitness, scenario.id + ' restore');
     assert.equal(fs.existsSync(journalPath), true, 'Exact restore journal must survive process death');
     const tx = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
     assert.equal(tx.targetRoot, path.resolve(root));
