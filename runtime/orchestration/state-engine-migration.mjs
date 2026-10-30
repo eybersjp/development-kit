@@ -905,7 +905,7 @@ const WINDOWS_DURABILITY_HELPER = path.resolve(
  * before any restore phase can be acknowledged. This validates API evidence,
  * not physical power-loss persistence on a particular NTFS device.
  */
-export function validateWindowsDurabilityHelperResult(operation, result) {
+export function validateWindowsDurabilityHelperResult(operation, result, expected = {}) {
   const invalid = (reason) => {
     throw new StateMigrationError('Windows durability helper returned unverified ' + reason, {
       code: 'WINDOWS_DURABILITY_HELPER_INVALID_RESULT',
@@ -913,6 +913,23 @@ export function validateWindowsDurabilityHelperResult(operation, result) {
     });
   };
   if (!result || typeof result !== 'object' || Array.isArray(result)) invalid('result');
+  // ACL helper calls are path-scoped and have no storage-profile field. The
+  // parent restore path was separately probed; accept only an affirmative
+  // response for the exact operation and expected source/destination paths.
+  const samePath = (actual, requested) =>
+    typeof actual === 'string' && typeof requested === 'string' &&
+    path.win32.normalize(actual).toLowerCase() === path.win32.normalize(requested).toLowerCase();
+  if (operation === 'CreateSecureStage') {
+    if (result.operation !== operation || result.protected !== true ||
+        !samePath(result.path, expected.Path)) invalid('private stage or path');
+    return result;
+  }
+  if (operation === 'CopyAclTree') {
+    if (result.operation !== operation || result.verified !== true ||
+        !samePath(result.source, expected.From) ||
+        !samePath(result.destination, expected.To)) invalid('ACL tree verification or path');
+    return result;
+  }
   const profile = operation === 'Probe' ? result : result.profile;
   if (!profile || profile.supportedAutomaticRestore !== true
       || profile.localFixed !== true
@@ -985,7 +1002,7 @@ function runWindowsDurabilityHelper(operation, args = {}) {
       cause: error.message,
     });
   }
-  return validateWindowsDurabilityHelperResult(operation, parsed);
+  return validateWindowsDurabilityHelperResult(operation, parsed, args);
 }
 
 function requireSupportedWindowsRestoreProfile(targetPath) {
@@ -1504,14 +1521,23 @@ export function restoreLegacyBackup({
   const stage = path.join(parent, '.dk-legacy-restore-stage-' +
     restoreJournalDigest(resolvedRoot) + '-' + transactionId);
   const displaced = stage + '-original';
-  fs.mkdirSync(stage, { mode: 0o700 });
+  if (process.platform === 'win32') {
+    // Create a private protected NTFS DACL atomically. Keep it private while
+    // copying sensitive descendants, then restore exact source ACLs in
+    // post-order before publishing the candidate.
+    runWindowsDurabilityHelper('CreateSecureStage', {
+      Path: stage, ...(originalRootExists ? { From: resolvedRoot } : {}),
+    });
+  } else {
+    fs.mkdirSync(stage, { mode: 0o700 });
+  }
 
   let promoted = false;
   let displacedOriginal = false;
   let transaction = null;
 
   try {
-    fs.chmodSync(stage, 0o700);
+    if (process.platform !== 'win32') fs.chmodSync(stage, 0o700);
     if (originalRootExists) {
       fs.cpSync(resolvedRoot, stage, {
         recursive: true,
@@ -1542,6 +1568,13 @@ export function restoreLegacyBackup({
 
     syncRestoreTree(stage);
     if (rootStat) applyRestoreMetadata(stage, originalMetadata);
+    if (process.platform === 'win32' && originalRootExists) {
+      // Child ACLs are installed while the stage root is still private.
+      // CopyAclTree applies the root ACL last, then re-verifies the whole
+      // tree so inherited ACE propagation cannot silently widen children.
+      runWindowsDurabilityHelper('CopyAclTree', { From: resolvedRoot, To: stage });
+      syncRestoreTree(stage);
+    }
 
     const stageStat = fs.lstatSync(stage, { bigint: true });
     transaction = {
