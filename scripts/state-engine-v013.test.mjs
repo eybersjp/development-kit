@@ -301,3 +301,23 @@ for (const linkKind of ['symbolic', 'hard']) {
     assert.equal(fs.existsSync(targetRoot), false);
   });
 }
+
+
+test('W73-14 retained original from one project must not block unrelated target in same parent', (t) => {
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-independent-targets-');
+  const firstRoot = path.join(parent, 'first');
+  const secondRoot = path.join(parent, 'second');
+  fs.mkdirSync(firstRoot);
+  fs.writeFileSync(path.join(firstRoot, 'first-original.txt'), 'FIRST-ORIGINAL');
+  const first = restoreLegacyBackup({ backupPath, targetRoot: firstRoot, overwrite: true, confirmOffline: true });
+  assert.ok(first.displacedOriginal);
+  assert.equal(fs.existsSync(first.displacedOriginal), true);
+
+  const second = restoreLegacyBackup({ backupPath, targetRoot: secondRoot, confirmOffline: true });
+  assert.equal(fs.existsSync(secondRoot), true,
+    'Unrelated target must remain independently restorable');
+  assert.equal(fs.existsSync(second.transactionLog), true);
+  assert.equal(fs.readFileSync(path.join(first.displacedOriginal, 'first-original.txt'), 'utf8'),
+    'FIRST-ORIGINAL', 'Original rollback witness must survive the other restore');
+});
