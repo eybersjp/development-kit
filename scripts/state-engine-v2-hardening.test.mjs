@@ -1110,3 +1110,47 @@ test('T04-H52 corrupted pending suffix is rejected before mutating canonical byt
       'Rejected pending journal must remain available for operator diagnosis');
   }
 });
+
+
+test('T04-H56 pending recovery preserves canonical evidence when snapshot witness read is denied', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const baseline = fs.readFileSync(paths.events, 'utf8');
+  appendMetadataEvent({ rootDir, eventType: 'FOLLOWUP_EVENT', payload: { value: 2 } });
+  const suffix = fs.readFileSync(paths.events, 'utf8').slice(baseline.length);
+  const torn = baseline + suffix.slice(0, Math.max(1, Math.floor(suffix.length / 3)));
+  fs.writeFileSync(paths.events, torn, 'utf8');
+  fs.writeFileSync(paths.pending, JSON.stringify({
+    schemaVersion: '1.0.0',
+    previousByteLength: Buffer.byteLength(baseline),
+    previousHash: 'sha256:' + createHash('sha256').update(baseline).digest('hex'),
+    suffix,
+  }), 'utf8');
+
+  const originalRead = fs.readFileSync;
+  let denied = 0;
+  fs.readFileSync = function denySnapshotWitnessRead(target, ...args) {
+    if (String(target) === paths.snapshot) {
+      denied += 1;
+      const error = new Error('Synthetic snapshot witness permission denial');
+      error.code = 'EACCES';
+      throw error;
+    }
+    return originalRead.call(this, target, ...args);
+  };
+  try {
+    assert.throws(
+      () => loadStateSnapshot(rootDir, { rebuildIfNeeded: true }),
+      /snapshot witness|EACCES|permission denial/i,
+      'A denied snapshot witness read must fail closed before canonical repair',
+    );
+  } finally {
+    fs.readFileSync = originalRead;
+  }
+  assert.ok(denied > 0, 'Fault injection must intercept the witness read');
+  assert.equal(fs.readFileSync(paths.events, 'utf8'), torn,
+    'Failed witness read must not truncate or append canonical event bytes');
+  assert.equal(fs.existsSync(paths.pending), true,
+    'Failed witness read must retain the pending journal for operator recovery');
+});
