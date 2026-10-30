@@ -135,3 +135,6 @@ jobs:
       - name: Validate v0.13 full compatibility regression
         if: ${{ hashFiles('runtime/orchestration/state-engine-v2.mjs') != '' }}
         run: npm run v013:regression
+
+      - name: Verify v0.13 risk-3 acceptance job contract (negative control)
+        run: node --test scripts/v013-t04-acceptance-ci-contract.test.mjs
