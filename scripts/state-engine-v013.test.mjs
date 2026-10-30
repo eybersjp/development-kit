@@ -559,6 +559,62 @@ test('W73-22 Windows native helper must prove operation-specific success before 
     /helper|rename|profile|operation|flush/i);
 });
 
+test('W73-25 native Windows helper cannot acknowledge an unrelated filesystem path', () => {
+  const profile = {
+    path: 'C:\\dk\\parent', volumeRoot: 'C:\\', fileSystem: 'NTFS',
+    driveType: 3, localFixed: true, supportedAutomaticRestore: true,
+  };
+  assert.deepEqual(
+    validateWindowsDurabilityHelperResult('Probe', profile, { Path: profile.path }),
+    profile,
+  );
+  assert.throws(
+    () => validateWindowsDurabilityHelperResult('Probe', {
+      ...profile, path: 'C:\\dk\\unrelated',
+    }, { Path: profile.path }),
+    /helper|path|profile|mismatch/i,
+    'A supported NTFS profile for a different path is not evidence for the requested root',
+  );
+
+  const flush = { operation: 'FlushDirectory', profile, flushed: true };
+  assert.deepEqual(
+    validateWindowsDurabilityHelperResult('FlushDirectory', flush, { Path: profile.path }),
+    flush,
+  );
+  assert.throws(
+    () => validateWindowsDurabilityHelperResult('FlushDirectory', {
+      ...flush, profile: { ...profile, path: 'C:\\dk\\unrelated' },
+    }, { Path: profile.path }),
+    /helper|path|profile|mismatch/i,
+    'A flush of a different parent cannot acknowledge the requested namespace barrier',
+  );
+
+  const rename = {
+    operation: 'Rename', source: 'C:\\dk\\stage', destination: 'C:\\dk\\project',
+    profile: { ...profile, path: 'C:\\dk' }, renamed: true, parentFlushCompleted: true,
+  };
+  assert.deepEqual(
+    validateWindowsDurabilityHelperResult('Rename', rename, {
+      From: rename.source, To: rename.destination,
+    }),
+    rename,
+  );
+  for (const wrong of [
+    { ...rename, source: 'C:\\dk\\unrelated' },
+    { ...rename, source: 'C:\\other-parent\\stage' },
+    { ...rename, destination: 'C:\\dk\\unrelated' },
+    { ...rename, profile: { ...profile, path: 'C:\\dk\\unrelated' } },
+  ]) {
+    assert.throws(
+      () => validateWindowsDurabilityHelperResult('Rename', wrong, {
+        From: rename.source, To: rename.destination,
+      }),
+      /helper|path|profile|mismatch/i,
+      'An unrelated rename or parent flush cannot acknowledge the requested transaction',
+    );
+  }
+});
+
 test('W73-21 Windows restore stage and promoted root preserve the original restrictive NTFS DACL', (t) => {
   if (process.platform !== 'win32') {
     t.skip('NTFS ACL fixture requires Windows'); return;
