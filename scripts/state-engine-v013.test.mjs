@@ -244,3 +244,30 @@ test('W73-11 terminal restore log cannot certify a missing promoted root', (t) =
   assert.equal(fs.existsSync(moved), true, 'Do not destroy recovery evidence');
   assert.equal(fs.existsSync(result.transactionLog), true, 'Retain authenticated journal');
 });
+
+
+test('W73-12 completed Windows-compatible restore retains exact original inode after terminal acknowledgement', (t) => {
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-retained-original-');
+  const targetRoot = path.join(parent, 'project');
+  fs.mkdirSync(targetRoot);
+  const originalSentinel = path.join(targetRoot, 'original-witness.txt');
+  fs.writeFileSync(originalSentinel, 'ORIGINAL-MUST-SURVIVE');
+  const before = fs.lstatSync(targetRoot, { bigint: true });
+
+  const restored = restoreLegacyBackup({
+    backupPath, targetRoot, overwrite: true, confirmOffline: true,
+  });
+  assert.ok(restored.displacedOriginal,
+    'The original directory must remain an independently verifiable rollback witness');
+  const retained = fs.lstatSync(restored.displacedOriginal, { bigint: true });
+  assert.equal(retained.dev, before.dev);
+  assert.equal(retained.ino, before.ino, 'Original directory inode must be retained');
+  assert.equal(fs.readFileSync(path.join(restored.displacedOriginal, 'original-witness.txt'), 'utf8'),
+    'ORIGINAL-MUST-SURVIVE');
+  assert.equal(fs.existsSync(restored.transactionLog), true, 'Retain terminal transaction log');
+  const recovered = recoverLegacyRestore({ targetRoot, confirmOffline: true });
+  assert.equal(recovered.alreadyComplete, true);
+  assert.equal(fs.existsSync(restored.displacedOriginal), true,
+    'Read-only completed recovery must not delete the original witness');
+});
