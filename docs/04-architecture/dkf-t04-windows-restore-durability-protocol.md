@@ -39,7 +39,7 @@ Production-support requirements include a documented local-volume/NTFS test envi
 
 - **Runtime journal ordering:** T04-H49 injects a parent-directory flush failure and asserts no ledger bytes are appended and the pending marker is retained; T04-H50 verifies directory flush completes before physical canonical append.
 - **Restore rollback ordering:** T04-H47/H48 observe Node rename followed by a successful parent-directory flush before journal deletion on applicable hosts. They **do not** invoke the unused PowerShell `MoveFileExW` helper or prove host power-loss durability.
-- **Transaction fault injection:** before and after journal publication, original displacement, stage promotion, journal unlink, original cleanup and explicit recovery. Validate original-file identity, fingerprint, canonical ledger history and recovery witnesses.
+- **Transaction fault injection:** before and after journal publication, original displacement, stage promotion, journal unlink, retained-original witness verification and separately approved offline cleanup, and explicit recovery. Validate original-file identity, fingerprint, canonical ledger history and recovery witnesses.
 - **Hardware/OS durability:** dedicated power-loss/reboot test harness is still required to distinguish normal process termination from forced host power loss and to validate persistence on each claimed Windows filesystem.
 
 For each test record OS build, filesystem, disk/cache environment, Node/libuv version, source SHA, exact fault boundary, directory witnesses and final hashes. Skips are not passes.
