@@ -1203,6 +1203,12 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
   if (sameRestoreIdentity(atRoot, tx.stageDev, tx.stageIno)
       && ((!tx.existed && !inDisplaced)
         || (tx.existed && inDisplaced))) {
+    // The candidate may be visible after a successful rename whose parent
+    // directory flush failed or never ran before process death. Retry the
+    // publication namespace barrier *before* appending acknowledgement or
+    // terminal records. On failure, preserve the nonterminal journal and both
+    // candidate/original witnesses for another controlled recovery attempt.
+    syncRestoreParent(parent);
     appendMissingSuccessfulRestorePhases(root, tx, latest.records, {
       outcome: tx.existed ? 'promoted-original-retained' : 'promoted-new-root',
     });
