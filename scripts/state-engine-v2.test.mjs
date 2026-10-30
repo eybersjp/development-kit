@@ -455,3 +455,41 @@ test('V13-CONC-SCHEMA-01 another initializer never observes an incomplete publis
   assert.equal(interleaved, true, 'Fixture must interleave at schema publication');
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+
+test('V13-INDEX-IDENTITY-01 composite entity keys cannot collide across colon-bearing identities', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-index-identity-');
+  const cases = [
+    { entityType: 'a::b', entityId: 'c', contractId: 'contract-first',
+      taskId: 'task-first', runId: 'run-first', lifecycleId: 'lifecycle-first' },
+    { entityType: 'a', entityId: 'b::c', contractId: 'contract-second',
+      taskId: 'task-second', runId: 'run-second', lifecycleId: 'lifecycle-second' },
+  ];
+  for (const entry of cases) {
+    appendEntityState({
+      rootDir,
+      entityType: entry.entityType,
+      entityId: entry.entityId,
+      state: { stateRevision: 1, marker: entry.contractId },
+      refs: { contractId: entry.contractId, taskId: entry.taskId,
+        runId: entry.runId, lifecycleId: entry.lifecycleId },
+      actorClass: 'index-identity-regression',
+    });
+  }
+  const index = loadStateIndex(rootDir);
+  assert.equal(index.records.length, 2);
+  assert.equal(new Set(index.records.map((record) => record.key)).size, 2,
+    'Distinct valid entity tuples must never share the same index key');
+  for (const entry of cases) {
+    for (const [filter, value] of [
+      ['contractId', entry.contractId], ['taskId', entry.taskId],
+      ['runId', entry.runId], ['lifecycleId', entry.lifecycleId],
+    ]) {
+      const found = queryStateIndex({ rootDir, [filter]: value });
+      assert.equal(found.length, 1, filter + ' must not return another entity with a colliding key');
+      assert.equal(found[0].entityType, entry.entityType);
+      assert.equal(found[0].entityId, entry.entityId);
+    }
+  }
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
