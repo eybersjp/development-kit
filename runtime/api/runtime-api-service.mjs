@@ -22,7 +22,7 @@ import { resolveMemoryIdentity } from '../intelligence/memory-identity.mjs';
 import { resolveEffectiveSettings } from '../intelligence/settings.mjs';
 import { LocalMemoryProvider } from '../intelligence/local-memory-provider.mjs';
 import { getCurrentState } from '../autopilot/state-store.mjs';
-import { isStateEngineV2Active } from '../orchestration/state-engine-v2.mjs';
+import { isStateEngineV2Active, hasCompletedStateMigration, loadLatestEntityState } from '../orchestration/state-engine-v2.mjs';
 import { validateWorkflowState } from '../autopilot/validators.mjs';
 import { loadWorkspaceTargetRegistry } from '../orchestration/workspace-targets.mjs';
 import { loadCostRecords } from '../orchestration/cost-observatory.mjs';
@@ -289,7 +289,26 @@ export class RuntimeApiService {
       } catch {
         v2Invalid = true;
       }
+      // V2 layout existence alone does not migrate an existing legacy workflow.
+      // Selecting legacy authority must use the non-mutating pointer projection
+      // below: getCurrentState() can repair current.json as a side effect.
+      let v2WorkflowAuthority = v2Active;
       if (v2Active) {
+        try {
+          const hasLegacyRevisions = fs.existsSync(directory) &&
+            fs.readdirSync(directory).some((name) => /^revision-\d{6}\.json$/.test(name));
+          if (hasLegacyRevisions) {
+            v2WorkflowAuthority = hasCompletedStateMigration(this.rootDir) &&
+              loadLatestEntityState('autopilot-workflow', this.rootDir) !== null;
+          }
+        } catch {
+          // An unreadable V2 migration witness cannot authorize fallback.
+          v2Active = false;
+          v2Invalid = true;
+          v2WorkflowAuthority = false;
+        }
+      }
+      if (v2WorkflowAuthority) {
         try {
           const revision = getCurrentState(this.rootDir);
           if (revision) {
