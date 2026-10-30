@@ -490,3 +490,21 @@ test('V13-CONC-BOOTSTRAP-03 unrelated hard links remain fail-closed and preserve
   assert.equal(fs.existsSync(external), true, 'Unrelated hard link must never be deleted');
   assert.equal(fs.statSync(paths.schema).nlink, 2);
 });
+
+
+test('V13-CONC-BOOTSTRAP-04 live initializer staging links are not reclaimed', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-bootstrap-live-');
+  const paths = ensureStateEngineLayout(rootDir);
+  const temporary = path.join(paths.stateRoot,
+    'schema.json.tmp-' + process.pid + '-00000000-0000-4000-8000-000000000001');
+  fs.linkSync(paths.schema, temporary);
+  try {
+    assert.throws(() => ensureStateEngineLayout(rootDir), /live process/i,
+      'A live initializer retains ownership of its temporary publication link');
+    assert.equal(fs.existsSync(temporary), true);
+    assert.equal(fs.statSync(paths.schema).nlink, 2);
+  } finally {
+    fs.unlinkSync(temporary);
+  }
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
