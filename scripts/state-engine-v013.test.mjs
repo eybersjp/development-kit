@@ -566,7 +566,7 @@ test('W73-21 Windows restore stage and promoted root preserve the original restr
     assert.equal(result.status, 0, String(result.stderr));
     return result.stdout.trim();
   }
-  const comparableDacl = (value) => value.replace(/^D:(P?)AI(?=\()/, 'D:$1');
+  const comparableDacl = (value) => value;
   const originalDacl = dacl(targetRoot);
   const fileDacl = (location) => {
     const result = aclScript(
