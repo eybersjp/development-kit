@@ -197,7 +197,7 @@ switch ($Operation) {
         $expected = $acl.GetSecurityDescriptorSddlForm($sections)
         $actual = ([System.IO.Directory]::GetAccessControl($destinationPath)).GetSecurityDescriptorSddlForm($sections)
         if ($actual -cne $expected) {
-            throw 'CloneAcl DACL verification failed; refusing restore promotion'
+            throw ("CloneAcl DACL verification failed; expected={0}; actual={1}" -f $expected, $actual)
         }
         [PSCustomObject]@{
             operation = 'CloneAcl'
