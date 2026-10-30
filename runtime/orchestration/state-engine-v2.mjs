@@ -122,7 +122,6 @@ function statePaths(rootDir = process.cwd()) {
   });
   if (fs.existsSync(stateRoot)) {
     assertStateRootRealpathSafe(paths);
-    recoverInterruptedBootstrapPublication(paths);
     assertStateFilesNotLinks(paths);
   }
   return paths;
@@ -146,7 +145,15 @@ function assertStateFilesNotLinks(paths) {
         throw new StateEngineError('State Engine internal file is not a regular file: ' + field);
       }
       if (stat.nlink > 1) {
-        throw new StateEngineError('State Engine internal file has multiple hard links: ' + field);
+        // The common path must not pay for extra filesystem probes on every
+        // state read/write. Reconcile only an actual multiply-linked bootstrap
+        // schema/snapshot/index; all other hard links remain forbidden.
+        if (['schema', 'snapshot', 'index'].includes(field)) {
+          recoverInterruptedBootstrapPublication(paths);
+        }
+        if (fs.lstatSync(paths[field]).nlink > 1) {
+          throw new StateEngineError('State Engine internal file has multiple hard links: ' + field);
+        }
       }
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
