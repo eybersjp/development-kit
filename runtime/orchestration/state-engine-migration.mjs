@@ -1477,6 +1477,12 @@ export function restoreLegacyBackup({
   try {
     fs.chmodSync(stage, 0o700);
     if (originalRootExists) {
+      // The sibling stage otherwise inherits its parent's potentially broader
+      // NTFS DACL. Apply and verify the original root's DACL before copying
+      // any confidential source data into the replacement tree.
+      if (process.platform === 'win32') {
+        runWindowsDurabilityHelper('CloneAcl', { From: resolvedRoot, To: stage });
+      }
       fs.cpSync(resolvedRoot, stage, {
         recursive: true,
         force: true,
@@ -1506,6 +1512,12 @@ export function restoreLegacyBackup({
 
     syncRestoreTree(stage);
     if (rootStat) applyRestoreMetadata(stage, originalMetadata);
+    if (originalRootExists && process.platform === 'win32') {
+      // Verify root security again after copy/metadata operations and persist
+      // the directory metadata before the PREPARED journal is published.
+      runWindowsDurabilityHelper('CloneAcl', { From: resolvedRoot, To: stage });
+      syncRestoreParent(stage);
+    }
 
     const stageStat = fs.lstatSync(stage, { bigint: true });
     transaction = {
