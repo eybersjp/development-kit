@@ -1082,3 +1082,31 @@ test('T04-P1 initial layout cannot overwrite an acknowledged concurrent first ev
   assert.equal(loadCanonicalEvents(rootDir).length, 1);
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+test('T04-H52 corrupted pending suffix is rejected before mutating canonical bytes or journal', (t) => {
+  for (const partialLength of [0, 20]) {
+    const rootDir = tempProject(t);
+    appendMetadataEvent({ rootDir, eventType: 'H52_BASELINE', payload: { value: 1 } });
+    const paths = getStateEnginePaths(rootDir);
+    const baseline = fs.readFileSync(paths.events, 'utf8');
+    appendMetadataEvent({ rootDir, eventType: 'H52_FOLLOWUP', payload: { value: 2 } });
+    const validSuffix = fs.readFileSync(paths.events, 'utf8').slice(baseline.length);
+    const invalidEvent = JSON.parse(validSuffix.trim());
+    invalidEvent.eventHash = 'sha256:' + '0'.repeat(64);
+    const invalidSuffix = JSON.stringify(invalidEvent) + '\n';
+    const originalLedger = baseline + invalidSuffix.slice(0, partialLength);
+    const journal = JSON.stringify({
+      schemaVersion: '1.0.0',
+      previousByteLength: Buffer.byteLength(baseline),
+      previousHash: 'sha256:' + createHash('sha256').update(baseline).digest('hex'),
+      suffix: invalidSuffix,
+    }) + '\n';
+    fs.writeFileSync(paths.events, originalLedger, 'utf8');
+    fs.writeFileSync(paths.pending, journal, 'utf8');
+    assert.throws(() => loadCanonicalEvents(rootDir), /event hash mismatch|invalid|integrity/i);
+    assert.equal(fs.readFileSync(paths.events, 'utf8'), originalLedger,
+      'Invalid pending event must not overwrite original crash evidence (partialLength=' + partialLength + ')');
+    assert.equal(fs.readFileSync(paths.pending, 'utf8'), journal,
+      'Rejected pending journal must remain available for operator diagnosis');
+  }
+});
