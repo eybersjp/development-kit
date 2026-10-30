@@ -913,8 +913,8 @@ export function loadCanonicalEvents(rootDir = process.cwd()) {
 }
 
 function normalizePathSegments(value) {
-  if (!Array.isArray(value) || value.some((segment) => typeof segment !== 'string' || !segment || /[\r\n\0]/.test(segment))) {
-    throw new StateEngineError('Patch operation path must be a non-empty string array');
+  if (!Array.isArray(value) || value.some((segment) => typeof segment !== 'string')) {
+    throw new StateEngineError('Patch operation path must be a string array');
   }
   return value;
 }
