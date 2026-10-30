@@ -1049,6 +1049,7 @@ test('T04-H39 backup with trailing dot or space path alias is refused before res
 });
 
 
+// Security regression: CI must exercise the actual NTFS DACL, not POSIX chmod semantics.
 test('T04-WACL01 Windows restore retains restrictive NTFS DACL on published root and original file', (t) => {
   if (process.platform !== 'win32') {
     t.skip('Windows NTFS DACL preservation requires Windows'); return;
