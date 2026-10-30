@@ -188,7 +188,7 @@ function recoverInterruptedBootstrapPublication(paths) {
       }
     }
     if (matches.length !== 1 || !Number.isSafeInteger(matches[0].pid)) {
-      throw new StateEngineError('Ambiguous initial State Engine hard link; operator recovery required');
+      throw new StateEngineError('Ambiguous initial State Engine hard links; operator recovery required');
     }
     const { name, candidate, pid } = matches[0];
     // A still-running initializer may be about to remove its own staging
