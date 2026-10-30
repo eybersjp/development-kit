@@ -171,7 +171,7 @@ function Get-DkfStorageProfile([string]$InputPath) {
 
 # Create a protected staging root with its DACL supplied atomically at mkdir
 # time. A sibling's inherited ACL must never expose copied project data.
-function New-DkfSecureStage([string]$StagePath) {
+function New-DkfSecureStage([string]$StagePath, [string]$SourcePath) {
     if ([string]::IsNullOrWhiteSpace($StagePath)) { throw 'Stage path is required' }
     $stage = [System.IO.Path]::GetFullPath($StagePath)
     $parent = [System.IO.Path]::GetDirectoryName($stage)
@@ -181,8 +181,14 @@ function New-DkfSecureStage([string]$StagePath) {
     if ([System.IO.Directory]::Exists($stage) -or [System.IO.File]::Exists($stage)) {
         throw 'Secure stage already exists'
     }
-    $acl = New-Object System.Security.AccessControl.DirectorySecurity
-    $acl.SetAccessRuleProtection($true, $false)
+    if (-not [string]::IsNullOrWhiteSpace($SourcePath) -and
+        [System.IO.Directory]::Exists($SourcePath)) {
+        # The stage is a sibling: applying the source descriptor atomically
+        # preserves its custom NTFS access policy before any sensitive copy.
+        $acl = [System.IO.Directory]::GetAccessControl($SourcePath)
+    } else {
+        $acl = New-Object System.Security.AccessControl.DirectorySecurity
+        $acl.SetAccessRuleProtection($true, $false)
     $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
     $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
         $sid,
@@ -191,11 +197,14 @@ function New-DkfSecureStage([string]$StagePath) {
          [System.Security.AccessControl.InheritanceFlags]::ObjectInherit),
         [System.Security.AccessControl.PropagationFlags]::None,
         [System.Security.AccessControl.AccessControlType]::Allow)
-    $acl.AddAccessRule($rule)
+        $acl.AddAccessRule($rule)
+    }
     [System.IO.Directory]::CreateDirectory($stage, $acl) | Out-Null
     $actual = Get-Acl -LiteralPath $stage
-    if (-not $actual.AreAccessRulesProtected) {
-        throw 'Stage DACL was not protected at creation'
+    $access = [System.Security.AccessControl.AccessControlSections]::Access
+    if ($actual.GetSecurityDescriptorSddlForm($access) -cne
+        $acl.GetSecurityDescriptorSddlForm($access)) {
+        throw 'Stage DACL differs from required source security descriptor'
     }
     return $stage
 }
@@ -231,7 +240,7 @@ function Copy-DkfAclTree([string]$Source, [string]$Destination) {
 switch ($Operation) {
 
     'CreateSecureStage' {
-        $created = New-DkfSecureStage $Path
+        $created = New-DkfSecureStage $Path $From
         [PSCustomObject]@{ operation = 'CreateSecureStage'; path = $created; protected = $true } |
             ConvertTo-Json -Compress
         break
