@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/v0.13-state-engine-v2]
   pull_request:
     branches: [main]
 
@@ -99,11 +99,11 @@ jobs:
         run: npm run execution-capsule:test
 
       - name: Validate v0.12 reduced-release scope
-        if: ${{ github.head_ref != 'feature/v0.13-state-engine-v2' }}
+        if: ${{ github.head_ref != 'feature/v0.13-state-engine-v2' && github.head_ref != 'test/v013-ntfs-short-alias-guard' }}
         run: npm run release-scope:v012
 
       - name: Validate v0.13 State Engine V2 increment
-        if: ${{ github.head_ref == 'feature/v0.13-state-engine-v2' }}
+        if: ${{ github.head_ref == 'feature/v0.13-state-engine-v2' || github.head_ref == 'test/v013-ntfs-short-alias-guard' }}
         run: npm run v013-state-engine-v2:test
 
       - name: Validate v0.12 non-T04 feature increments
@@ -125,13 +125,13 @@ jobs:
         run: npm pack --dry-run
 
       - name: Verify installed v0.12 consumer package
-        if: ${{ github.head_ref != 'feature/v0.13-state-engine-v2' }}
+        if: ${{ github.head_ref != 'feature/v0.13-state-engine-v2' && github.head_ref != 'test/v013-ntfs-short-alias-guard' }}
         run: npm run consumer-smoke:v012
 
       - name: Validate exact release command
-        if: ${{ github.head_ref != 'feature/v0.13-state-engine-v2' }}
+        if: ${{ github.head_ref != 'feature/v0.13-state-engine-v2' && github.head_ref != 'test/v013-ntfs-short-alias-guard' }}
         run: npm run release:validate
 
       - name: Validate v0.13 full compatibility regression
-        if: ${{ github.head_ref == 'feature/v0.13-state-engine-v2' }}
+        if: ${{ github.head_ref == 'feature/v0.13-state-engine-v2' || github.head_ref == 'test/v013-ntfs-short-alias-guard' }}
         run: npm run v013:regression
