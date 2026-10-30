@@ -562,6 +562,15 @@ test('W73-21 Windows restore stage and promoted root preserve the original restr
     return result.stdout.trim();
   }
   const originalDacl = dacl(targetRoot);
+  const fileDacl = (location) => {
+    const result = aclScript(
+      "$ErrorActionPreference='Stop'; ([System.IO.File]::GetAccessControl($env:DKF_TEST_ACL_PATH)).GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)",
+      location,
+    );
+    assert.equal(result.status, 0, String(result.stderr));
+    return result.stdout.trim();
+  };
+  const originalFileDacl = fileDacl(path.join(targetRoot, 'confidential.txt'));
   assert.notEqual(originalDacl, dacl(parent), 'Fixture must differ from inherited parent DACL');
 
   const originalCp = fs.cpSync;
@@ -585,5 +594,7 @@ test('W73-21 Windows restore stage and promoted root preserve the original restr
   }
   assert.equal(stageInspected, true);
   assert.equal(dacl(targetRoot), originalDacl, 'Promoted root must preserve original DACL');
+  assert.equal(fileDacl(path.join(targetRoot, 'confidential.txt')), originalFileDacl,
+    'Original file DACL must survive staged copy and promotion');
   assert.equal(fs.readFileSync(path.join(targetRoot, 'confidential.txt'), 'utf8'), 'CONFIDENTIAL-ORIGINAL');
 });
