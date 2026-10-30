@@ -369,7 +369,10 @@ function atomicWrite(filePath, content, pinnedDirFd = null) {
   }
 }
 
-function acquireStateLock(rootDir, timeoutMs = 12000) {
+// Windows NTFS directory flushes and Defender I/O can extend a valid
+// four-process writer queue beyond 12s under concurrent full CI. Keep a
+// bounded longer wait on Windows; never reclaim a live owner or bypass locks.
+function acquireStateLock(rootDir, timeoutMs = process.platform === 'win32' ? 20_000 : 12_000) {
   const paths = statePaths(rootDir);
   fs.mkdirSync(paths.stateRoot, { recursive: true });
   assertStateRootRealpathSafe(paths);
