@@ -957,11 +957,32 @@ export function validateWindowsDurabilityHelperResult(operation, result, expecte
       || String(profile.fileSystem || '').toUpperCase() !== 'NTFS') {
     invalid('storage profile');
   }
-  if (operation === 'Probe') return result;
+  // The helper's success flags alone are insufficient: the response must
+  // attest to the exact paths requested for this transaction. On Windows,
+  // samePath also accepts a verified ordinary-directory 8.3 alias.
+  if (operation === 'Probe') {
+    if (expected.Path !== undefined && !samePath(profile.path, expected.Path)) {
+      invalid('storage profile path');
+    }
+    return result;
+  }
   if (result.operation !== operation) invalid('operation');
   if (operation === 'FlushDirectory') {
+    if (expected.Path !== undefined && !samePath(profile.path, expected.Path)) {
+      invalid('directory flush path');
+    }
     if (result.flushed !== true) invalid('directory flush');
   } else if (operation === 'Rename') {
+    if (expected.From !== undefined && !samePath(result.source, expected.From)) {
+      invalid('rename source path');
+    }
+    if (expected.To !== undefined && !samePath(result.destination, expected.To)) {
+      invalid('rename destination path');
+    }
+    if (expected.To !== undefined &&
+        !samePath(profile.path, path.win32.dirname(expected.To))) {
+      invalid('rename parent-directory flush path');
+    }
     if (result.renamed !== true || result.parentFlushCompleted !== true) {
       invalid('rename or parent-directory flush');
     }
