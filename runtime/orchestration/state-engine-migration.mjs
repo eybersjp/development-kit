@@ -1468,14 +1468,20 @@ export function restoreLegacyBackup({
   const stage = path.join(parent, '.dk-legacy-restore-stage-' +
     restoreJournalDigest(resolvedRoot) + '-' + transactionId);
   const displaced = stage + '-original';
-  fs.mkdirSync(stage, { mode: 0o700 });
+  if (process.platform === 'win32') {
+    // Supply a protected DACL atomically at creation: inheriting the sibling
+    // parent's permissions even briefly could expose copied private files.
+    runWindowsDurabilityHelper('CreateSecureStage', { Path: stage });
+  } else {
+    fs.mkdirSync(stage, { mode: 0o700 });
+  }
 
   let promoted = false;
   let displacedOriginal = false;
   let transaction = null;
 
   try {
-    fs.chmodSync(stage, 0o700);
+    if (process.platform !== 'win32') fs.chmodSync(stage, 0o700);
     if (originalRootExists) {
       fs.cpSync(resolvedRoot, stage, {
         recursive: true,
@@ -1506,6 +1512,12 @@ export function restoreLegacyBackup({
 
     syncRestoreTree(stage);
     if (rootStat) applyRestoreMetadata(stage, originalMetadata);
+    if (process.platform === 'win32' && originalRootExists) {
+      // DACLs are not POSIX mode bits. Copy and verify each original object's
+      // NTFS DACL before promotion; any mismatch leaves the original intact.
+      runWindowsDurabilityHelper('CopyAclTree', { From: resolvedRoot, To: stage });
+      syncRestoreTree(stage);
+    }
 
     const stageStat = fs.lstatSync(stage, { bigint: true });
     transaction = {
