@@ -160,6 +160,8 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 22
+      - name: Establish exact-source v0.13 Development Contract
+        run: node scripts/v013-state-engine-v2-contract.mjs
       - name: Verify immutable external T04 acceptance evidence
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
