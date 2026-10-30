@@ -899,6 +899,40 @@ const WINDOWS_DURABILITY_HELPER = path.resolve(
   '../../scripts/windows-durable-rename.ps1',
 );
 
+/**
+ * A successful PowerShell process exit is not sufficient to certify a durable
+ * rename/flush. Reject incomplete, mismatched or negative helper responses
+ * before any restore phase can be acknowledged. This validates API evidence,
+ * not physical power-loss persistence on a particular NTFS device.
+ */
+export function validateWindowsDurabilityHelperResult(operation, result) {
+  const invalid = (reason) => {
+    throw new StateMigrationError('Windows durability helper returned unverified ' + reason, {
+      code: 'WINDOWS_DURABILITY_HELPER_INVALID_RESULT',
+      operation,
+    });
+  };
+  if (!result || typeof result !== 'object' || Array.isArray(result)) invalid('result');
+  const profile = operation === 'Probe' ? result : result.profile;
+  if (!profile || profile.supportedAutomaticRestore !== true
+      || profile.localFixed !== true
+      || String(profile.fileSystem || '').toUpperCase() !== 'NTFS') {
+    invalid('storage profile');
+  }
+  if (operation === 'Probe') return result;
+  if (result.operation !== operation) invalid('operation');
+  if (operation === 'FlushDirectory') {
+    if (result.flushed !== true) invalid('directory flush');
+  } else if (operation === 'Rename') {
+    if (result.renamed !== true || result.parentFlushCompleted !== true) {
+      invalid('rename or parent-directory flush');
+    }
+  } else {
+    invalid('operation');
+  }
+  return result;
+}
+
 function runWindowsDurabilityHelper(operation, args = {}) {
   if (process.platform !== 'win32') {
     throw new StateMigrationError('Windows durability helper may only run on Windows');
@@ -943,7 +977,7 @@ function runWindowsDurabilityHelper(operation, args = {}) {
     throw new StateMigrationError('Windows durability helper returned no result');
   }
   try {
-    return JSON.parse(output.split(/\r?\n/).filter(Boolean).at(-1));
+    return validateWindowsDurabilityHelperResult(operation, JSON.parse(output.split(/\r?\n/).filter(Boolean).at(-1)));
   } catch (error) {
     throw new StateMigrationError('Windows durability helper returned invalid JSON', {
       operation,
