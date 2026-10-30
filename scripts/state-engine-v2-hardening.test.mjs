@@ -1061,13 +1061,13 @@ test('T04-P1 initial layout cannot overwrite an acknowledged concurrent first ev
     });
   };
   fs.renameSync = function raceOnFirstLedgerPublication(from, to, ...rest) {
-    if (!injected && to === paths.events && String(from).includes('events.jsonl.tmp-')) {
+    if (!injected && path.basename(String(to)) === 'events.jsonl' && String(from).includes('events.jsonl.tmp-')) {
       injectWriter();
     }
     return originalRename.call(this, from, to, ...rest);
   };
   fs.openSync = function raceOnExclusiveLedgerCreation(file, flags, ...rest) {
-    if (!injected && file === paths.events && flags === 'wx') injectWriter();
+    if (!injected && path.basename(String(file)) === 'events.jsonl' && flags === 'wx') injectWriter();
     return originalOpen.call(this, file, flags, ...rest);
   };
   try {
