@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -271,3 +272,32 @@ test('W73-12 completed Windows-compatible restore retains exact original inode a
   assert.equal(fs.existsSync(restored.displacedOriginal), true,
     'Read-only completed recovery must not delete the original witness');
 });
+
+
+for (const linkKind of ['symbolic', 'hard']) {
+  test(`W73-13/${linkKind} pre-existing linked restore journal cannot redirect transaction writes`, (t) => {
+    const { backupPath } = createLegacyBackupFixture(t);
+    const parent = tempDir(t, 'dk-v013-journal-link-');
+    const targetRoot = path.join(parent, 'project');
+    const outside = path.join(parent, 'unrelated-confidential-log.jsonl');
+    fs.writeFileSync(outside, 'UNRELATED-DO-NOT-MODIFY');
+    const digest = crypto.createHash('sha256').update(path.resolve(targetRoot)).digest('hex').slice(0, 24);
+    const journal = path.join(parent, '.dk-restore-transaction-' + digest + '.jsonl');
+    try {
+      if (linkKind === 'symbolic') fs.symlinkSync(outside, journal, 'file');
+      else fs.linkSync(outside, journal);
+    } catch (error) {
+      if (['EPERM', 'EACCES', 'ENOTSUP', 'EOPNOTSUPP'].includes(error.code)) {
+        t.skip('Host does not permit this linked-file fixture'); return;
+      }
+      throw error;
+    }
+    assert.throws(
+      () => restoreLegacyBackup({ backupPath, targetRoot, confirmOffline: true }),
+      /restore.*(journal|transaction|link)|unsafe.*(link|journal)/i,
+      'Existing linked journal must fail closed before writing external bytes',
+    );
+    assert.equal(fs.readFileSync(outside, 'utf8'), 'UNRELATED-DO-NOT-MODIFY');
+    assert.equal(fs.existsSync(targetRoot), false);
+  });
+}
