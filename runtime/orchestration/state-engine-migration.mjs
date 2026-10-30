@@ -343,7 +343,15 @@ function orchestrationHistories(rootDir) {
         }
       }
 
-      if (states.length === 0) states = [manifest];
+      if (states.length === 0) {
+        // Fresh v0.13 runs retain immutable manifests but persist revisions in
+        // the canonical V2 ledger. A manifest without legacy revision files
+        // is not a legacy revision-1 history when that run already exists in V2.
+        const canonicalRun = loadEntityState('orchestration-run',
+          `${manifest.contractId}/${manifest.runId}`, rootDir);
+        if (canonicalRun) continue;
+        states = [manifest];
+      }
       const current = states.at(-1);
 
       const finalPath = path.join(runDir, 'final-state.json');
@@ -1084,6 +1092,28 @@ function recoverLegacyRestoreV1({ root, parent, journalPath }) {
   });
 }
 
+function requireTerminalRestoreRootWitness(root, transaction, rawOutcome) {
+  // Historical V1 journals are imported with a legacy-v1- outcome prefix.
+  // Normalize only that authenticated import marker; all other outcomes must
+  // match the closed terminal outcome set and the exact on-disk root inode.
+  const outcome = typeof rawOutcome === 'string' && rawOutcome.startsWith('legacy-v1-')
+    ? rawOutcome.slice('legacy-v1-'.length) : rawOutcome;
+  const rootWitness = inspectRestorePath(root);
+  const promoted = outcome === 'promoted-new-root' || outcome === 'promoted-original-retained';
+  const original = outcome === 'rolled-back-original' || outcome === 'uncommitted-original-unchanged';
+  const witnessValid = promoted
+    ? sameRestoreIdentity(rootWitness, transaction.stageDev, transaction.stageIno)
+    : original
+      ? transaction.existed
+        ? sameRestoreIdentity(rootWitness, transaction.originalDev, transaction.originalIno)
+        : !rootWitness
+      : false;
+  if (!witnessValid) {
+    throw new StateMigrationError('Terminal restore root identity witness mismatch; refusing to supersede recovery evidence');
+  }
+  return true;
+}
+
 /**
  * Recover only an interrupted OFFLINE restore for the exact target root.
  * Recovery is witness-driven and never treats absence of a journal entry as
@@ -1122,24 +1152,8 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
   const displaced = stage + '-original';
 
   if (latest.last.phase === RESTORE_TERMINAL_PHASE) {
-    // A terminal journal record is not itself proof that its preceding root
-    // rename survived power loss. Verify the exact persisted directory inode
-    // before reporting an already-complete restore. Do not mutate or retire
-    // the hash-chained log if the outcome and filesystem disagree.
-    const rootWitness = inspectRestorePath(root);
-    const outcome = latest.last.outcome;
-    const promoted = outcome === 'promoted-new-root' || outcome === 'promoted-original-retained';
-    const original = outcome === 'rolled-back-original' || outcome === 'uncommitted-original-unchanged';
-    const witnessValid = promoted
-      ? sameRestoreIdentity(rootWitness, tx.stageDev, tx.stageIno)
-      : original
-        ? tx.existed
-          ? sameRestoreIdentity(rootWitness, tx.originalDev, tx.originalIno)
-          : !rootWitness
-        : false;
-    if (!witnessValid) {
-      throw new StateMigrationError('Terminal restore root identity witness mismatch; refusing to report completed recovery');
-    }
+    // Never treat an authenticated terminal record as physical root evidence.
+    requireTerminalRestoreRootWitness(root, tx, latest.last.outcome);
     return Object.freeze({
       recovered: false,
       alreadyComplete: true,
@@ -1325,6 +1339,9 @@ export function restoreLegacyBackup({
         phase: latest.last.phase,
       });
     }
+    // A second restore may not overwrite or supersede a terminal journal
+    // whose prior root publication was lost across power interruption.
+    requireTerminalRestoreRootWitness(resolvedRoot, latest.prepared, latest.last.outcome);
   }
 
   const bundle = readJson(backupPath, 'Legacy backup');
