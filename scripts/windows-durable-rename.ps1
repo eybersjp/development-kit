@@ -184,7 +184,7 @@ function New-DkfSecureStage([string]$StagePath) {
     $acl = New-Object System.Security.AccessControl.DirectorySecurity
     $acl.SetAccessRuleProtection($true, $false)
     $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+    $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
         $sid,
         [System.Security.AccessControl.FileSystemRights]::FullControl,
         ([System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
