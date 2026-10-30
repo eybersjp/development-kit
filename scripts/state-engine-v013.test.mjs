@@ -259,9 +259,14 @@ test('W73-12 completed Windows-compatible restore retains exact original inode a
   fs.writeFileSync(originalSentinel, 'ORIGINAL-MUST-SURVIVE');
   const before = fs.lstatSync(targetRoot, { bigint: true });
 
-  const restored = restoreLegacyBackup({
-    backupPath, targetRoot, overwrite: true, confirmOffline: true,
-  });
+  let restored;
+  try {
+    restored = restoreLegacyBackup({
+      backupPath, targetRoot, overwrite: true, confirmOffline: true,
+    });
+  } catch (error) {
+    assert.fail('W73-12 restore error: ' + error.message + ' details=' + JSON.stringify(error.details));
+  }
   assert.ok(restored.displacedOriginal,
     'The original directory must remain an independently verifiable rollback witness');
   const retained = fs.lstatSync(restored.displacedOriginal, { bigint: true });
@@ -561,7 +566,7 @@ test('W73-21 Windows restore stage and promoted root preserve the original restr
     assert.equal(result.status, 0, String(result.stderr));
     return result.stdout.trim();
   }
-  const comparableDacl = (value) => value.replace(/^D:PAI/, 'D:P');
+  const comparableDacl = (value) => value.replace(/^D:(P?)AI(?=\()/, 'D:$1');
   const originalDacl = dacl(targetRoot);
   const fileDacl = (location) => {
     const result = aclScript(
