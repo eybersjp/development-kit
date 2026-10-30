@@ -138,6 +138,8 @@ assert.ok(physical && physical.reviewedCommit === reviewedCommit
   && typeof physical.artifactUrl === 'string'
   && physical.artifactUrl.startsWith('https://github.com/' + REPO + '/actions/runs/')
   && typeof physical.filesystem === 'string' && /^NTFS\b/.test(physical.filesystem)
+  && typeof physical.artifactName === 'string' && physical.artifactName.length > 0
+  && /^sha256:[a-f0-9]{64}$/.test(physical.artifactDigest || '')
   && Number.isSafeInteger(physical.independentReviewId)
   && physical.cleanupSafety === 'CLEANUP_SAFE'
   && physical.originalTreesPreserved === true
@@ -153,6 +155,13 @@ assert.ok(Number.isSafeInteger(artifactRun));
 const artifact = await api('actions/runs/' + artifactRun);
 assert.equal(artifact.head_sha, reviewedCommit);
 assert.equal(artifact.conclusion, 'success');
+const artifacts = await api('actions/runs/' + artifactRun + '/artifacts?per_page=100');
+const physicalArtifact = artifacts.artifacts?.find(x => x.name === physical.artifactName);
+assert.ok(physicalArtifact && !physicalArtifact.expired &&
+  physicalArtifact.digest === physical.artifactDigest,
+  'Authenticated immutable physical NTFS power-loss artifact and SHA-256 digest required');
+assert.ok((physicalReview.body || '').includes(physical.artifactDigest),
+  'Independent physical review must bind the exact artifact digest');
 
 // Two distinct full Ubuntu/Windows workflows on the exact reviewed commit.
 // The current run does not count while its acceptance job is executing.
