@@ -1471,7 +1471,9 @@ export function restoreLegacyBackup({
   if (process.platform === 'win32') {
     // Supply a protected DACL atomically at creation: inheriting the sibling
     // parent's permissions even briefly could expose copied private files.
-    runWindowsDurabilityHelper('CreateSecureStage', { Path: stage });
+    runWindowsDurabilityHelper('CreateSecureStage', {
+      Path: stage, ...(originalRootExists ? { From: resolvedRoot } : {}),
+    });
   } else {
     fs.mkdirSync(stage, { mode: 0o700 });
   }
