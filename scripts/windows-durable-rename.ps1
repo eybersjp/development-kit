@@ -10,7 +10,7 @@
 # arguments; this script never evaluates command text or interpolates a shell.
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Probe', 'Rename', 'FlushDirectory')]
+    [ValidateSet('Probe', 'Rename', 'FlushDirectory', 'CreateSecureStage', 'CopyAclTree')]
     [string]$Operation,
 
     [string]$Path,
@@ -168,7 +168,95 @@ function Get-DkfStorageProfile([string]$InputPath) {
     }
 }
 
+
+# Create a protected staging root with its DACL supplied atomically at mkdir
+# time. A sibling's inherited ACL must never expose copied project data.
+function New-DkfSecureStage([string]$StagePath) {
+    if ([string]::IsNullOrWhiteSpace($StagePath)) { throw 'Stage path is required' }
+    $stage = [System.IO.Path]::GetFullPath($StagePath)
+    $parent = [System.IO.Path]::GetDirectoryName($stage)
+    if (-not [System.IO.Directory]::Exists($parent)) { throw 'Stage parent is missing' }
+    $profile = Get-DkfStorageProfile $parent
+    if (-not $profile.supportedAutomaticRestore) { throw 'Secure staging requires local fixed NTFS' }
+    if ([System.IO.Directory]::Exists($stage) -or [System.IO.File]::Exists($stage)) {
+        throw 'Secure stage already exists'
+    }
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        $sid,
+        [System.Security.AccessControl.FileSystemRights]::FullControl,
+        ([System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
+         [System.Security.AccessControl.InheritanceFlags]::ObjectInherit),
+        [System.Security.AccessControl.PropagationFlags]::None,
+        [System.Security.AccessControl.AccessControlType]::Allow)
+    $acl.AddAccessRule($rule)
+    [System.IO.Directory]::CreateDirectory($stage, $acl) | Out-Null
+    $actual = Get-Acl -LiteralPath $stage
+    if (-not $actual.AreAccessRulesProtected) {
+        throw 'Stage DACL was not protected at creation'
+    }
+    return $stage
+}
+
+# Post-order: descendants are copied while the staging root remains private.
+# Copy exact source DACLs only after all copied bytes are present. Any failure
+# prevents promotion and leaves the original untouched.
+function Copy-DkfAclTree([string]$Source, [string]$Destination) {
+    $src = Get-Item -LiteralPath $Source -Force -ErrorAction Stop
+    $dst = Get-Item -LiteralPath $Destination -Force -ErrorAction Stop
+    if (($src.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or
+        ($dst.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'Cannot preserve ACLs for a reparse point; refusing restore promotion'
+    }
+    if ($src.PSIsContainer -ne $dst.PSIsContainer) {
+        throw 'Source and staged object kinds differ during ACL preservation'
+    }
+    if ($src.PSIsContainer) {
+        foreach ($child in Get-ChildItem -LiteralPath $Source -Force -ErrorAction Stop) {
+            Copy-DkfAclTree (Join-Path $Source $child.Name) (Join-Path $Destination $child.Name)
+        }
+    }
+    $acl = Get-Acl -LiteralPath $Source -ErrorAction Stop
+    Set-Acl -LiteralPath $Destination -AclObject $acl -ErrorAction Stop
+    $sections = [System.Security.AccessControl.AccessControlSections]::Access
+    $expected = $acl.GetSecurityDescriptorSddlForm($sections)
+    $actual = (Get-Acl -LiteralPath $Destination -ErrorAction Stop).GetSecurityDescriptorSddlForm($sections)
+    if ($expected -cne $actual) {
+        throw 'Staged NTFS DACL does not match source after copy'
+    }
+}
+
 switch ($Operation) {
+
+    'CreateSecureStage' {
+        $created = New-DkfSecureStage $Path
+        [PSCustomObject]@{ operation = 'CreateSecureStage'; path = $created; protected = $true } |
+            ConvertTo-Json -Compress
+        break
+    }
+
+    'CopyAclTree' {
+        if ([string]::IsNullOrWhiteSpace($From) -or [string]::IsNullOrWhiteSpace($To)) {
+            throw 'Source and stage paths are required'
+        }
+        $sourcePath = [System.IO.Path]::GetFullPath($From)
+        $destinationPath = [System.IO.Path]::GetFullPath($To)
+        $sourceProfile = Get-DkfStorageProfile $sourcePath
+        $destinationProfile = Get-DkfStorageProfile $destinationPath
+        if (-not $sourceProfile.supportedAutomaticRestore -or
+            -not $destinationProfile.supportedAutomaticRestore -or
+            $sourceProfile.volumeRoot -ne $destinationProfile.volumeRoot) {
+            throw 'NTFS ACL copy requires local fixed same-volume source and stage'
+        }
+        Copy-DkfAclTree $sourcePath $destinationPath
+        [PSCustomObject]@{ operation = 'CopyAclTree'; source = $sourcePath;
+            destination = $destinationPath; verified = $true } | ConvertTo-Json -Compress
+        break
+    }
+
+
     'Probe' {
         $profile = Get-DkfStorageProfile $Path
         $profile | ConvertTo-Json -Compress
