@@ -370,3 +370,32 @@ test('orchestration V2 refuses same-revision semantic overwrite', (t) => {
     /Refusing to overwrite orchestration run state revision/,
   );
 });
+
+test('T04-P1 patch replay preserves own __proto__ data without prototype pollution', (t) => {
+  const rootDir = tempProject(t, 'dk-t04-patch-proto-');
+  const key = '__t04PatchPollutionProbe';
+  assert.equal(Object.hasOwn(Object.prototype, key), false, 'probe must start clean');
+  try {
+    appendEntityState({
+      rootDir, entityType: 'generic-state', entityId: 'prototype-safety',
+      state: { stateRevision: 1, metadata: {} }, actorClass: 'security-regression',
+    });
+    const changed = JSON.parse('{"stateRevision":2,"metadata":{"__proto__":{"__t04PatchPollutionProbe":true},"safe":42}}');
+    appendEntityState({
+      rootDir, entityType: 'generic-state', entityId: 'prototype-safety',
+      state: changed, actorClass: 'security-regression',
+    });
+    assert.equal(Object.hasOwn(Object.prototype, key), false,
+      'patch traversal must never mutate Object.prototype');
+    const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true });
+    const actual = snapshot.entities['generic-state']['prototype-safety'].state;
+    assert.equal(Object.hasOwn(actual.metadata, '__proto__'), true,
+      'literal JSON __proto__ must be retained as an own data property');
+    assert.deepEqual(actual.metadata, changed.metadata);
+    const replay = rebuildSnapshotFromEvents(loadCanonicalEvents(rootDir));
+    assert.deepEqual(replay.entities['generic-state']['prototype-safety'].state, changed);
+    assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+  } finally {
+    delete Object.prototype[key];
+  }
+});
