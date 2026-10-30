@@ -85,7 +85,16 @@ test('TEST B: First lifecycle interaction -> Require persistent lifecycle state 
   const saved = getCurrentState(rootDir);
   assert.ok(saved, 'State must be persisted to disk');
   assert.equal(saved.currentStage, 'UNDERSTAND');
-  assert.ok(existsSync(join(rootDir, '.development-kit', 'autopilot', 'state', 'current.json')));
+  // v0.13 fresh projects persist in the canonical append-only ledger, not
+  // the pre-migration legacy current.json pointer. The round-trip assertion
+  // above must remain true without inventing a legacy authority file.
+  const canonicalRoot = join(rootDir, '.development-kit', 'state');
+  assert.ok(existsSync(join(canonicalRoot, 'events.jsonl')),
+    'Fresh-project lifecycle history must be durably represented in the canonical ledger');
+  assert.ok(existsSync(join(canonicalRoot, 'snapshot.json')),
+    'The canonical lifecycle snapshot must be materialized');
+  assert.equal(existsSync(join(rootDir, '.development-kit', 'autopilot', 'state', 'current.json')), false,
+    'Fresh V2 projects must not silently create a legacy current.json authority');
 });
 
 test('TEST C: Store a decision naturally -> Destroy in-memory service -> Reinitialize -> Require recall succeeds', async (t) => {
@@ -370,4 +379,25 @@ test('TEST M: remembered approval still cannot authorize /dk-ship or any consequ
   assert.equal(shipMeta.isConsequential, true);
   assert.equal(shipMeta.requiresApproval, true);
   assert.equal(shipMeta.safetyLevel, 'consequential');
+});
+
+
+test('V13-CI-ROUTING: v0.13 validation is selected by source presence, not mutable PR branch name', (t) => {
+  // The published v0.12.1 line does not contain this contract. Its CI must
+  // continue running the v0.12 release scope without enabling deferred T04.
+  const engine = join(REPO_ROOT, 'runtime', 'orchestration', 'state-engine-v2.mjs');
+  if (!existsSync(engine)) {
+    t.skip('v0.13 T04 runtime is absent from the released baseline');
+    return;
+  }
+  assert.ok(existsSync(join(REPO_ROOT, 'scripts', 'v013-state-engine-v2-contract.mjs')),
+    'Present v0.13 runtime must retain its required risk-3 Development Contract');
+  const workflow = readFileSync(join(REPO_ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
+  const sourceProbe = String.raw`hashFiles\('runtime/orchestration/state-engine-v2\.mjs'\)`;
+  const positive = new RegExp(String.raw`if:\s*\$\{\{\s*${sourceProbe}\s*!=\s*''\s*\}\}`);
+  const negative = new RegExp(String.raw`if:\s*\$\{\{\s*${sourceProbe}\s*==\s*''\s*\}\}`);
+  assert.doesNotMatch(workflow, /github\.head_ref/, 'Branch-name conditions can silently skip T04 validation after a merge or branch rename');
+  assert.match(workflow, positive, 'v0.13 test lane must run whenever its canonical runtime is in the checkout');
+  assert.match(workflow, negative, 'v0.12-only release lane must run only without the v0.13 runtime');
+  assert.match(workflow, /run: npm run v013:regression/, 'Source-bound v0.13 lane must include full compatibility regression');
 });
