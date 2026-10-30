@@ -133,7 +133,10 @@ assert.ok(physical && physical.reviewedCommit === reviewedCommit
   && typeof physical.artifactUrl === 'string'
   && physical.artifactUrl.startsWith('https://github.com/' + REPO + '/actions/runs/')
   && typeof physical.filesystem === 'string' && /^NTFS\b/.test(physical.filesystem)
-  && Number.isSafeInteger(physical.independentReviewId),
+  && Number.isSafeInteger(physical.independentReviewId)
+  && physical.cleanupSafety === 'CLEANUP_SAFE'
+  && physical.originalTreesPreserved === true
+  && physical.hashChainedJournalRecovered === true,
   'Independent, source-bound physical NTFS power-loss evidence is mandatory');
 const physicalReview = await api('pulls/92/reviews/' + physical.independentReviewId);
 assert.equal(physicalReview.state, 'APPROVED');
