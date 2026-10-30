@@ -1076,3 +1076,65 @@ test('W73-26 Windows helper launch ignores a forged powershell.exe in the workin
   assert.equal(fs.existsSync(path.join(targetRoot, '.development-kit', 'autopilot', 'state', 'current.json')), true,
     'A trusted helper launch must complete the original legacy backup restoration');
 });
+
+test('W73-27 Windows 8.3 ancestor alias cannot bypass an interrupted restore journal', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('NTFS short-name aliases require Windows'); return;
+  }
+  const source = tempProject(t, 'dk-short-alias-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const parent = tempProject(t, 'dk-short-alias-parent-');
+  const targetRoot = path.join(parent, 'target');
+  fs.mkdirSync(targetRoot);
+  fs.writeFileSync(path.join(targetRoot, 'original.txt'), 'KEEP-ORIGINAL');
+  const command = 'for %I in ("' + parent + '") do @echo %~sI';
+  const shortResult = requireSpawnSync(process.env.ComSpec || 'cmd.exe',
+    ['/d', '/c', command], { encoding: 'utf8', windowsHide: true });
+  assert.equal(shortResult.status, 0, shortResult.stderr);
+  const shortParent = shortResult.stdout.trim().split(/\r?\n/).at(-1);
+  let aliasParent = shortParent;
+  if (!fs.existsSync(shortParent) ||
+      path.win32.normalize(shortParent).toLowerCase() === path.win32.normalize(parent).toLowerCase()) {
+    // The extended-length namespace is a second real spelling of the same
+    // Windows directory even when NTFS 8.3 name generation is disabled.
+    const extendedParent = '\\\\?\\' + parent;
+    if (!fs.existsSync(extendedParent)) {
+      t.skip('Neither an 8.3 nor an extended-length ancestor alias is available'); return;
+    }
+    aliasParent = extendedParent;
+  }
+  assert.equal(fs.realpathSync.native(aliasParent).toLowerCase(),
+    fs.realpathSync.native(parent).toLowerCase(), 'Alias must identify the same physical parent');
+  const crashScript = [
+    'import fs from "node:fs";',
+    'import {restoreLegacyBackup} from ' +
+      JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href) + ';',
+    'const write=fs.writeFileSync;',
+    'fs.writeFileSync=function(fd, content, ...rest) {',
+    ' const result=write.call(this, fd, content, ...rest);',
+    ' if(typeof fd==="number" && String(content).includes(\'"phase":"PREPARED"\')) process.exit(91);',
+    ' return result;',
+    '};',
+    'restoreLegacyBackup({backupPath:process.argv[1],targetRoot:process.argv[2],confirmOffline:true});',
+  ].join('\n');
+  const crashed = requireSpawnSync(process.execPath,
+    ['--input-type=module', '-e', crashScript, migrated.backupPath, targetRoot],
+    { encoding: 'utf8', windowsHide: true, timeout: 120_000 });
+  assert.equal(crashed.status, 91, crashed.stderr || crashed.stdout);
+  const journals = fs.readdirSync(parent).filter(name =>
+    /^\.dk-restore-transaction-[a-f0-9]{24}\.jsonl$/i.test(name));
+  assert.equal(journals.length, 1, 'Interrupted transaction must retain its journal');
+  const journalBytes = fs.readFileSync(path.join(parent, journals[0]));
+  const shortRoot = path.join(aliasParent, 'target');
+  assert.throws(
+    () => restoreLegacyBackup({
+      backupPath: migrated.backupPath, targetRoot: shortRoot,
+      overwrite: true, confirmOffline: true,
+    }),
+    /alias|journal|incomplete|witness/i,
+    'Same physical target through 8.3 ancestor must not start a second transaction',
+  );
+  assert.deepEqual(fs.readFileSync(path.join(targetRoot, 'original.txt'), 'utf8'), 'KEEP-ORIGINAL');
+  assert.deepEqual(fs.readFileSync(path.join(parent, journals[0])), journalBytes);
+});
