@@ -169,6 +169,16 @@ function Get-DkfStorageProfile([string]$InputPath) {
 }
 
 
+# Windows may clear the SE_DACL_AUTO_INHERITED control bit on a protected
+# DACL when applying an otherwise identical descriptor to a new object.
+# Compare protection and ACE SDDL exactly; ignore only that inert protected
+# auto-inheritance marker, never an inherited ACE, SID, mask or deny entry.
+function Get-DkfComparableDacl([System.Security.AccessControl.ObjectSecurity]$Acl) {
+    $section = [System.Security.AccessControl.AccessControlSections]::Access
+    $sddl = $Acl.GetSecurityDescriptorSddlForm($section)
+    return ($sddl -replace '^D:PAI', 'D:P')
+}
+
 # Create a protected staging root with its DACL supplied atomically at mkdir
 # time. A sibling's inherited ACL must never expose copied project data.
 function New-DkfSecureStage([string]$StagePath, [string]$SourcePath) {
@@ -209,10 +219,8 @@ function New-DkfSecureStage([string]$StagePath, [string]$SourcePath) {
     }
     $actual = [System.IO.Directory]::GetAccessControl($stage)
     $access = [System.Security.AccessControl.AccessControlSections]::Access
-    if ($actual.GetSecurityDescriptorSddlForm($access) -cne
-        $expectedAcl.GetSecurityDescriptorSddlForm($access)) {
-        throw ('Stage DACL differs from required source security descriptor: expected={0} actual={1}' -f
-            $expectedAcl.GetSecurityDescriptorSddlForm($access), $actual.GetSecurityDescriptorSddlForm($access))
+    if ((Get-DkfComparableDacl $actual) -cne (Get-DkfComparableDacl $expectedAcl)) {
+        throw 'Stage effective DACL differs from required source security descriptor'
     }
     return $stage
 }
@@ -255,7 +263,7 @@ function Copy-DkfAclTree([string]$Source, [string]$Destination) {
     $sections = [System.Security.AccessControl.AccessControlSections]::Access
     $expected = $acl.GetSecurityDescriptorSddlForm($sections)
     $actual = $actualAcl.GetSecurityDescriptorSddlForm($sections)
-    if ($expected -cne $actual) {
+    if (($expected -replace '^D:PAI', 'D:P') -cne ($actual -replace '^D:PAI', 'D:P')) {
         throw 'Staged NTFS DACL does not match source after copy'
     }
 }
