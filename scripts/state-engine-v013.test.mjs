@@ -495,3 +495,27 @@ test('W73-19 Windows case alias cannot bypass the existing restore transaction w
   assert.equal(fs.readFileSync(path.join(first.displacedOriginal, 'original.txt'), 'utf8'),
     'ORIGINAL-CASE-ALIAS');
 });
+
+
+test('W73-20 Windows case alias cannot bypass an orphan displaced original after journal loss', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('NTFS case-insensitive alias behavior requires Windows'); return;
+  }
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-orphan-case-alias-');
+  const targetRoot = path.join(parent, 'OriginalCaseProject');
+  const aliasRoot = path.join(parent, 'originalcaseproject');
+  fs.mkdirSync(targetRoot);
+  fs.writeFileSync(path.join(targetRoot, 'original.txt'), 'ORIGINAL-ORPHAN');
+  const first = restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true });
+  const moved = path.join(parent, 'unpersisted-published-root');
+  fs.renameSync(targetRoot, moved);
+  fs.unlinkSync(first.transactionLog); // Simulate journal namespace loss after an interrupted publication.
+  assert.throws(
+    () => restoreLegacyBackup({ backupPath, targetRoot: aliasRoot, confirmOffline: true }),
+    /restore witnesses|restore.*journal|orphan.*restore|recovery journal/i,
+    'An orphan retained original must not be silently superseded via case alias',
+  );
+  assert.equal(fs.existsSync(aliasRoot), false);
+  assert.equal(fs.readFileSync(path.join(first.displacedOriginal, 'original.txt'), 'utf8'), 'ORIGINAL-ORPHAN');
+});
