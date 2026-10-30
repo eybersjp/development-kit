@@ -522,7 +522,7 @@ test('W73-20 Windows case alias cannot bypass an orphan displaced original after
 });
 
 
-test('W73-21 Windows native helper must prove operation-specific success before advancing recovery', () => {
+test('W73-22 Windows native helper must prove operation-specific success before advancing recovery', () => {
   const probe = {
     path: 'C:\\dk\\parent', volumeRoot: 'C:\\', fileSystem: 'NTFS',
     driveType: 3, localFixed: true, supportedAutomaticRestore: true,
