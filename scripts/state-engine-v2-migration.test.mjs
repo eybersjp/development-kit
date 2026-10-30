@@ -1093,12 +1093,19 @@ test('W73-27 Windows 8.3 ancestor alias cannot bypass an interrupted restore jou
     ['/d', '/c', command], { encoding: 'utf8', windowsHide: true });
   assert.equal(shortResult.status, 0, shortResult.stderr);
   const shortParent = shortResult.stdout.trim().split(/\r?\n/).at(-1);
+  let aliasParent = shortParent;
   if (!fs.existsSync(shortParent) ||
       path.win32.normalize(shortParent).toLowerCase() === path.win32.normalize(parent).toLowerCase()) {
-    t.skip('NTFS 8.3 alias unavailable on this host'); return;
+    // The extended-length namespace is a second real spelling of the same
+    // Windows directory even when NTFS 8.3 name generation is disabled.
+    const extendedParent = '\\\\?\\' + parent;
+    if (!fs.existsSync(extendedParent)) {
+      t.skip('Neither an 8.3 nor an extended-length ancestor alias is available'); return;
+    }
+    aliasParent = extendedParent;
   }
-  assert.equal(fs.realpathSync.native(shortParent).toLowerCase(),
-    fs.realpathSync.native(parent).toLowerCase(), 'Short path must identify the same physical parent');
+  assert.equal(fs.realpathSync.native(aliasParent).toLowerCase(),
+    fs.realpathSync.native(parent).toLowerCase(), 'Alias must identify the same physical parent');
   const crashScript = [
     'import fs from "node:fs";',
     'import {restoreLegacyBackup} from ' +
@@ -1119,7 +1126,7 @@ test('W73-27 Windows 8.3 ancestor alias cannot bypass an interrupted restore jou
     /^\.dk-restore-transaction-[a-f0-9]{24}\.jsonl$/i.test(name));
   assert.equal(journals.length, 1, 'Interrupted transaction must retain its journal');
   const journalBytes = fs.readFileSync(path.join(parent, journals[0]));
-  const shortRoot = path.join(shortParent, 'target');
+  const shortRoot = path.join(aliasParent, 'target');
   assert.throws(
     () => restoreLegacyBackup({
       backupPath: migrated.backupPath, targetRoot: shortRoot,
