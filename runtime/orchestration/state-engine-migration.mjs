@@ -1091,6 +1091,24 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
   const displaced = stage + '-original';
 
   if (latest.last.phase === RESTORE_TERMINAL_PHASE) {
+    // A terminal journal record is not itself proof that its preceding root
+    // rename survived power loss. Verify the exact persisted directory inode
+    // before reporting an already-complete restore. Do not mutate or retire
+    // the hash-chained log if the outcome and filesystem disagree.
+    const rootWitness = inspectRestorePath(root);
+    const outcome = latest.last.outcome;
+    const promoted = outcome === 'promoted-new-root' || outcome === 'promoted-original-retained';
+    const original = outcome === 'rolled-back-original' || outcome === 'uncommitted-original-unchanged';
+    const witnessValid = promoted
+      ? sameRestoreIdentity(rootWitness, tx.stageDev, tx.stageIno)
+      : original
+        ? tx.existed
+          ? sameRestoreIdentity(rootWitness, tx.originalDev, tx.originalIno)
+          : !rootWitness
+        : false;
+    if (!witnessValid) {
+      throw new StateMigrationError('Terminal restore root identity witness mismatch; refusing to report completed recovery');
+    }
     return Object.freeze({
       recovered: false,
       alreadyComplete: true,
