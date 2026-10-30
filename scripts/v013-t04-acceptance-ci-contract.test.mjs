@@ -56,7 +56,7 @@ test('T04-A15 risk-3 gate parses, fails closed outside authenticated CI and neve
 });
 
 test('T04-A16 acceptance workflow reads exact PR head with least privilege', () => {
-  const job = workflow.split(/^  t04_acceptance:\\s*$/m)[1]?.split(/^  [a-z][\\w-]*:\\s*$/m)[0] ?? '';
+  const job = workflow.split(/^  t04_acceptance:\s*$/m)[1]?.split(/^  [a-z][\w-]*:\s*$/m)[0] ?? '';
   assert.match(job, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
   assert.match(job, /persist-credentials: false/);
   assert.match(job, /contents: read/);
