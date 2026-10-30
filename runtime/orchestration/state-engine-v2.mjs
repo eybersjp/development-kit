@@ -122,6 +122,7 @@ function statePaths(rootDir = process.cwd()) {
   });
   if (fs.existsSync(stateRoot)) {
     assertStateRootRealpathSafe(paths);
+    recoverInterruptedBootstrapPublication(paths);
     assertStateFilesNotLinks(paths);
   }
   return paths;
@@ -149,6 +150,87 @@ function assertStateFilesNotLinks(paths) {
       }
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
+    }
+  }
+}
+
+/**
+ * Recover only the exact private staging hard link left by a terminated
+ * first-layout initializer between linkSync() and unlinkSync(). No other
+ * multiply-linked canonical file is eligible. A live/unknown owner, unknown
+ * content, non-regular path, or different inode remains a hard failure.
+ * This does not relax the trusted/exclusive local-runtime threat boundary.
+ */
+function recoverInterruptedBootstrapPublication(paths) {
+  for (const field of ['schema', 'snapshot', 'index']) {
+    const canonical = paths[field];
+    let stat;
+    try { stat = fs.lstatSync(canonical, { bigint: true }); }
+    catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw error;
+    }
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 2n) continue;
+
+    const prefix = path.basename(canonical) + '.tmp-';
+    const matches = [];
+    for (const name of fs.readdirSync(paths.stateRoot)) {
+      if (!name.startsWith(prefix)) continue;
+      const suffix = name.slice(prefix.length);
+      const ownerMatch = /^([1-9][0-9]*)-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(suffix);
+      if (!ownerMatch) continue;
+      const candidate = path.join(paths.stateRoot, name);
+      const candidateStat = fs.lstatSync(candidate, { bigint: true });
+      if (candidateStat.isFile() && !candidateStat.isSymbolicLink()
+        && candidateStat.dev === stat.dev && candidateStat.ino === stat.ino
+        && candidateStat.nlink === 2n) {
+        matches.push({ name, candidate, pid: Number(ownerMatch[1]) });
+      }
+    }
+    if (matches.length !== 1 || !Number.isSafeInteger(matches[0].pid)) {
+      throw new StateEngineError('Ambiguous initial State Engine hard link; operator recovery required');
+    }
+    const { name, candidate, pid } = matches[0];
+    // A still-running initializer may be about to remove its own staging
+    // link. Never unlink it on that process's behalf.
+    let ownerDead = false;
+    try { process.kill(pid, 0); }
+    catch (error) {
+      if (error.code === 'ESRCH') ownerDead = true;
+      else throw new StateEngineError('Cannot establish bootstrap staging owner termination');
+    }
+    if (!ownerDead) {
+      throw new StateEngineError('Initial State Engine publication is still owned by a live process');
+    }
+
+    const expected = field === 'schema' ? stablePretty(schemaDocument())
+      : field === 'snapshot' ? stablePretty(emptySnapshot())
+      : stablePretty(buildStateIndex(emptySnapshot()));
+    if (fs.readFileSync(canonical, 'utf8') !== expected
+      || fs.readFileSync(candidate, 'utf8') !== expected) {
+      throw new StateEngineError('Initial State Engine staging content is not an exact bootstrap image');
+    }
+
+    const dirFd = fs.openSync(paths.stateRoot, 'r');
+    try {
+      const pinned = fs.fstatSync(dirFd, { bigint: true });
+      const observed = fs.lstatSync(paths.stateRoot, { bigint: true });
+      const current = fs.lstatSync(canonical, { bigint: true });
+      const staging = fs.lstatSync(candidate, { bigint: true });
+      if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink()
+        || pinned.dev !== observed.dev || pinned.ino !== observed.ino
+        || !current.isFile() || current.isSymbolicLink()
+        || current.dev !== stat.dev || current.ino !== stat.ino || current.nlink !== 2n
+        || !staging.isFile() || staging.isSymbolicLink()
+        || staging.dev !== stat.dev || staging.ino !== stat.ino || staging.nlink !== 2n) {
+        throw new StateEngineError('Initial State Engine staging identity changed before recovery');
+      }
+      const unlinkTarget = process.platform === 'linux'
+        ? path.join('/proc/self/fd/' + dirFd, name) : candidate;
+      fs.unlinkSync(unlinkTarget);
+      flushStateDirectory(paths.stateRoot, dirFd);
+    } finally {
+      fs.closeSync(dirFd);
     }
   }
 }
