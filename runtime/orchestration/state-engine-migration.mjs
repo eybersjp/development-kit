@@ -838,8 +838,33 @@ function assertNoWindowsCaseAliasedRestoreJournal(targetRoot) {
   }
 }
 
+/**
+ * A Windows journal may disappear from the durable namespace even when its
+ * scoped stage/displaced-original directory survived. The stage digest then
+ * cannot be attributed safely to a differently cased missing target root.
+ * Reject a new restore anywhere in that parent until the orphan is recovered
+ * by an operator; do not silently treat a sibling name as proof of safety.
+ */
+function assertNoWindowsOrphanRestoreStages(targetRoot) {
+  if (process.platform !== 'win32') return;
+  const parent = path.dirname(path.resolve(targetRoot));
+  if (!fs.existsSync(parent)) return;
+  for (const name of fs.readdirSync(parent)) {
+    const match = /^\.dk-legacy-restore-stage-([a-f0-9]{24})-[a-f0-9]{32}(?:-original)?$/i.exec(name);
+    if (!match) continue;
+    const journal = path.join(parent, '.dk-restore-transaction-' + match[1] + '.jsonl');
+    if (!inspectSafeRestoreJournal(journal)) {
+      throw new StateMigrationError(
+        'Orphan restore witnesses exist without a recovery journal; refusing destructive mutation',
+        { code: 'RESTORE_WITNESS_WITHOUT_JOURNAL', witness: path.join(parent, name) },
+      );
+    }
+  }
+}
+
 function assertNoUnjournaledRestoreWitness(targetRoot) {
   assertNoWindowsCaseAliasedRestoreJournal(targetRoot);
+  assertNoWindowsOrphanRestoreStages(targetRoot);
   if (fs.existsSync(restoreJournalPath(targetRoot)) || fs.existsSync(legacyRestoreJournalPath(targetRoot))) return;
   const witnesses = orphanRestoreWitnesses(targetRoot);
   if (witnesses.length > 0) {
@@ -1176,6 +1201,7 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
   const root = path.resolve(targetRoot);
   const parent = path.dirname(root);
   assertNoWindowsCaseAliasedRestoreJournal(root);
+  assertNoWindowsOrphanRestoreStages(root);
   const legacyJournal = legacyRestoreJournalPath(root);
   if (fs.existsSync(legacyJournal)) {
     return recoverLegacyRestoreV1({ root, parent, journalPath: legacyJournal });
