@@ -803,6 +803,29 @@ function orphanRestoreWitnesses(targetRoot) {
  * This is a fail-closed alias guard, not proof of physical power-loss
  * durability or a defence against a hostile same-account filesystem writer.
  */
+/**
+ * NTFS 8.3 ancestor spellings can refer to the same physical parent while
+ * path.resolve() and the historical journal digest remain different. Compare
+ * the existing parent directory's volume and file identity plus the leaf name.
+ * This is a fail-closed witness-discovery check, not a claim against hostile
+ * concurrent same-account directory replacement.
+ */
+function sameWindowsRestoreRootParentIdentity(left, right) {
+  if (typeof left !== 'string' || typeof right !== 'string') return false;
+  const a = path.resolve(left);
+  const b = path.resolve(right);
+  if (path.basename(a).normalize('NFC').toLowerCase() !==
+      path.basename(b).normalize('NFC').toLowerCase()) return false;
+  try {
+    const pa = fs.statSync(path.dirname(a), { bigint: true });
+    const pb = fs.statSync(path.dirname(b), { bigint: true });
+    return pa.isDirectory() && pb.isDirectory() &&
+      pa.dev === pb.dev && pa.ino === pb.ino;
+  } catch {
+    return false;
+  }
+}
+
 function assertNoWindowsCaseAliasedRestoreJournal(targetRoot) {
   if (process.platform !== 'win32') return;
   const root = path.resolve(targetRoot);
@@ -829,7 +852,8 @@ function assertNoWindowsCaseAliasedRestoreJournal(targetRoot) {
     try { witness = JSON.parse(firstLine); }
     catch { continue; }
     if (typeof witness?.targetRoot !== 'string' ||
-        path.resolve(witness.targetRoot).normalize('NFC').toLowerCase() !== targetKey) continue;
+        (path.resolve(witness.targetRoot).normalize('NFC').toLowerCase() !== targetKey &&
+          !sameWindowsRestoreRootParentIdentity(witness.targetRoot, root))) continue;
     validateRestoreRecord(witness);
     throw new StateMigrationError(
       'Terminal restore root witness exists under a Windows case alias; refusing destructive mutation',
