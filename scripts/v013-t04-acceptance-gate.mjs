@@ -147,6 +147,8 @@ assert.ok(physical && physical.reviewedCommit === reviewedCommit
   'Independent, source-bound physical NTFS power-loss evidence is mandatory');
 const physicalReview = await api('pulls/92/reviews/' + physical.independentReviewId);
 assert.equal(physicalReview.state, 'APPROVED');
+assert.ok(physicalReview.user?.login && physicalReview.user.login !== pr.user.login,
+  'Physical NTFS power-loss reviewer must be independent of the source author');
 assert.equal(physicalReview.commit_id, reviewedCommit);
 assert.ok((physicalReview.body || '').includes('DKF130-T04 NTFS-PHYSICAL-POWER-LOSS ' + reviewedCommit),
   'Independent physical test review must explicitly bind source and evidence');
@@ -241,6 +243,8 @@ for (const control of requiredControls) {
     Number.isSafeInteger(witness.githubReviewId) &&
     Number.isSafeInteger(witness.workflowRunId),
     'Security control missing independent source-bound witness: ' + control.id);
+  assert.equal(witness.githubReviewId, authenticatedReviews.get('security-reviewer').id,
+    'Security control witnesses must bind the independently approved security review');
   const witnessReview = await api('pulls/92/reviews/' + witness.githubReviewId);
   assert.equal(witnessReview.state, 'APPROVED');
   assert.equal(witnessReview.commit_id, reviewedCommit);
