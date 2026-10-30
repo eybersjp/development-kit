@@ -1162,15 +1162,11 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
       outcome: tx.existed ? 'promoted-original-retained' : 'promoted-new-root',
     });
 
-    let cleanupPending = false;
-    if (tx.existed && fs.existsSync(displaced)) {
-      try {
-        fs.rmSync(displaced, { recursive: true, force: true });
-        syncRestoreParent(parent);
-      } catch {
-        cleanupPending = true;
-      }
-    }
+    // The old root is the only exact-inode rollback witness after promotion.
+    // A terminal journal record cannot certify physical persistence of the
+    // preceding Windows namespace operations. Retain it for separate offline
+    // reviewed cleanup; never delete it as part of automatic recovery.
+    let cleanupPending = tx.existed && fs.existsSync(displaced);
     if (inStage && fs.existsSync(stage)) {
       try {
         fs.rmSync(stage, { recursive: true, force: true });
@@ -1447,17 +1443,11 @@ export function restoreLegacyBackup({
       outcome: originalRootExists ? 'promoted-original-retained' : 'promoted-new-root',
     });
 
-    let cleanupPending = false;
-    if (originalRootExists && fs.existsSync(displaced)) {
-      try {
-        fs.rmSync(displaced, { recursive: true, force: true });
-        syncRestoreParent(parent);
-      } catch {
-        // Cleanup is intentionally post-terminal. Preserve the authenticated
-        // old root rather than turning cleanup failure into data loss.
-        cleanupPending = true;
-      }
-    }
+    // A completed restore retains the displaced original as an exact-inode
+    // recovery witness. Its later disposal is a distinct offline operation,
+    // requiring explicit retention/security approval and disk-space planning.
+    // Do not destroy the original merely because the terminal log was fsynced.
+    const cleanupPending = originalRootExists && fs.existsSync(displaced);
 
     return Object.freeze({
       restoredFiles: restored.sort(),
