@@ -264,7 +264,7 @@ function Copy-DkfAclTree([string]$Source, [string]$Destination) {
     $expected = $acl.GetSecurityDescriptorSddlForm($sections)
     $actual = $actualAcl.GetSecurityDescriptorSddlForm($sections)
     if (($expected -replace '^D:PAI', 'D:P') -cne ($actual -replace '^D:PAI', 'D:P')) {
-        throw 'Staged NTFS DACL does not match source after copy'
+        throw ('Staged NTFS DACL does not match source after copy: source={0} staged={1}' -f $expected, $actual)
     }
 }
 
