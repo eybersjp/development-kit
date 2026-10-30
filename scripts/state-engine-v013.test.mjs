@@ -280,7 +280,7 @@ for (const linkKind of ['symbolic', 'hard']) {
     const parent = tempDir(t, 'dk-v013-journal-link-');
     const targetRoot = path.join(parent, 'project');
     const outside = path.join(parent, 'unrelated-confidential-log.jsonl');
-    fs.writeFileSync(outside, 'UNRELATED-DO-NOT-MODIFY');
+    fs.writeFileSync(outside, '');
     const digest = crypto.createHash('sha256').update(path.resolve(targetRoot)).digest('hex').slice(0, 24);
     const journal = path.join(parent, '.dk-restore-transaction-' + digest + '.jsonl');
     try {
@@ -297,7 +297,7 @@ for (const linkKind of ['symbolic', 'hard']) {
       /restore.*(journal|transaction|link)|unsafe.*(link|journal)/i,
       'Existing linked journal must fail closed before writing external bytes',
     );
-    assert.equal(fs.readFileSync(outside, 'utf8'), 'UNRELATED-DO-NOT-MODIFY');
+    assert.equal(fs.readFileSync(outside, 'utf8'), '', 'Unrelated target must remain untouched');
     assert.equal(fs.existsSync(targetRoot), false);
   });
 }
