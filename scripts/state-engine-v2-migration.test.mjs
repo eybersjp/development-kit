@@ -665,22 +665,41 @@ test('T04-H25 interrupted two-step root promotion can restore original using jou
   const sentinel = path.join(root, 'persist-original.txt');
   fs.writeFileSync(sentinel, 'ORIGINAL');
   const originalRename = fs.renameSync;
+  const originalWrite = fs.writeFileSync;
   let movedRoot = false;
   let failureInjected = false;
-  fs.renameSync = function injectPowerFailure(oldPath, nextPath, ...args) {
-    if (movedRoot && !failureInjected && typeof oldPath === 'string' &&
-      oldPath.includes('.dk-legacy-restore-stage-') && nextPath === root) {
-      failureInjected = true;
-      throw new Error('simulated crash between displacement and promotion');
-    }
-    if (oldPath === root && String(nextPath).endsWith('-original')) movedRoot = true;
-    return originalRename.call(this, oldPath, nextPath, ...args);
-  };
+  if (process.platform === 'win32') {
+    // Windows uses the native helper for renames. Inject immediately after
+    // the durable ORIGINAL_DISPLACED log write, before stage promotion.
+    fs.writeFileSync = function injectWindowsRestoreFailure(fd, content, ...args) {
+      const result = originalWrite.call(this, fd, content, ...args);
+      if (!failureInjected && typeof fd === 'number' &&
+          String(content).includes('"phase":"ORIGINAL_DISPLACED"')) {
+        failureInjected = true;
+        throw new Error('simulated crash between displacement and promotion');
+      }
+      return result;
+    };
+  } else {
+    fs.renameSync = function injectPowerFailure(oldPath, nextPath, ...args) {
+      if (movedRoot && !failureInjected && typeof oldPath === 'string' &&
+        oldPath.includes('.dk-legacy-restore-stage-') && nextPath === root) {
+        failureInjected = true;
+        throw new Error('simulated crash between displacement and promotion');
+      }
+      if (oldPath === root && String(nextPath).endsWith('-original')) movedRoot = true;
+      return originalRename.call(this, oldPath, nextPath, ...args);
+    };
+  }
   try {
     assert.throws(() => restoreLegacyBackup({
       confirmOffline: true, backupPath: migrated.backupPath, targetRoot: root,
     }), /simulated crash/);
-  } finally { fs.renameSync = originalRename; }
+    assert.equal(failureInjected, true, 'The intended crash boundary must actually be reached');
+  } finally {
+    fs.renameSync = originalRename;
+    fs.writeFileSync = originalWrite;
+  }
   // If the in-process finally managed the rollback, the leftover journal is
   // still authoritative. Recovery must be idempotent and must never erase it.
   assert.equal(fs.readFileSync(sentinel, 'utf8'), 'ORIGINAL');
@@ -711,11 +730,19 @@ test('T04-H28 restore journals preserve original after a simulated process death
   const script = [
     'import fs from "node:fs";',
     'import {restoreLegacyBackup} from '+JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href)+';',
-    'const backup=process.argv[1],root=process.argv[2],rename=fs.renameSync;',
-    'fs.renameSync=function(a,b,...rest){',
-    ' if(a===root && String(b).endsWith("-original")) {const r=rename.call(this,a,b,...rest);process.exit(91);}',
-    ' return rename.call(this,a,b,...rest);',
-    '};',
+    'const backup=process.argv[1],root=process.argv[2],rename=fs.renameSync,write=fs.writeFileSync;',
+    'if(process.platform==="win32") {',
+    ' fs.writeFileSync=function(fd,content,...rest){',
+    '  const out=write.call(this,fd,content,...rest);',
+    '  if(typeof fd==="number" && String(content).includes(\\\'"phase":"ORIGINAL_DISPLACED"\\\')) process.exit(91);',
+    '  return out;',
+    ' };',
+    '} else {',
+    ' fs.renameSync=function(a,b,...rest){',
+    '  if(a===root && String(b).endsWith("-original")) {const out=rename.call(this,a,b,...rest);process.exit(91);}',
+    '  return rename.call(this,a,b,...rest);',
+    ' };',
+    '}',
     'restoreLegacyBackup({backupPath:backup,targetRoot:root,confirmOffline:true});',
   ].join('\n');
   // spawnSync is intentionally used for a true process exit instead of a
