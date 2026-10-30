@@ -398,7 +398,7 @@ test('V13-CI-ROUTING: v0.13 validation is selected by source presence, not mutab
   const negative = new RegExp(String.raw`if:\s*\$\{\{\s*${sourceProbe}\s*==\s*''\s*\}\}`);
   // Source-dependent validation must never be branch-gated. The distinct
   // risk-3 acceptance job is deliberately restricted to the integration PR.
-  const validateJob = workflow.split(/^  validate:\s*$/m)[1]?.split(/^  [a-z][\\w-]*:\s*$/m)[0] ?? '';
+  const validateJob = workflow.split(/^  validate:\s*$/m)[1]?.split(/^  [a-z][\w-]*:\s*$/m)[0] ?? '';
   assert.ok(validateJob, 'Source-dependent validate job must exist');
   assert.doesNotMatch(validateJob, /github\.head_ref/,
     'Branch-name conditions can silently skip T04 validation after a merge or branch rename');
