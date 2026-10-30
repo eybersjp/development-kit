@@ -10,7 +10,7 @@
 # arguments; this script never evaluates command text or interpolates a shell.
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Probe', 'Rename', 'FlushDirectory')]
+    [ValidateSet('Probe', 'Rename', 'FlushDirectory', 'CreateSecureStage', 'CopyAclTree')]
     [string]$Operation,
 
     [string]$Path,
@@ -85,6 +85,71 @@ public static class DkfWindowsDurability {
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool FlushFileBuffers(SafeFileHandle handle);
+
+    // SetNamedSecurityInfoW applies NTFS auto-inheritance; .NET SetAccessControl
+    // may clear SE_DACL_AUTO_INHERITED even when all current ACEs match.
+    private const uint SE_FILE_OBJECT = 1;
+    private const uint DACL_SECURITY_INFORMATION = 0x00000004;
+    private const uint PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000;
+    private const uint UNPROTECTED_DACL_SECURITY_INFORMATION = 0x20000000;
+
+    [DllImport("advapi32.dll", EntryPoint = "GetNamedSecurityInfoW",
+        CharSet = CharSet.Unicode)]
+    private static extern uint GetNamedSecurityInfo(
+        string name, uint objectType, uint securityInfo,
+        out IntPtr owner, out IntPtr group, out IntPtr dacl,
+        out IntPtr sacl, out IntPtr securityDescriptor);
+
+    [DllImport("advapi32.dll", EntryPoint = "SetNamedSecurityInfoW",
+        CharSet = CharSet.Unicode)]
+    private static extern uint SetNamedSecurityInfo(
+        string name, uint objectType, uint securityInfo,
+        IntPtr owner, IntPtr group, IntPtr dacl, IntPtr sacl);
+
+    // Legacy DACLs without SE_DACL_AUTO_INHERITED must not be silently
+    // converted into auto-inheriting descriptors by SetNamedSecurityInfoW.
+    // SetFileSecurityW is used only for legacy DACLs without the
+    // auto-inherited control bit; exact protected status is verified after.
+    [DllImport("advapi32.dll", EntryPoint = "SetFileSecurityW",
+        CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetFileSecurity(
+        string name, uint securityInfo, IntPtr securityDescriptor);
+
+    [DllImport("kernel32.dll", EntryPoint = "LocalFree")]
+    private static extern IntPtr LocalFree(IntPtr handle);
+
+    public static void CopyDaclWithInheritance(string from, string to, bool protectedDacl, bool autoInherited) {
+        IntPtr owner, group, dacl, sacl, descriptor;
+        uint status = GetNamedSecurityInfo(from, SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION, out owner, out group, out dacl,
+            out sacl, out descriptor);
+        if (status != 0) {
+            throw new Win32Exception((int)status, "GetNamedSecurityInfoW source DACL failed");
+        }
+        try {
+            // Never install a NULL DACL: it grants unrestricted access.
+            if (dacl == IntPtr.Zero) {
+                throw new InvalidOperationException("Source has a NULL DACL; refusing staged ACL publication");
+            }
+            if (autoInherited) {
+                uint flags = DACL_SECURITY_INFORMATION |
+                    (protectedDacl ? PROTECTED_DACL_SECURITY_INFORMATION :
+                                     UNPROTECTED_DACL_SECURITY_INFORMATION);
+                status = SetNamedSecurityInfo(to, SE_FILE_OBJECT, flags,
+                    IntPtr.Zero, IntPtr.Zero, dacl, IntPtr.Zero);
+                if (status != 0) {
+                    throw new Win32Exception((int)status, "SetNamedSecurityInfoW staged DACL failed");
+                }
+            } else {
+                if (!SetFileSecurity(to, DACL_SECURITY_INFORMATION, descriptor)) {
+                    throw LastError("SetFileSecurityW legacy DACL copy failed");
+                }
+            }
+        } finally {
+            if (descriptor != IntPtr.Zero) LocalFree(descriptor);
+        }
+    }
 
     private static Win32Exception LastError(string operation) {
         return new Win32Exception(Marshal.GetLastWin32Error(), operation);
@@ -168,7 +233,144 @@ function Get-DkfStorageProfile([string]$InputPath) {
     }
 }
 
+
+# Windows may clear the SE_DACL_AUTO_INHERITED control bit on a protected
+# DACL when applying an otherwise identical descriptor to a new object.
+# Compare protection and ACE SDDL exactly. The D:AI auto-inheritance
+# control flag can affect future child inheritance, so it must not be
+# normalized away merely because existing ACEs match.
+function Get-DkfComparableDacl([System.Security.AccessControl.ObjectSecurity]$Acl) {
+    $section = [System.Security.AccessControl.AccessControlSections]::Access
+    $sddl = $Acl.GetSecurityDescriptorSddlForm($section)
+    return $sddl
+}
+
+# Create a protected staging root with its DACL supplied atomically at mkdir
+# time. A sibling's inherited ACL must never expose copied project data.
+function New-DkfSecureStage([string]$StagePath, [string]$SourcePath) {
+    if ([string]::IsNullOrWhiteSpace($StagePath)) { throw 'Stage path is required' }
+    $stage = [System.IO.Path]::GetFullPath($StagePath)
+    $parent = [System.IO.Path]::GetDirectoryName($stage)
+    if (-not [System.IO.Directory]::Exists($parent)) { throw 'Stage parent is missing' }
+    $profile = Get-DkfStorageProfile $parent
+    if (-not $profile.supportedAutomaticRestore) { throw 'Secure staging requires local fixed NTFS' }
+    if ([System.IO.Directory]::Exists($stage) -or [System.IO.File]::Exists($stage)) {
+        throw 'Secure stage already exists'
+    }
+
+    # Supply a private maintenance-only DACL *at creation*, never inherit the
+    # sibling parent's potentially wider DACL while private data is staged.
+    $privateAcl = New-Object System.Security.AccessControl.DirectorySecurity
+    $privateAcl.SetAccessRuleProtection($true, $false)
+    $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+        $sid,
+        [System.Security.AccessControl.FileSystemRights]::FullControl,
+        ([System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
+         [System.Security.AccessControl.InheritanceFlags]::ObjectInherit),
+        [System.Security.AccessControl.PropagationFlags]::None,
+        [System.Security.AccessControl.AccessControlType]::Allow)
+    $privateAcl.AddAccessRule($rule)
+    [System.IO.Directory]::CreateDirectory($stage, $privateAcl) | Out-Null
+
+    if (-not [string]::IsNullOrWhiteSpace($SourcePath) -and
+        -not [System.IO.Directory]::Exists($SourcePath)) {
+        throw 'Original source root is missing before staging'
+    }
+    # The original root may grant broad access while individual children
+    # contain confidential ACLs. Never widen the stage root before the
+    # entire copied tree has received and verified its original child DACLs.
+    $actual = [System.IO.Directory]::GetAccessControl($stage)
+    if (-not $actual.AreAccessRulesProtected) {
+        throw 'Private stage DACL unexpectedly inherits parent access'
+    }
+    $rules = $actual.GetAccessRules($true, $true,
+        [System.Security.Principal.SecurityIdentifier])
+    if ($rules.Count -lt 1) { throw 'Private stage has no maintenance ACL' }
+    foreach ($entry in $rules) {
+        if ($entry.IsInherited -or $entry.IdentityReference.Value -ne $sid.Value -or
+            $entry.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) {
+            throw 'Private stage has unexpected additional or inherited access'
+        }
+    }
+    return $stage
+}
+
+# Post-order: descendants are copied while the staging root remains private.
+# Copy exact source DACLs only after all copied bytes are present. Any failure
+# prevents promotion and leaves the original untouched.
+function Copy-DkfAclTree([string]$Source, [string]$Destination, [bool]$VerifyOnly = $false) {
+    $src = Get-Item -LiteralPath $Source -Force -ErrorAction Stop
+    $dst = Get-Item -LiteralPath $Destination -Force -ErrorAction Stop
+    $srcReparse = ($src.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+    $dstReparse = ($dst.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+    if ($srcReparse -or $dstReparse) {
+        # Do not follow symlinks or junctions while traversing source ACLs.
+        # Existing relative symbolic links are copied verbatim by fs.cpSync;
+        # their containing directory remains protected by its source DACL.
+        if ($srcReparse -and $dstReparse -and
+            $src.LinkType -eq 'SymbolicLink' -and $dst.LinkType -eq 'SymbolicLink') {
+            return
+        }
+        throw 'Unsupported or mismatched reparse point during NTFS ACL preservation'
+    }
+    if ($src.PSIsContainer -ne $dst.PSIsContainer) {
+        throw 'Source and staged object kinds differ during ACL preservation'
+    }
+    if ($src.PSIsContainer) {
+        foreach ($child in Get-ChildItem -LiteralPath $Source -Force -ErrorAction Stop) {
+            Copy-DkfAclTree (Join-Path $Source $child.Name) (Join-Path $Destination $child.Name) $VerifyOnly
+        }
+    }
+    if ($src.PSIsContainer) {
+        $acl = [System.IO.Directory]::GetAccessControl($Source)
+        if (-not $VerifyOnly) { [DkfWindowsDurability]::CopyDaclWithInheritance($Source, $Destination, $acl.AreAccessRulesProtected, ($acl.GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access) -match '^D:(?:P)?AI')) }
+        $actualAcl = [System.IO.Directory]::GetAccessControl($Destination)
+    } else {
+        $acl = [System.IO.File]::GetAccessControl($Source)
+        if (-not $VerifyOnly) { [DkfWindowsDurability]::CopyDaclWithInheritance($Source, $Destination, $acl.AreAccessRulesProtected, ($acl.GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access) -match '^D:(?:P)?AI')) }
+        $actualAcl = [System.IO.File]::GetAccessControl($Destination)
+    }
+    $sections = [System.Security.AccessControl.AccessControlSections]::Access
+    $expected = $acl.GetSecurityDescriptorSddlForm($sections)
+    $actual = $actualAcl.GetSecurityDescriptorSddlForm($sections)
+    if ($expected -cne $actual) {
+        throw ('Staged NTFS DACL does not match source after copy: source={0} staged={1}' -f $expected, $actual)
+    }
+}
+
 switch ($Operation) {
+
+    'CreateSecureStage' {
+        $created = New-DkfSecureStage $Path $From
+        [PSCustomObject]@{ operation = 'CreateSecureStage'; path = $created; protected = $true } |
+            ConvertTo-Json -Compress
+        break
+    }
+
+    'CopyAclTree' {
+        if ([string]::IsNullOrWhiteSpace($From) -or [string]::IsNullOrWhiteSpace($To)) {
+            throw 'Source and stage paths are required'
+        }
+        $sourcePath = [System.IO.Path]::GetFullPath($From)
+        $destinationPath = [System.IO.Path]::GetFullPath($To)
+        $sourceProfile = Get-DkfStorageProfile $sourcePath
+        $destinationProfile = Get-DkfStorageProfile $destinationPath
+        if (-not $sourceProfile.supportedAutomaticRestore -or
+            -not $destinationProfile.supportedAutomaticRestore -or
+            $sourceProfile.volumeRoot -ne $destinationProfile.volumeRoot) {
+            throw 'NTFS ACL copy requires local fixed same-volume source and stage'
+        }
+        Copy-DkfAclTree $sourcePath $destinationPath
+        # A parent DACL change can propagate to already-copied descendants.
+        # Verify the entire tree again after all parent operations complete.
+        Copy-DkfAclTree $sourcePath $destinationPath $true
+        [PSCustomObject]@{ operation = 'CopyAclTree'; source = $sourcePath;
+            destination = $destinationPath; verified = $true } | ConvertTo-Json -Compress
+        break
+    }
+
+
     'Probe' {
         $profile = Get-DkfStorageProfile $Path
         $profile | ConvertTo-Json -Compress
