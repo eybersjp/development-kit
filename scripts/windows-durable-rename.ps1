@@ -189,8 +189,8 @@ function New-DkfSecureStage([string]$StagePath, [string]$SourcePath) {
     } else {
         $acl = New-Object System.Security.AccessControl.DirectorySecurity
         $acl.SetAccessRuleProtection($true, $false)
-    $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-    $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+        $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+        $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
         $sid,
         [System.Security.AccessControl.FileSystemRights]::FullControl,
         ([System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
@@ -200,7 +200,7 @@ function New-DkfSecureStage([string]$StagePath, [string]$SourcePath) {
         $acl.AddAccessRule($rule)
     }
     [System.IO.Directory]::CreateDirectory($stage, $acl) | Out-Null
-    $actual = Get-Acl -LiteralPath $stage
+    $actual = [System.IO.Directory]::GetAccessControl($stage)
     $access = [System.Security.AccessControl.AccessControlSections]::Access
     if ($actual.GetSecurityDescriptorSddlForm($access) -cne
         $acl.GetSecurityDescriptorSddlForm($access)) {
@@ -227,11 +227,18 @@ function Copy-DkfAclTree([string]$Source, [string]$Destination) {
             Copy-DkfAclTree (Join-Path $Source $child.Name) (Join-Path $Destination $child.Name)
         }
     }
-    $acl = Get-Acl -LiteralPath $Source -ErrorAction Stop
-    Set-Acl -LiteralPath $Destination -AclObject $acl -ErrorAction Stop
+    if ($src.PSIsContainer) {
+        $acl = [System.IO.Directory]::GetAccessControl($Source)
+        [System.IO.Directory]::SetAccessControl($Destination, $acl)
+        $actualAcl = [System.IO.Directory]::GetAccessControl($Destination)
+    } else {
+        $acl = [System.IO.File]::GetAccessControl($Source)
+        [System.IO.File]::SetAccessControl($Destination, $acl)
+        $actualAcl = [System.IO.File]::GetAccessControl($Destination)
+    }
     $sections = [System.Security.AccessControl.AccessControlSections]::Access
     $expected = $acl.GetSecurityDescriptorSddlForm($sections)
-    $actual = (Get-Acl -LiteralPath $Destination -ErrorAction Stop).GetSecurityDescriptorSddlForm($sections)
+    $actual = $actualAcl.GetSecurityDescriptorSddlForm($sections)
     if ($expected -cne $actual) {
         throw 'Staged NTFS DACL does not match source after copy'
     }
