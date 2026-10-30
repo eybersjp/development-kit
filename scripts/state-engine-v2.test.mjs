@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 import {
   appendEntityState,
@@ -398,4 +399,58 @@ test('T04-P1 patch replay preserves own __proto__ data without prototype polluti
   } finally {
     delete Object.prototype[key];
   }
+});
+
+
+test('V13-SEC-ENTITY-01 prototype-sensitive entity identities and index references are literal own keys', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-identity-');
+  const moduleUrl = new URL('../runtime/orchestration/state-engine-v2.mjs', import.meta.url).href;
+  const childCode = [
+    'import assert from "node:assert/strict";',
+    'import { appendEntityState, loadStateSnapshot, loadEntityState, queryStateIndex, verifyStateEngineIntegrity } from ' + JSON.stringify(moduleUrl) + ';',
+    'const rootDir = process.argv[1];',
+    'for (const [type,id] of [["generic-state","__proto__"],["constructor","entity"],["generic-state","constructor"]]) {',
+    '  appendEntityState({ rootDir, entityType:type, entityId:id, state:{stateRevision:1,value:type+"/"+id}, refs:{contractId:"__proto__",taskId:"constructor"}, actorClass:"identity-security-test" });',
+    '  const state = loadEntityState(type,id,rootDir);',
+    '  assert.equal(state?.value, type+"/"+id);',
+    '}',
+    'const snapshot = loadStateSnapshot(rootDir);',
+    'assert.ok(Object.hasOwn(snapshot.entities, "constructor"));',
+    'assert.ok(Object.hasOwn(snapshot.entities["generic-state"], "__proto__"));',
+    'assert.ok(Object.hasOwn(snapshot.entities["generic-state"], "constructor"));',
+    'assert.equal(queryStateIndex({rootDir,contractId:"__proto__"}).length, 3);',
+    'assert.equal(queryStateIndex({rootDir,taskId:"constructor"}).length, 3);',
+    'assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);',
+    'assert.equal(Object.hasOwn(Object.prototype, "state"), false);',
+    'assert.equal(Object.hasOwn(Object.prototype, "stateRevision"), false);',
+  ].join("\\n");
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', childCode, rootDir],
+    { encoding: 'utf8', timeout: 20000 });
+  assert.equal(child.status, 0, 'Identity replay must not pollute inherited objects or lose records: ' + child.stderr);
+});
+
+test('V13-CONC-SCHEMA-01 another initializer never observes an incomplete published schema', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-schema-');
+  const moduleUrl = new URL('../runtime/orchestration/state-engine-v2.mjs', import.meta.url).href;
+  const originalWrite = fs.writeFileSync;
+  let interleaved = false;
+  fs.writeFileSync = function interleaveSchemaWrite(fd, content, ...args) {
+    if (!interleaved && typeof fd === 'number' && typeof content === 'string'
+        && content.includes('canonicalHistory') && content.includes('materializedSnapshot')) {
+      interleaved = true;
+      const code = 'import {ensureStateEngineLayout} from ' + JSON.stringify(moduleUrl) +
+        '; ensureStateEngineLayout(process.argv[1]);';
+      const child = spawnSync(process.execPath, ['--input-type=module', '-e', code, rootDir],
+        { encoding: 'utf8', timeout: 20000 });
+      assert.equal(child.status, 0, 'Concurrent initializer must never read an empty schema: ' + child.stderr);
+    }
+    return originalWrite.call(this, fd, content, ...args);
+  };
+  try {
+    ensureStateEngineLayout(rootDir);
+  } finally {
+    fs.writeFileSync = originalWrite;
+  }
+  assert.equal(interleaved, true, 'Fixture must interleave at schema publication');
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
