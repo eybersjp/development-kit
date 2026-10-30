@@ -343,7 +343,15 @@ function orchestrationHistories(rootDir) {
         }
       }
 
-      if (states.length === 0) states = [manifest];
+      if (states.length === 0) {
+        // Fresh v0.13 runs retain immutable manifests but persist revisions in
+        // the canonical V2 ledger. A manifest without legacy revision files
+        // is not a legacy revision-1 history when that run already exists in V2.
+        const canonicalRun = loadEntityState('orchestration-run',
+          `${manifest.contractId}/${manifest.runId}`, rootDir);
+        if (canonicalRun) continue;
+        states = [manifest];
+      }
       const current = states.at(-1);
 
       const finalPath = path.join(runDir, 'final-state.json');
@@ -631,7 +639,7 @@ function validateRestoreRecord(record, previous = null) {
   if (typeof record.targetRoot !== 'string' || path.resolve(record.targetRoot) !== record.targetRoot) {
     throw new StateMigrationError('Restore transaction targetRoot is invalid');
   }
-  if (typeof record.stageName !== 'string' || !/^\.dk-legacy-restore-stage-[a-f0-9]{32}$/.test(record.stageName)) {
+  if (typeof record.stageName !== 'string' || !/^\.dk-legacy-restore-stage-(?:[a-f0-9]{24}-)?[a-f0-9]{32}$/.test(record.stageName)) {
     throw new StateMigrationError('Restore transaction stageName is invalid');
   }
   if (record.existed !== true && record.existed !== false) {
@@ -662,9 +670,22 @@ function validateRestoreRecord(record, previous = null) {
   return true;
 }
 
+function inspectSafeRestoreJournal(journal) {
+  let stat;
+  try { stat = fs.lstatSync(journal, { bigint: true }); }
+  catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1n) {
+    throw new StateMigrationError('Unsafe restore transaction journal link or object type; refusing filesystem mutation');
+  }
+  return stat;
+}
+
 function loadRestoreJournal(targetRoot) {
   const journal = restoreJournalPath(targetRoot);
-  if (!fs.existsSync(journal)) return [];
+  if (!inspectSafeRestoreJournal(journal)) return [];
   const content = fs.readFileSync(journal, 'utf8');
   if (!content) return [];
   if (!content.endsWith('\n')) {
@@ -730,9 +751,18 @@ function appendRestoreTransactionRecord({
   const record = { ...base, recordHash: restoreRecordHash(base) };
 
   fs.mkdirSync(path.dirname(journal), { recursive: true });
-  const existed = fs.existsSync(journal);
-  const fd = fs.openSync(journal, 'a', 0o600);
+  const prior = inspectSafeRestoreJournal(journal);
+  const existed = prior !== null;
+  const noFollow = process.platform !== 'win32' ? (fs.constants.O_NOFOLLOW || 0) : 0;
+  const flags = fs.constants.O_WRONLY | fs.constants.O_APPEND | noFollow |
+    (existed ? 0 : fs.constants.O_CREAT | fs.constants.O_EXCL);
+  const fd = fs.openSync(journal, flags, 0o600);
   try {
+    const opened = fs.fstatSync(fd, { bigint: true });
+    if (!opened.isFile() || opened.nlink !== 1n ||
+        (prior && (opened.dev !== prior.dev || opened.ino !== prior.ino))) {
+      throw new StateMigrationError('Restore transaction journal changed identity before append');
+    }
     fs.writeFileSync(fd, JSON.stringify(record) + '\n', 'utf8');
     fs.fsyncSync(fd);
   } finally {
@@ -749,13 +779,92 @@ function orphanRestoreWitnesses(targetRoot) {
   const root = path.resolve(targetRoot);
   const parent = path.dirname(root);
   if (!fs.existsSync(parent)) return [];
+  const scopedPrefix = '.dk-legacy-restore-stage-' + restoreJournalDigest(root) + '-';
   return fs.readdirSync(parent)
-    .filter((name) => /^\.dk-legacy-restore-stage-[a-f0-9]{32}(?:-original)?$/.test(name))
+    .filter((name) =>
+      // New v0.13 stages are bound to this exact target; retained originals
+      // belonging to another sibling project must not block its restore.
+      (name.startsWith(scopedPrefix) &&
+        /^[a-f0-9]{32}(?:-original)?$/.test(name.slice(scopedPrefix.length))) ||
+      // Pre-scoped witnesses cannot be safely attributed without a journal.
+      // Keep the historical conservative fail-closed behavior for those.
+      /^\.dk-legacy-restore-stage-[a-f0-9]{32}(?:-original)?$/.test(name))
     .map((name) => path.join(parent, name))
     .sort();
 }
 
+/**
+ * Windows path lookup is ordinarily case-insensitive, but the historical
+ * transaction-log digest is based on the caller's exact path spelling.
+ * When a published root is missing after a crash, realpath cannot recover
+ * its original casing. Inspect bounded first-record witnesses in sibling
+ * journals before treating a differently cased target as a fresh project.
+ *
+ * This is a fail-closed alias guard, not proof of physical power-loss
+ * durability or a defence against a hostile same-account filesystem writer.
+ */
+function assertNoWindowsCaseAliasedRestoreJournal(targetRoot) {
+  if (process.platform !== 'win32') return;
+  const root = path.resolve(targetRoot);
+  const parent = path.dirname(root);
+  if (!fs.existsSync(parent)) return;
+  const expectedJournal = path.basename(restoreJournalPath(root)).toLowerCase();
+  const targetKey = root.normalize('NFC').toLowerCase();
+  for (const name of fs.readdirSync(parent)) {
+    if (!/^\.dk-restore-transaction-[a-f0-9]{24}\.jsonl$/i.test(name) ||
+        name.toLowerCase() === expectedJournal) continue;
+    const candidate = path.join(parent, name);
+    const stat = fs.lstatSync(candidate);
+    if (!stat.isFile() || stat.isSymbolicLink()) continue;
+    const fd = fs.openSync(candidate, 'r');
+    let firstLine;
+    try {
+      const bytes = Buffer.alloc(8192);
+      const length = fs.readSync(fd, bytes, 0, bytes.length, 0);
+      firstLine = bytes.subarray(0, length).toString('utf8').split('\n', 1)[0];
+    } finally {
+      fs.closeSync(fd);
+    }
+    let witness;
+    try { witness = JSON.parse(firstLine); }
+    catch { continue; }
+    if (typeof witness?.targetRoot !== 'string' ||
+        path.resolve(witness.targetRoot).normalize('NFC').toLowerCase() !== targetKey) continue;
+    validateRestoreRecord(witness);
+    throw new StateMigrationError(
+      'Terminal restore root witness exists under a Windows case alias; refusing destructive mutation',
+      { code: 'RESTORE_CASE_ALIAS_WITNESS', journal: candidate },
+    );
+  }
+}
+
+/**
+ * A Windows journal may disappear from the durable namespace even when its
+ * scoped stage/displaced-original directory survived. The stage digest then
+ * cannot be attributed safely to a differently cased missing target root.
+ * Reject a new restore anywhere in that parent until the orphan is recovered
+ * by an operator; do not silently treat a sibling name as proof of safety.
+ */
+function assertNoWindowsOrphanRestoreStages(targetRoot) {
+  if (process.platform !== 'win32') return;
+  const parent = path.dirname(path.resolve(targetRoot));
+  if (!fs.existsSync(parent)) return;
+  for (const name of fs.readdirSync(parent)) {
+    const match = /^\.dk-legacy-restore-stage-([a-f0-9]{24})-[a-f0-9]{32}(?:-original)?$/i.exec(name);
+    if (!match) continue;
+    const journal = path.join(parent, '.dk-restore-transaction-' + match[1] + '.jsonl');
+    if (!inspectSafeRestoreJournal(journal)) {
+      throw new StateMigrationError(
+        'Orphan restore witnesses exist without a recovery journal; refusing destructive mutation',
+        { code: 'RESTORE_WITNESS_WITHOUT_JOURNAL', witness: path.join(parent, name) },
+      );
+    }
+  }
+}
+
 function assertNoUnjournaledRestoreWitness(targetRoot) {
+  assertNoWindowsCaseAliasedRestoreJournal(targetRoot);
+  assertNoWindowsOrphanRestoreStages(targetRoot);
   if (fs.existsSync(restoreJournalPath(targetRoot)) || fs.existsSync(legacyRestoreJournalPath(targetRoot))) return;
   const witnesses = orphanRestoreWitnesses(targetRoot);
   if (witnesses.length > 0) {
@@ -1054,6 +1163,28 @@ function recoverLegacyRestoreV1({ root, parent, journalPath }) {
   });
 }
 
+function requireTerminalRestoreRootWitness(root, transaction, rawOutcome) {
+  // Historical V1 journals are imported with a legacy-v1- outcome prefix.
+  // Normalize only that authenticated import marker; all other outcomes must
+  // match the closed terminal outcome set and the exact on-disk root inode.
+  const outcome = typeof rawOutcome === 'string' && rawOutcome.startsWith('legacy-v1-')
+    ? rawOutcome.slice('legacy-v1-'.length) : rawOutcome;
+  const rootWitness = inspectRestorePath(root);
+  const promoted = outcome === 'promoted-new-root' || outcome === 'promoted-original-retained';
+  const original = outcome === 'rolled-back-original' || outcome === 'uncommitted-original-unchanged';
+  const witnessValid = promoted
+    ? sameRestoreIdentity(rootWitness, transaction.stageDev, transaction.stageIno)
+    : original
+      ? transaction.existed
+        ? sameRestoreIdentity(rootWitness, transaction.originalDev, transaction.originalIno)
+        : !rootWitness
+      : false;
+  if (!witnessValid) {
+    throw new StateMigrationError('Terminal restore root identity witness mismatch; refusing to supersede recovery evidence');
+  }
+  return true;
+}
+
 /**
  * Recover only an interrupted OFFLINE restore for the exact target root.
  * Recovery is witness-driven and never treats absence of a journal entry as
@@ -1069,6 +1200,8 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
 
   const root = path.resolve(targetRoot);
   const parent = path.dirname(root);
+  assertNoWindowsCaseAliasedRestoreJournal(root);
+  assertNoWindowsOrphanRestoreStages(root);
   const legacyJournal = legacyRestoreJournalPath(root);
   if (fs.existsSync(legacyJournal)) {
     return recoverLegacyRestoreV1({ root, parent, journalPath: legacyJournal });
@@ -1082,15 +1215,18 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
 
   const latest = latestRestoreTransaction(records);
   const tx = latest.prepared;
-  const expectedStage = '.dk-legacy-restore-stage-' + tx.transactionId;
-  if (tx.targetRoot !== root || tx.stageName !== expectedStage) {
+  const legacyStage = '.dk-legacy-restore-stage-' + tx.transactionId;
+  const scopedStage = '.dk-legacy-restore-stage-' + restoreJournalDigest(root) + '-' + tx.transactionId;
+  if (tx.targetRoot !== root || ![legacyStage, scopedStage].includes(tx.stageName)) {
     throw new StateMigrationError('Restore transaction witness does not match requested target root');
   }
 
-  const stage = path.join(parent, expectedStage);
+  const stage = path.join(parent, tx.stageName);
   const displaced = stage + '-original';
 
   if (latest.last.phase === RESTORE_TERMINAL_PHASE) {
+    // Never treat an authenticated terminal record as physical root evidence.
+    requireTerminalRestoreRootWitness(root, tx, latest.last.outcome);
     return Object.freeze({
       recovered: false,
       alreadyComplete: true,
@@ -1140,19 +1276,21 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
   if (sameRestoreIdentity(atRoot, tx.stageDev, tx.stageIno)
       && ((!tx.existed && !inDisplaced)
         || (tx.existed && inDisplaced))) {
+    // The candidate may be visible after a successful rename whose parent
+    // directory flush failed or never ran before process death. Retry the
+    // publication namespace barrier *before* appending acknowledgement or
+    // terminal records. On failure, preserve the nonterminal journal and both
+    // candidate/original witnesses for another controlled recovery attempt.
+    syncRestoreParent(parent);
     appendMissingSuccessfulRestorePhases(root, tx, latest.records, {
       outcome: tx.existed ? 'promoted-original-retained' : 'promoted-new-root',
     });
 
-    let cleanupPending = false;
-    if (tx.existed && fs.existsSync(displaced)) {
-      try {
-        fs.rmSync(displaced, { recursive: true, force: true });
-        syncRestoreParent(parent);
-      } catch {
-        cleanupPending = true;
-      }
-    }
+    // The old root is the only exact-inode rollback witness after promotion.
+    // A terminal journal record cannot certify physical persistence of the
+    // preceding Windows namespace operations. Retain it for separate offline
+    // reviewed cleanup; never delete it as part of automatic recovery.
+    let cleanupPending = tx.existed && fs.existsSync(displaced);
     if (inStage && fs.existsSync(stage)) {
       try {
         fs.rmSync(stage, { recursive: true, force: true });
@@ -1280,6 +1418,9 @@ export function restoreLegacyBackup({
         phase: latest.last.phase,
       });
     }
+    // A second restore may not overwrite or supersede a terminal journal
+    // whose prior root publication was lost across power interruption.
+    requireTerminalRestoreRootWitness(resolvedRoot, latest.prepared, latest.last.outcome);
   }
 
   const bundle = readJson(backupPath, 'Legacy backup');
@@ -1324,7 +1465,8 @@ export function restoreLegacyBackup({
   syncRestoreParent(parent);
 
   const transactionId = crypto.randomBytes(16).toString('hex');
-  const stage = path.join(parent, '.dk-legacy-restore-stage-' + transactionId);
+  const stage = path.join(parent, '.dk-legacy-restore-stage-' +
+    restoreJournalDigest(resolvedRoot) + '-' + transactionId);
   const displaced = stage + '-original';
   fs.mkdirSync(stage, { mode: 0o700 });
 
@@ -1429,17 +1571,11 @@ export function restoreLegacyBackup({
       outcome: originalRootExists ? 'promoted-original-retained' : 'promoted-new-root',
     });
 
-    let cleanupPending = false;
-    if (originalRootExists && fs.existsSync(displaced)) {
-      try {
-        fs.rmSync(displaced, { recursive: true, force: true });
-        syncRestoreParent(parent);
-      } catch {
-        // Cleanup is intentionally post-terminal. Preserve the authenticated
-        // old root rather than turning cleanup failure into data loss.
-        cleanupPending = true;
-      }
-    }
+    // A completed restore retains the displaced original as an exact-inode
+    // recovery witness. Its later disposal is a distinct offline operation,
+    // requiring explicit retention/security approval and disk-space planning.
+    // Do not destroy the original merely because the terminal log was fsynced.
+    const cleanupPending = originalRootExists && fs.existsSync(displaced);
 
     return Object.freeze({
       restoredFiles: restored.sort(),

@@ -665,22 +665,41 @@ test('T04-H25 interrupted two-step root promotion can restore original using jou
   const sentinel = path.join(root, 'persist-original.txt');
   fs.writeFileSync(sentinel, 'ORIGINAL');
   const originalRename = fs.renameSync;
+  const originalWrite = fs.writeFileSync;
   let movedRoot = false;
   let failureInjected = false;
-  fs.renameSync = function injectPowerFailure(oldPath, nextPath, ...args) {
-    if (movedRoot && !failureInjected && typeof oldPath === 'string' &&
-      oldPath.includes('.dk-legacy-restore-stage-') && nextPath === root) {
-      failureInjected = true;
-      throw new Error('simulated crash between displacement and promotion');
-    }
-    if (oldPath === root && String(nextPath).endsWith('-original')) movedRoot = true;
-    return originalRename.call(this, oldPath, nextPath, ...args);
-  };
+  if (process.platform === 'win32') {
+    // Windows uses the native helper for renames. Inject immediately after
+    // the durable ORIGINAL_DISPLACED log write, before stage promotion.
+    fs.writeFileSync = function injectWindowsRestoreFailure(fd, content, ...args) {
+      const result = originalWrite.call(this, fd, content, ...args);
+      if (!failureInjected && typeof fd === 'number' &&
+          String(content).includes('"phase":"ORIGINAL_DISPLACED"')) {
+        failureInjected = true;
+        throw new Error('simulated crash between displacement and promotion');
+      }
+      return result;
+    };
+  } else {
+    fs.renameSync = function injectPowerFailure(oldPath, nextPath, ...args) {
+      if (movedRoot && !failureInjected && typeof oldPath === 'string' &&
+        oldPath.includes('.dk-legacy-restore-stage-') && nextPath === root) {
+        failureInjected = true;
+        throw new Error('simulated crash between displacement and promotion');
+      }
+      if (oldPath === root && String(nextPath).endsWith('-original')) movedRoot = true;
+      return originalRename.call(this, oldPath, nextPath, ...args);
+    };
+  }
   try {
     assert.throws(() => restoreLegacyBackup({
       confirmOffline: true, backupPath: migrated.backupPath, targetRoot: root,
     }), /simulated crash/);
-  } finally { fs.renameSync = originalRename; }
+    assert.equal(failureInjected, true, 'The intended crash boundary must actually be reached');
+  } finally {
+    fs.renameSync = originalRename;
+    fs.writeFileSync = originalWrite;
+  }
   // If the in-process finally managed the rollback, the leftover journal is
   // still authoritative. Recovery must be idempotent and must never erase it.
   assert.equal(fs.readFileSync(sentinel, 'utf8'), 'ORIGINAL');
@@ -711,11 +730,19 @@ test('T04-H28 restore journals preserve original after a simulated process death
   const script = [
     'import fs from "node:fs";',
     'import {restoreLegacyBackup} from '+JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href)+';',
-    'const backup=process.argv[1],root=process.argv[2],rename=fs.renameSync;',
-    'fs.renameSync=function(a,b,...rest){',
-    ' if(a===root && String(b).endsWith("-original")) {const r=rename.call(this,a,b,...rest);process.exit(91);}',
-    ' return rename.call(this,a,b,...rest);',
-    '};',
+    'const backup=process.argv[1],root=process.argv[2],rename=fs.renameSync,write=fs.writeFileSync;',
+    'if(process.platform==="win32") {',
+    ' fs.writeFileSync=function(fd,content,...rest){',
+    '  const out=write.call(this,fd,content,...rest);',
+    '  if(typeof fd==="number" && String(content).includes(\'"phase":"ORIGINAL_DISPLACED"\')) process.exit(91);',
+    '  return out;',
+    ' };',
+    '} else {',
+    ' fs.renameSync=function(a,b,...rest){',
+    '  if(a===root && String(b).endsWith("-original")) {const out=rename.call(this,a,b,...rest);process.exit(91);}',
+    '  return rename.call(this,a,b,...rest);',
+    ' };',
+    '}',
     'restoreLegacyBackup({backupPath:backup,targetRoot:root,confirmOffline:true});',
   ].join('\n');
   // spawnSync is intentionally used for a true process exit instead of a
@@ -733,8 +760,10 @@ test('T04-H28 restore journals preserve original after a simulated process death
 });
 
 
-test('T04-H47 recovery fsyncs the restored parent entry before deleting its rollback journal', (t) => {
-  // Runs on Windows too: the barrier is FlushFileBuffers on a directory handle.
+test('T04-H47 POSIX rollback parent flush precedes append-only terminal acknowledgement', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('Native Windows rename/flush is exercised by H48'); return;
+  }
   const source = tempProject(t, 'dk-rollback-fsync-source-');
   writeLegacyAutopilot(source, 2);
   const migrated = migrateLegacyStateToV2({ rootDir: source });
@@ -742,7 +771,6 @@ test('T04-H47 recovery fsyncs the restored parent entry before deleting its roll
   const sentinel = path.join(root, 'original.txt');
   fs.writeFileSync(sentinel, 'ROLLBACK-ORIGINAL', 'utf8');
 
-  // A real process exit avoids running the normal in-process finally rollback.
   const script = [
     'import fs from "node:fs";',
     'import {restoreLegacyBackup} from ' +
@@ -763,53 +791,48 @@ test('T04-H47 recovery fsyncs the restored parent entry before deleting its roll
   const parentStat = fs.statSync(parent);
   const originalRename = fs.renameSync;
   const originalFsync = fs.fsyncSync;
-  const originalUnlink = fs.unlinkSync;
+  const originalWrite = fs.writeFileSync;
   let rollbackRenamed = false;
   let parentSyncedAfterRollback = false;
-  let journalRemoved = false;
+  let terminalRecorded = false;
   fs.renameSync = function watchRollback(from, to, ...args) {
     const returned = originalRename.call(this, from, to, ...args);
-    if (typeof from === 'string' && from.endsWith('-original') && to === root) {
-      rollbackRenamed = true;
-    }
+    if (typeof from === 'string' && from.endsWith('-original') && to === root) rollbackRenamed = true;
     return returned;
   };
   fs.fsyncSync = function watchParentDurability(fd) {
     const stat = fs.fstatSync(fd);
+    const returned = originalFsync.call(this, fd);
     if (rollbackRenamed && stat.isDirectory() &&
-      stat.dev === parentStat.dev && stat.ino === parentStat.ino) {
-      parentSyncedAfterRollback = true;
-    }
-    return originalFsync.call(this, fd);
+        stat.dev === parentStat.dev && stat.ino === parentStat.ino) parentSyncedAfterRollback = true;
+    return returned;
   };
-  fs.unlinkSync = function guardJournalRemoval(target, ...args) {
-    if (typeof target === 'string' &&
-      path.basename(target).startsWith('.dk-restore-journal-')) {
-      journalRemoved = true;
+  fs.writeFileSync = function guardTerminalRecord(fd, content, ...args) {
+    if (typeof fd === 'number' && String(content).includes('"phase":"CLEANUP_SAFE"')) {
+      terminalRecorded = true;
       assert.equal(rollbackRenamed, true, 'Recovery must restore the displaced root');
       assert.equal(parentSyncedAfterRollback, true,
-        'Rollback directory rename must be fsynced before deleting the journal');
+        'Rollback directory rename must be fsynced before durable terminal log append');
     }
-    return originalUnlink.call(this, target, ...args);
+    return originalWrite.call(this, fd, content, ...args);
   };
   try {
     const recovery = recoverLegacyRestore({ targetRoot: root, confirmOffline: true });
     assert.equal(recovery.outcome, 'rolled-back-original');
-    assert.ok(journalRemoved);
+    assert.ok(terminalRecorded, 'Append-only terminal log must acknowledge rollback');
+    assert.equal(fs.existsSync(recovery.transactionLog), true, 'Retain the hash-chained recovery log');
     assert.equal(fs.readFileSync(sentinel, 'utf8'), 'ROLLBACK-ORIGINAL');
   } finally {
     fs.renameSync = originalRename;
     fs.fsyncSync = originalFsync;
-    fs.unlinkSync = originalUnlink;
+    fs.writeFileSync = originalWrite;
   }
 });
 
-test('T04-H48 Windows crash rollback and recovery verify parent flush barrier before journal unlink', (t) => {
+test('T04-H48 Windows native rollback completes directory flush before retained terminal log', (t) => {
   if (process.platform !== 'win32') {
-    t.skip('Windows parent flush barrier verification');
-    return;
+    t.skip('Windows native durability helper requires Windows NTFS'); return;
   }
-
   const source = tempProject(t, 'dk-win-rollback-source-');
   writeLegacyAutopilot(source, 2);
   const migrated = migrateLegacyStateToV2({ rootDir: source });
@@ -817,14 +840,17 @@ test('T04-H48 Windows crash rollback and recovery verify parent flush barrier be
   const sentinel = path.join(root, 'original.txt');
   fs.writeFileSync(sentinel, 'WINDOWS-ORIGINAL', 'utf8');
 
+  // The v0.13 Windows path uses an isolated native helper, not fs.renameSync.
+  // Kill the child only after the ORIGINAL_DISPLACED record has been written.
   const script = [
     'import fs from "node:fs";',
     'import {restoreLegacyBackup} from ' +
       JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href) + ';',
-    'const backup=process.argv[1],root=process.argv[2],rename=fs.renameSync;',
-    'fs.renameSync=function(a,b,...rest){',
-    ' if(a===root && String(b).endsWith("-original")) {rename.call(this,a,b,...rest);process.exit(91);}',
-    ' return rename.call(this,a,b,...rest);',
+    'const backup=process.argv[1],root=process.argv[2],write=fs.writeFileSync;',
+    'fs.writeFileSync=function(fd,content,...rest){',
+    ' const out=write.call(this,fd,content,...rest);',
+    ' if(typeof fd==="number" && String(content).includes(\'"phase":"ORIGINAL_DISPLACED"\')) process.exit(91);',
+    ' return out;',
     '};',
     'restoreLegacyBackup({backupPath:backup,targetRoot:root,confirmOffline:true});',
   ].join('\n');
@@ -833,51 +859,13 @@ test('T04-H48 Windows crash rollback and recovery verify parent flush barrier be
   assert.equal(result.status, 91, result.stderr);
   assert.equal(fs.existsSync(root), false);
 
-  const parent = path.dirname(root);
-  const parentIdentity = fs.statSync(parent);
-  const originalRename = fs.renameSync;
-  const originalFsync = fs.fsyncSync;
-  const originalUnlink = fs.unlinkSync;
-  let rollbackRenamed = false;
-  let parentFlushedAfterRollback = false;
-  let journalRemoved = false;
-
-  fs.renameSync = function watchRollback(from, to, ...args) {
-    const returned = originalRename.call(this, from, to, ...args);
-    if (typeof from === 'string' && from.endsWith('-original') && to === root) {
-      rollbackRenamed = true;
-    }
-    return returned;
-  };
-  fs.fsyncSync = function watchParentFlush(fd) {
-    const stat = fs.fstatSync(fd);
-    const returned = originalFsync.call(this, fd);
-    if (rollbackRenamed && stat.isDirectory() &&
-      stat.dev === parentIdentity.dev && stat.ino === parentIdentity.ino) {
-      parentFlushedAfterRollback = true;
-    }
-    return returned;
-  };
-  fs.unlinkSync = function guardJournalRemoval(target, ...args) {
-    if (typeof target === 'string' &&
-      path.basename(target).startsWith('.dk-restore-journal-')) {
-      journalRemoved = true;
-      assert.equal(rollbackRenamed, true, 'Recovery must restore the displaced root');
-      assert.equal(parentFlushedAfterRollback, true,
-        'Windows rollback directory rename must be flushed to disk before deleting the journal');
-    }
-    return originalUnlink.call(this, target, ...args);
-  };
-  try {
-    const recovered = recoverLegacyRestore({ targetRoot: root, confirmOffline: true });
-    assert.equal(recovered.outcome, 'rolled-back-original');
-    assert.ok(journalRemoved);
-    assert.equal(fs.readFileSync(sentinel, 'utf8'), 'WINDOWS-ORIGINAL');
-  } finally {
-    fs.renameSync = originalRename;
-    fs.fsyncSync = originalFsync;
-    fs.unlinkSync = originalUnlink;
-  }
+  const recovery = recoverLegacyRestore({ targetRoot: root, confirmOffline: true });
+  assert.equal(recovery.outcome, 'rolled-back-original');
+  assert.equal(fs.readFileSync(sentinel, 'utf8'), 'WINDOWS-ORIGINAL');
+  assert.equal(fs.existsSync(recovery.transactionLog), true, 'Native recovery retains journal');
+  const records = fs.readFileSync(recovery.transactionLog, 'utf8').trimEnd().split('\n').map(JSON.parse);
+  assert.equal(records.at(-1).phase, 'CLEANUP_SAFE');
+  assert.equal(records.at(-1).outcome, 'rolled-back-original');
 });
 
 test('T04-H30 offline staged restore preserves descendant file identity and POSIX permission metadata', (t) => {

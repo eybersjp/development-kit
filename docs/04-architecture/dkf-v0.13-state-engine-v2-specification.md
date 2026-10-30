@@ -185,7 +185,7 @@ Instead:
 
 - append/replace the transaction state with an explicit terminal phase;
 - retain enough witness material for restart reconciliation;
-- cleanup of old transaction records is a separate bounded maintenance operation, not part of the critical promotion acknowledgement.
+- cleanup of old transaction records **and retained displaced-original directories** is a separate bounded, explicitly reviewed offline maintenance operation, not part of the critical promotion acknowledgement. The exact original directory inode must remain available after normal success and promoted recovery until that decision; retained data requires disk-capacity and access-control management.
 
 ### 7.2 Crash ambiguity rule
 
@@ -230,7 +230,7 @@ The final suite MUST include Windows-specific, non-skipped coverage equivalent t
 - W73-02 original displacement boundary;
 - W73-03 candidate publication boundary;
 - W73-04 promotion acknowledgement boundary;
-- W73-05 displaced-original cleanup boundary;
+- W73-05 retained displaced-original witness and separately approved offline cleanup boundary;
 - W73-06 interrupted rollback and repeat recovery;
 - W73-07 invalid/tampered witness;
 - W73-08 unsupported persistence profile fails safely before destructive mutation;

@@ -98,9 +98,9 @@ function requireCanonicalRole(body, label, expectedRole) {
 }
 
 export function requireCanonicalGithubReviewRequest(request, expectedRole, reviewedCommit) {
-  if (!request || request.issue_url !== 'https://api.github.com/repos/eybersjp/development-kit/issues/70' ||
+  if (!request || request.issue_url !== 'https://api.github.com/repos/eybersjp/development-kit/issues/92' ||
       typeof request.body !== 'string' || !request.body.includes('@codex')) {
-    throw new Error('Authenticated reviewer scope request must bind PR #70');
+    throw new Error('Authenticated reviewer scope request must bind PR #92');
   }
   requireCanonicalRole(request.body, 'Independent role', expectedRole);
   requireCanonicalReviewRequestCommit(request.body, reviewedCommit);

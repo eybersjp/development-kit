@@ -33,11 +33,12 @@ test('RI-01 clean verdict requires one canonical findings declaration and no str
 
 test('RI-02 authenticated scope request binds PR and exactly one role', () => {
   const source = 'a'.repeat(40);
-  const request = { issue_url: 'https://api.github.com/repos/eybersjp/development-kit/issues/70',
+  const request = { issue_url: 'https://api.github.com/repos/eybersjp/development-kit/issues/92',
     body: '@codex\nIndependent role: code-reviewer\nCommit: ' + source };
   assert.equal(typeof reviewParsers.requireCanonicalGithubReviewRequest, 'function');
   assert.doesNotThrow(() => reviewParsers.requireCanonicalGithubReviewRequest(request, 'code-reviewer', source));
-  for (const invalid of [{ ...request, issue_url: request.issue_url.replace('/70', '/71') },
+  for (const invalid of [{ ...request, issue_url: request.issue_url.replace('/92', '/70') },
+    { ...request, issue_url: request.issue_url.replace('/92', '/71') },
     { ...request, issue_url: undefined },
     { ...request, body: request.body + '\nIndependent role: code-reviewer' },
     { ...request, body: request.body + '\nIndependent role: security-reviewer' }]) {
@@ -166,7 +167,7 @@ test('T04-A08 generated reviewer request has one immutable SHA and exactly one r
     const body = formatCanonicalT04ReviewRequest(role, source, 'Inspect precise T04 source and evidence.');
     assert.equal((body.match(new RegExp(source, 'g')) || []).length, 1);
     assert.equal(reviewParsers.requireCanonicalGithubReviewRequest({
-      issue_url: 'https://api.github.com/repos/eybersjp/development-kit/issues/70',
+      issue_url: 'https://api.github.com/repos/eybersjp/development-kit/issues/92',
       body,
     }, role, source), source);
     assert.throws(() => formatCanonicalT04ReviewRequest(

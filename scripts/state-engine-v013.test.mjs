@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -8,6 +9,7 @@ import {
   appendMetadataEvent,
   getStateEnginePaths,
   loadCanonicalEvents,
+  loadEntityState,
   loadStateSnapshot,
   rebuildStateIndex,
   verifyStateEngineIntegrity,
@@ -20,6 +22,7 @@ import {
 } from '../runtime/orchestration/state-engine-migration.mjs';
 import { createInitialState } from '../runtime/autopilot/transition-model.mjs';
 import { saveStateRevision } from '../runtime/autopilot/state-store.mjs';
+import { persistRunManifest, persistRunStateRevision, updateRun } from '../runtime/orchestration/orchestration-run.mjs';
 
 function tempDir(t, prefix = 'dk-v013-state-') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -220,4 +223,299 @@ test('W73-10 no transaction and no witness reports no recovery work', (t) => {
     recoverLegacyRestore({ targetRoot, confirmOffline: true }),
     { recovered: false },
   );
+});
+
+
+test('W73-11 terminal restore log cannot certify a missing promoted root', (t) => {
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-terminal-witness-');
+  const targetRoot = path.join(parent, 'restored-project');
+  const result = restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true });
+  assert.equal(fs.existsSync(result.transactionLog), true);
+  assert.equal(fs.existsSync(targetRoot), true);
+
+  // Model a persisted terminal record whose corresponding directory rename
+  // was not durable across a power interruption. No attacker is assumed.
+  // A terminal record must never be sufficient to declare recovery complete.
+  const moved = path.join(parent, 'simulated-unpersisted-promotion');
+  fs.renameSync(targetRoot, moved);
+  assert.throws(
+    () => recoverLegacyRestore({ targetRoot, confirmOffline: true }),
+    /terminal.*(root|witness)|terminal.*identity/i,
+    'Missing promoted root must fail closed despite a valid terminal journal',
+  );
+  assert.equal(fs.existsSync(moved), true, 'Do not destroy recovery evidence');
+  assert.equal(fs.existsSync(result.transactionLog), true, 'Retain authenticated journal');
+});
+
+
+test('W73-12 completed Windows-compatible restore retains exact original inode after terminal acknowledgement', (t) => {
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-retained-original-');
+  const targetRoot = path.join(parent, 'project');
+  fs.mkdirSync(targetRoot);
+  const originalSentinel = path.join(targetRoot, 'original-witness.txt');
+  fs.writeFileSync(originalSentinel, 'ORIGINAL-MUST-SURVIVE');
+  const before = fs.lstatSync(targetRoot, { bigint: true });
+
+  const restored = restoreLegacyBackup({
+    backupPath, targetRoot, overwrite: true, confirmOffline: true,
+  });
+  assert.ok(restored.displacedOriginal,
+    'The original directory must remain an independently verifiable rollback witness');
+  const retained = fs.lstatSync(restored.displacedOriginal, { bigint: true });
+  assert.equal(retained.dev, before.dev);
+  assert.equal(retained.ino, before.ino, 'Original directory inode must be retained');
+  assert.equal(fs.readFileSync(path.join(restored.displacedOriginal, 'original-witness.txt'), 'utf8'),
+    'ORIGINAL-MUST-SURVIVE');
+  assert.equal(fs.existsSync(restored.transactionLog), true, 'Retain terminal transaction log');
+  const recovered = recoverLegacyRestore({ targetRoot, confirmOffline: true });
+  assert.equal(recovered.alreadyComplete, true);
+  assert.equal(fs.existsSync(restored.displacedOriginal), true,
+    'Read-only completed recovery must not delete the original witness');
+});
+
+
+for (const linkKind of ['symbolic', 'hard']) {
+  test(`W73-13/${linkKind} pre-existing linked restore journal cannot redirect transaction writes`, (t) => {
+    const { backupPath } = createLegacyBackupFixture(t);
+    const parent = tempDir(t, 'dk-v013-journal-link-');
+    const targetRoot = path.join(parent, 'project');
+    const outside = path.join(parent, 'unrelated-confidential-log.jsonl');
+    fs.writeFileSync(outside, '');
+    const digest = crypto.createHash('sha256').update(path.resolve(targetRoot)).digest('hex').slice(0, 24);
+    const journal = path.join(parent, '.dk-restore-transaction-' + digest + '.jsonl');
+    try {
+      if (linkKind === 'symbolic') fs.symlinkSync(outside, journal, 'file');
+      else fs.linkSync(outside, journal);
+    } catch (error) {
+      if (['EPERM', 'EACCES', 'ENOTSUP', 'EOPNOTSUPP'].includes(error.code)) {
+        t.skip('Host does not permit this linked-file fixture'); return;
+      }
+      throw error;
+    }
+    assert.throws(
+      () => restoreLegacyBackup({ backupPath, targetRoot, confirmOffline: true }),
+      /restore.*(journal|transaction|link)|unsafe.*(link|journal)/i,
+      'Existing linked journal must fail closed before writing external bytes',
+    );
+    assert.equal(fs.readFileSync(outside, 'utf8'), '', 'Unrelated target must remain untouched');
+    assert.equal(fs.existsSync(targetRoot), false);
+  });
+}
+
+
+test('W73-14 retained original from one project must not block unrelated target in same parent', (t) => {
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-independent-targets-');
+  const firstRoot = path.join(parent, 'first');
+  const secondRoot = path.join(parent, 'second');
+  fs.mkdirSync(firstRoot);
+  fs.writeFileSync(path.join(firstRoot, 'first-original.txt'), 'FIRST-ORIGINAL');
+  const first = restoreLegacyBackup({ backupPath, targetRoot: firstRoot, overwrite: true, confirmOffline: true });
+  assert.ok(first.displacedOriginal);
+  assert.equal(fs.existsSync(first.displacedOriginal), true);
+
+  const second = restoreLegacyBackup({ backupPath, targetRoot: secondRoot, confirmOffline: true });
+  assert.equal(fs.existsSync(secondRoot), true,
+    'Unrelated target must remain independently restorable');
+  assert.equal(fs.existsSync(second.transactionLog), true);
+  assert.equal(fs.readFileSync(path.join(first.displacedOriginal, 'first-original.txt'), 'utf8'),
+    'FIRST-ORIGINAL', 'Original rollback witness must survive the other restore');
+});
+
+
+test('W73-15 a terminal journal with a missing root blocks the next restore without superseding evidence', (t) => {
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-terminal-preflight-');
+  const targetRoot = path.join(parent, 'project');
+  fs.mkdirSync(targetRoot);
+  fs.writeFileSync(path.join(targetRoot, 'original.txt'), 'KEEP-ORIGINAL');
+  const first = restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true });
+  assert.ok(first.displacedOriginal);
+  const before = fs.readFileSync(first.transactionLog, 'utf8');
+
+  // Model terminal journal persistence without the preceding root publication.
+  const unpersisted = path.join(parent, 'unpersisted-published-root');
+  fs.renameSync(targetRoot, unpersisted);
+  assert.throws(
+    () => restoreLegacyBackup({ backupPath, targetRoot, confirmOffline: true }),
+    /terminal.*(root|witness)|terminal.*identity/i,
+    'A newer restore must not supersede an unresolved terminal root witness',
+  );
+  assert.equal(fs.existsSync(targetRoot), false);
+  assert.equal(fs.readFileSync(first.transactionLog, 'utf8'), before);
+  assert.equal(fs.readFileSync(path.join(first.displacedOriginal, 'original.txt'), 'utf8'), 'KEEP-ORIGINAL');
+});
+
+test('W73-16 imported V1 terminal outcomes remain idempotently recoverable', (t) => {
+  const parent = tempDir(t, 'dk-v013-imported-v1-');
+  const targetRoot = path.join(parent, 'project');
+  fs.mkdirSync(targetRoot);
+  fs.writeFileSync(path.join(targetRoot, 'original.txt'), 'V1-ORIGINAL');
+  const original = fs.lstatSync(targetRoot, { bigint: true });
+  const transactionId = 'a'.repeat(32);
+  const stageName = '.dk-legacy-restore-stage-' + transactionId;
+  const digest = crypto.createHash('sha256').update(path.resolve(targetRoot)).digest('hex').slice(0, 24);
+  const journal = path.join(parent, '.dk-restore-journal-' + digest + '.json');
+  fs.writeFileSync(journal, JSON.stringify({
+    schemaVersion: '1.0.0', transactionId, targetRoot, stageName,
+    existed: true, originalDev: original.dev.toString(), originalIno: original.ino.toString(),
+    stageDev: '1', stageIno: '1',
+  }));
+  const first = recoverLegacyRestore({ targetRoot, confirmOffline: true });
+  assert.equal(first.legacyJournal, true);
+  assert.equal(first.outcome, 'uncommitted-original-unchanged');
+  assert.equal(fs.existsSync(first.retainedJournal), true);
+  const second = recoverLegacyRestore({ targetRoot, confirmOffline: true });
+  assert.equal(second.alreadyComplete, true);
+  assert.equal(fs.readFileSync(path.join(targetRoot, 'original.txt'), 'utf8'), 'V1-ORIGINAL');
+});
+
+test('W73-17 mixed legacy Autopilot and canonical V2 orchestration runs migrate without revision regression', (t) => {
+  const rootDir = tempDir(t, 'dk-v013-mixed-state-');
+  const legacy = createInitialState({ autonomy: 'guided-autopilot' }, rootDir);
+  const legacyDir = path.join(rootDir, '.development-kit', 'autopilot', 'state');
+  fs.mkdirSync(legacyDir, { recursive: true });
+  fs.writeFileSync(path.join(legacyDir, 'revision-000001.json'), JSON.stringify(legacy, null, 2));
+  saveStateRevision(legacy, rootDir);
+
+  const run = {
+    schemaVersion: '1.0.0', contractId: 'contract-mixed', taskId: 'task-mixed',
+    runId: 'run-mixed', sourceFingerprint: 'sha256:' + 'a'.repeat(64),
+    createdAt: '2026-10-30T00:00:00.000Z', updatedAt: '2026-10-30T00:00:00.000Z',
+    stateRevision: 1, state: 'READY', executionStrategy: 'direct',
+    hostCapabilities: {}, manualEvidenceRequired: false, requiredGates: {},
+    completedGates: [], correctionAttempt: 0, failureSignatures: [],
+    verificationVerdict: null, acceptanceState: 'PENDING',
+  };
+  persistRunManifest(run, rootDir);
+  assert.equal(persistRunStateRevision(run, rootDir).stateEngine, 'v2');
+  const revised = updateRun(run, { state: 'IMPLEMENTING' }, '2026-10-30T00:01:00.000Z');
+  assert.equal(persistRunStateRevision(revised, rootDir).stateEngine, 'v2');
+  const migration = migrateLegacyStateToV2({ rootDir, completedAt: '2026-10-30T00:02:00.000Z' });
+  assert.equal(migration.semanticEquivalence, true);
+  assert.equal(loadEntityState('orchestration-run', 'contract-mixed/run-mixed', rootDir).stateRevision, 2);
+});
+
+
+test('W73-18 recovery cannot acknowledge candidate promotion without retrying parent flush', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('POSIX fsync injection; Windows native-helper barrier requires its own fault hook'); return;
+  }
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-publication-barrier-');
+  const targetRoot = path.join(parent, 'project');
+  fs.mkdirSync(targetRoot);
+  fs.writeFileSync(path.join(targetRoot, 'original.txt'), 'RETAIN-ORIGINAL');
+  const originalRename = fs.renameSync;
+  const originalFsync = fs.fsyncSync;
+  const parentStat = fs.statSync(parent);
+  let promoted = false;
+  let injected = false;
+  fs.renameSync = function watchPromotion(from, to, ...args) {
+    const result = originalRename.call(this, from, to, ...args);
+    if (typeof from === 'string' && from.includes('.dk-legacy-restore-stage-') &&
+        !from.endsWith('-original') && to === targetRoot) promoted = true;
+    return result;
+  };
+  fs.fsyncSync = function failPublicationBarrier(fd) {
+    const stat = fs.fstatSync(fd);
+    if (promoted && !injected && stat.isDirectory() &&
+        stat.dev === parentStat.dev && stat.ino === parentStat.ino) {
+      injected = true;
+      throw new Error('simulated publication parent flush failure');
+    }
+    return originalFsync.call(this, fd);
+  };
+  try {
+    assert.throws(
+      () => restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true }),
+      /simulated publication parent flush failure|flush barrier failed/i,
+    );
+    assert.equal(injected, true);
+  } finally {
+    fs.renameSync = originalRename;
+    fs.fsyncSync = originalFsync;
+  }
+  const journal = fs.readdirSync(parent).find((name) => name.startsWith('.dk-restore-transaction-'));
+  assert.ok(journal);
+  const journalPath = path.join(parent, journal);
+  assert.equal(fs.readFileSync(journalPath, 'utf8').includes('"phase":"CLEANUP_SAFE"'), false);
+
+  let recoveryBarrierAttempted = false;
+  fs.fsyncSync = function failRecoveryBarrier(fd) {
+    const stat = fs.fstatSync(fd);
+    if (!recoveryBarrierAttempted && stat.isDirectory() &&
+        stat.dev === parentStat.dev && stat.ino === parentStat.ino) {
+      recoveryBarrierAttempted = true;
+      throw new Error('simulated recovery publication flush failure');
+    }
+    return originalFsync.call(this, fd);
+  };
+  try {
+    assert.throws(
+      () => recoverLegacyRestore({ targetRoot, confirmOffline: true }),
+      /simulated recovery publication flush failure|flush barrier failed/i,
+    );
+    assert.equal(recoveryBarrierAttempted, true, 'Recovery must retry the publication flush');
+    assert.equal(fs.readFileSync(journalPath, 'utf8').includes('"phase":"CLEANUP_SAFE"'), false,
+      'No terminal acknowledgement after a failed recovery barrier');
+  } finally {
+    fs.fsyncSync = originalFsync;
+  }
+  const recovered = recoverLegacyRestore({ targetRoot, confirmOffline: true });
+  assert.equal(recovered.outcome, 'promoted-original-retained');
+  assert.equal(fs.existsSync(recovered.displacedOriginal), true);
+});
+
+
+test('W73-19 Windows case alias cannot bypass the existing restore transaction witness', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('NTFS case-insensitive alias behavior requires Windows'); return;
+  }
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-ntfs-case-alias-');
+  const targetRoot = path.join(parent, 'MixedCaseProject');
+  const aliasRoot = path.join(parent, 'mixedcaseproject');
+  fs.mkdirSync(targetRoot);
+  fs.writeFileSync(path.join(targetRoot, 'original.txt'), 'ORIGINAL-CASE-ALIAS');
+  const first = restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true });
+  assert.ok(first.displacedOriginal);
+  const journalBefore = fs.readFileSync(first.transactionLog, 'utf8');
+  const moved = path.join(parent, 'unpersisted-published-root');
+  fs.renameSync(targetRoot, moved);
+  assert.throws(
+    () => restoreLegacyBackup({ backupPath, targetRoot: aliasRoot, confirmOffline: true }),
+    /terminal.*(root|witness)|incomplete restore|restore witnesses/i,
+    'Case alias must not start a new transaction over an unresolved original',
+  );
+  assert.equal(fs.readFileSync(first.transactionLog, 'utf8'), journalBefore);
+  assert.equal(fs.existsSync(aliasRoot), false);
+  assert.equal(fs.readFileSync(path.join(first.displacedOriginal, 'original.txt'), 'utf8'),
+    'ORIGINAL-CASE-ALIAS');
+});
+
+
+test('W73-20 Windows case alias cannot bypass an orphan displaced original after journal loss', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('NTFS case-insensitive alias behavior requires Windows'); return;
+  }
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-orphan-case-alias-');
+  const targetRoot = path.join(parent, 'OriginalCaseProject');
+  const aliasRoot = path.join(parent, 'originalcaseproject');
+  fs.mkdirSync(targetRoot);
+  fs.writeFileSync(path.join(targetRoot, 'original.txt'), 'ORIGINAL-ORPHAN');
+  const first = restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true });
+  const moved = path.join(parent, 'unpersisted-published-root');
+  fs.renameSync(targetRoot, moved);
+  fs.unlinkSync(first.transactionLog); // Simulate journal namespace loss after an interrupted publication.
+  assert.throws(
+    () => restoreLegacyBackup({ backupPath, targetRoot: aliasRoot, confirmOffline: true }),
+    /restore witnesses|restore.*journal|orphan.*restore|recovery journal/i,
+    'An orphan retained original must not be silently superseded via case alias',
+  );
+  assert.equal(fs.existsSync(aliasRoot), false);
+  assert.equal(fs.readFileSync(path.join(first.displacedOriginal, 'original.txt'), 'utf8'), 'ORIGINAL-ORPHAN');
 });
