@@ -803,13 +803,31 @@ function orphanRestoreWitnesses(targetRoot) {
  * This is a fail-closed alias guard, not proof of physical power-loss
  * durability or a defence against a hostile same-account filesystem writer.
  */
+/**
+ * Compare the physical Windows target identity, not caller-supplied spelling.
+ * GetFinalPathNameByHandle (via realpathSync.native) resolves existing NTFS
+ * 8.3 ancestor aliases and extended-length namespace spellings. When the
+ * root was displaced by a crash, canonicalize its surviving parent and
+ * preserve the leaf name. This is a journal-discovery guard, not a guarantee
+ * of persistence after sudden power loss.
+ */
+function windowsCanonicalRestoreRootKey(targetRoot) {
+  const root = path.resolve(targetRoot);
+  const parent = path.dirname(root);
+  const canonicalParent = fs.realpathSync.native(parent);
+  const canonicalRoot = fs.existsSync(root)
+    ? fs.realpathSync.native(root)
+    : path.win32.join(canonicalParent, path.basename(root));
+  return path.win32.normalize(canonicalRoot).normalize('NFC').toLowerCase();
+}
+
 function assertNoWindowsCaseAliasedRestoreJournal(targetRoot) {
   if (process.platform !== 'win32') return;
   const root = path.resolve(targetRoot);
   const parent = path.dirname(root);
   if (!fs.existsSync(parent)) return;
   const expectedJournal = path.basename(restoreJournalPath(root)).toLowerCase();
-  const targetKey = root.normalize('NFC').toLowerCase();
+  const targetKey = windowsCanonicalRestoreRootKey(root);
   for (const name of fs.readdirSync(parent)) {
     if (!/^\.dk-restore-transaction-[a-f0-9]{24}\.jsonl$/i.test(name) ||
         name.toLowerCase() === expectedJournal) continue;
@@ -829,7 +847,7 @@ function assertNoWindowsCaseAliasedRestoreJournal(targetRoot) {
     try { witness = JSON.parse(firstLine); }
     catch { continue; }
     if (typeof witness?.targetRoot !== 'string' ||
-        path.resolve(witness.targetRoot).normalize('NFC').toLowerCase() !== targetKey) continue;
+        windowsCanonicalRestoreRootKey(witness.targetRoot) !== targetKey) continue;
     validateRestoreRecord(witness);
     throw new StateMigrationError(
       'Terminal restore root witness exists under a Windows case alias; refusing destructive mutation',
