@@ -877,8 +877,13 @@ function applyOperations(previousState, operations) {
   return next;
 }
 
+function ownValue(object, key) {
+  return object !== null && object !== undefined && Object.hasOwn(object, key)
+    ? object[key] : undefined;
+}
+
 function ensureEntityBucket(snapshot, type) {
-  if (!snapshot.entities[type]) snapshot.entities[type] = {};
+  if (!Object.hasOwn(snapshot.entities, type)) defineOwnPatchValue(snapshot.entities, type, {});
   return snapshot.entities[type];
 }
 
@@ -893,10 +898,10 @@ export function rebuildSnapshotFromEvents(events) {
     if (event.eventType === 'ENTITY_STATE_INITIALIZED') {
       if (event.entityType === null || event.entityId === null) throw new StateEngineError('State initialization event requires entity identity');
       const bucket = ensureEntityBucket(snapshot, event.entityType);
-      if (bucket[event.entityId]) throw new StateEngineError(`Entity is initialized more than once: ${event.entityType}/${event.entityId}`);
+      if (Object.hasOwn(bucket, event.entityId)) throw new StateEngineError(`Entity is initialized more than once: ${event.entityType}/${event.entityId}`);
       const state = cloneSerializable(event.payload.state, 'Initialized state');
       const revision = stateRevision(event.payload.stateRevision);
-      bucket[event.entityId] = {
+      defineOwnPatchValue(bucket, event.entityId, {
         stateRevision: revision,
         state,
         lastEventSequence: event.sequence,
@@ -907,11 +912,11 @@ export function rebuildSnapshotFromEvents(events) {
           contractId: event.contractId,
           runId: event.runId,
         },
-      };
+      });
     } else if (event.eventType === 'ENTITY_STATE_UPDATED') {
       if (event.entityType === null || event.entityId === null) throw new StateEngineError('State update event requires entity identity');
       const bucket = ensureEntityBucket(snapshot, event.entityType);
-      const current = bucket[event.entityId];
+      const current = ownValue(bucket, event.entityId);
       if (!current) throw new StateEngineError(`State update references unknown entity: ${event.entityType}/${event.entityId}`);
       const revision = stateRevision(event.payload.stateRevision);
       if (revision < current.stateRevision) {
@@ -977,7 +982,7 @@ export function validateStateSnapshot(snapshot) {
 
 function indexArrayPush(map, key, value) {
   if (!key) return;
-  if (!map[key]) map[key] = [];
+  if (!Object.hasOwn(map, key)) defineOwnPatchValue(map, key, []);
   if (!map[key].includes(value)) map[key].push(value);
 }
 
@@ -1528,7 +1533,7 @@ export function appendEntityState({
 
   return withStateLock(rootDir, () => {
     const currentSnapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
-    const current = currentSnapshot.entities[normalizedType]?.[normalizedId] ?? null;
+    const current = ownValue(ownValue(currentSnapshot.entities, normalizedType), normalizedId) ?? null;
 
     if (current && revision < current.stateRevision) {
       throw new StateEngineError('Refusing stateRevision regression for ' + normalizedType + '/' + normalizedId);
@@ -1587,14 +1592,14 @@ export function loadEntityState(type, id, rootDir = process.cwd()) {
   const normalizedType = entityType(type);
   const normalizedId = entityId(id);
   const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true });
-  const record = snapshot?.entities?.[normalizedType]?.[normalizedId];
+  const record = ownValue(ownValue(snapshot?.entities, normalizedType), normalizedId);
   return record ? structuredClone(record.state) : null;
 }
 
 export function listEntityRecords(type, rootDir = process.cwd()) {
   const normalizedType = entityType(type);
   const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true });
-  const bucket = snapshot?.entities?.[normalizedType] ?? {};
+  const bucket = ownValue(snapshot?.entities, normalizedType) ?? {};
   return Object.entries(bucket)
     .map(([id, record]) => ({
       entityId: id,
@@ -1608,7 +1613,7 @@ export function listEntityRecords(type, rootDir = process.cwd()) {
 export function loadLatestEntityState(type, rootDir = process.cwd()) {
   const normalizedType = entityType(type);
   const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true });
-  const bucket = snapshot?.entities?.[normalizedType] ?? {};
+  const bucket = ownValue(snapshot?.entities, normalizedType) ?? {};
   const records = Object.entries(bucket)
     .map(([id, record]) => ({ id, record }))
     .sort((a, b) => b.record.lastEventSequence - a.record.lastEventSequence || a.id.localeCompare(b.id));
@@ -1647,7 +1652,7 @@ export function queryStateIndex({
 
   let keys = null;
   for (const [field, value] of filters) {
-    const current = new Set(index[field][String(value)] ?? []);
+    const current = new Set(ownValue(index[field], String(value)) ?? []);
     keys = keys === null ? current : new Set([...keys].filter((key) => current.has(key)));
   }
   return index.records.filter((record) => keys.has(record.key)).map((record) => structuredClone(record));
