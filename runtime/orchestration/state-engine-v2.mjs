@@ -1488,6 +1488,25 @@ function recoverPendingCommitLocked(rootDir) {
       if (!expectedSuffix.subarray(0, existingSuffix.length).equals(existingSuffix)) {
         throw new StateEngineError('Canonical state suffix conflicts with pending commit; refusing recovery');
       }
+      canonical = rebuildSnapshotFromEvents(
+        parseLedger(Buffer.concat([bytes.subarray(0, pending.previousByteLength), expectedSuffix]).toString('utf8')),
+      );
+      // Validate the entire proposed ledger and the materialized snapshot witness
+      // before any truncate/append/fsync can mutate canonical crash evidence.
+      let witness = null;
+      try {
+        witness = JSON.parse(fs.readFileSync(snapshotTarget, 'utf8'));
+        validateStateSnapshot(witness);
+      } catch {
+        witness = null;
+      }
+      if (witness && witness.lastEventSequence > canonical.lastEventSequence) {
+        throw new StateEngineError('Cannot recover a pending commit over a later snapshot integrity witness');
+      }
+      if (witness && witness.lastEventSequence === canonical.lastEventSequence
+        && witness.lastEventHash !== canonical.lastEventHash) {
+        throw new StateEngineError('Pending recovery conflicts with snapshot integrity witness');
+      }
       if (existingSuffix.length < expectedSuffix.length) {
         // Truncate and repair through this FD, never a separately resolved path.
         fs.ftruncateSync(fd, pending.previousByteLength);
@@ -1510,24 +1529,6 @@ function recoverPendingCommitLocked(rootDir) {
       if (!finalEntry.isFile() || finalEntry.isSymbolicLink() || finalEntry.nlink !== 1 ||
         finalEntry.dev !== finalStat.dev || finalEntry.ino !== finalStat.ino) {
         throw new StateEngineError('Canonical ledger directory entry was displaced during pending recovery');
-      }
-      canonical = rebuildSnapshotFromEvents(
-        parseLedger(Buffer.concat([bytes.subarray(0, pending.previousByteLength), expectedSuffix]).toString('utf8')),
-      );
-      // Reconstruct both derived views before acknowledging the durable commit.
-      let witness = null;
-      try {
-        witness = JSON.parse(fs.readFileSync(snapshotTarget, 'utf8'));
-        validateStateSnapshot(witness);
-      } catch {
-        witness = null;
-      }
-      if (witness && witness.lastEventSequence > canonical.lastEventSequence) {
-        throw new StateEngineError('Cannot recover a pending commit over a later snapshot integrity witness');
-      }
-      if (witness && witness.lastEventSequence === canonical.lastEventSequence
-        && witness.lastEventHash !== canonical.lastEventHash) {
-        throw new StateEngineError('Pending recovery conflicts with snapshot integrity witness');
       }
       persistDerived(canonical, rootDir, dirFd);
       pinnedUnlinkAndSync(paths.pending, dirFd);
