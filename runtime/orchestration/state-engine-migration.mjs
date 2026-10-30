@@ -1007,6 +1007,46 @@ export function validateWindowsDurabilityHelperResult(operation, result, expecte
   return result;
 }
 
+/**
+ * Resolve the Windows inbox interpreter without libuv's cwd/PATH executable
+ * search. The SystemRoot process environment is an explicit trusted launcher
+ * precondition: absent, relative, inconsistent or redirected locations fail
+ * closed before any journal or restore state can be acknowledged.
+ */
+function trustedWindowsPowerShellExecutable() {
+  const systemRoot = process.env.SystemRoot;
+  const windowsDirectory = process.env.windir;
+  const invalidRoot = typeof systemRoot !== 'string' ||
+    !/^[a-zA-Z]:\\/.test(systemRoot) ||
+    systemRoot.split(/[\\/]/).some((part) => part === '..' || part === '.');
+  if (invalidRoot || (windowsDirectory &&
+      path.win32.normalize(windowsDirectory).toLowerCase() !==
+      path.win32.normalize(systemRoot).toLowerCase())) {
+    throw new StateMigrationError('Trusted Windows system directory is unavailable or inconsistent', {
+      code: 'TRUSTED_WINDOWS_INTERPRETER_UNAVAILABLE',
+    });
+  }
+
+  const executable = path.win32.join(systemRoot,
+    'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  try {
+    const rootReal = fs.realpathSync.native(systemRoot);
+    const exeReal = fs.realpathSync.native(executable);
+    const stat = fs.lstatSync(executable);
+    const expectedRelative = path.win32.join('System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    if (!stat.isFile() || stat.isSymbolicLink() ||
+        path.win32.relative(rootReal, exeReal).toLowerCase() !== expectedRelative.toLowerCase()) {
+      throw new Error('System PowerShell executable is not a regular file at its expected location');
+    }
+    return exeReal;
+  } catch (error) {
+    throw new StateMigrationError('Trusted Windows PowerShell interpreter cannot be verified', {
+      code: 'TRUSTED_WINDOWS_INTERPRETER_UNAVAILABLE',
+      cause: error.code || error.message,
+    });
+  }
+}
+
 function runWindowsDurabilityHelper(operation, args = {}) {
   if (process.platform !== 'win32') {
     throw new StateMigrationError('Windows durability helper may only run on Windows');
@@ -1031,7 +1071,9 @@ function runWindowsDurabilityHelper(operation, args = {}) {
     argv.push('-' + key, String(value));
   }
 
-  const result = spawnSync('powershell.exe', argv, {
+  const interpreter = trustedWindowsPowerShellExecutable();
+  const result = spawnSync(interpreter, argv, {
+    cwd: path.win32.dirname(interpreter),
     encoding: 'utf8',
     windowsHide: true,
     shell: false,
