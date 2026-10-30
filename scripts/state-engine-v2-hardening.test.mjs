@@ -499,6 +499,10 @@ test('T04-H29 interrupted ledger recovery must never truncate an external hardli
 
 
 test('T04-H36 pending journal cannot overwrite external file after state-directory swap', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('Pinned Windows directory handles prevent this POSIX directory-swap fixture');
+    return;
+  }
   const rootDir = tempProject(t);
   appendMetadataEvent({ rootDir, eventType: 'FIRST', payload: { value: 1 } });
   const paths = getStateEnginePaths(rootDir);
@@ -551,6 +555,10 @@ test('T04-H36 pending journal cannot overwrite external file after state-directo
 });
 
 test('T04-H37 pending journal unlink fails closed when state directory is replaced during commit', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('Pinned Windows directory handles prevent this POSIX directory-swap fixture');
+    return;
+  }
   const rootDir = tempProject(t);
   appendMetadataEvent({ rootDir, eventType: 'FIRST', payload: { value: 1 } });
   const paths = getStateEnginePaths(rootDir);
@@ -611,6 +619,10 @@ test('T04-H37 pending journal unlink fails closed when state directory is replac
 });
 
 test('T04-H38 pending journal unlink fails closed when state directory is swapped with an ordinary directory across transaction', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('Pinned Windows directory handles prevent this POSIX directory-swap fixture');
+    return;
+  }
   const rootDir = tempProject(t);
   appendMetadataEvent({ rootDir, eventType: 'FIRST', payload: { value: 1 } });
   const paths = getStateEnginePaths(rootDir);
@@ -659,6 +671,10 @@ test('T04-H38 pending journal unlink fails closed when state directory is swappe
 });
 
 test('T04-H40 durable transaction writes fail closed when state directory is replaced before append or derived writes', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('Pinned Windows directory handles prevent this POSIX directory-swap fixture');
+    return;
+  }
   const rootDir = tempProject(t);
   appendMetadataEvent({ rootDir, eventType: 'FIRST', payload: { value: 1 } });
   const paths = getStateEnginePaths(rootDir);
