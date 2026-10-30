@@ -1138,3 +1138,54 @@ test('W73-27 Windows 8.3 ancestor alias cannot bypass an interrupted restore jou
   assert.deepEqual(fs.readFileSync(path.join(targetRoot, 'original.txt'), 'utf8'), 'KEEP-ORIGINAL');
   assert.deepEqual(fs.readFileSync(path.join(parent, journals[0])), journalBytes);
 });
+
+
+test('W73-28 Unicode uppercase-folded restore aliases fail closed before publication on every OS', async (t) => {
+  // NTFS case-insensitive name comparison uses an uppercase mapping. A
+  // conservative preflight must also reject these aliases on POSIX so the
+  // signed backup cannot behave differently on a Windows restore target.
+  const longS = '\u017f'; // LATIN SMALL LETTER LONG S; uppercase maps to S.
+  assert.equal(longS.toUpperCase(), 'S');
+  assert.notEqual(longS.toLowerCase(), 's');
+
+  const source = tempProject(t, 'dk-ntfs-unicode-alias-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const backup = JSON.parse(fs.readFileSync(migrated.backupPath, 'utf8'));
+  const first = backup.files[0];
+  const firstBytes = Buffer.from('FIRST-RESTORED-ENTRY');
+  const secondBytes = Buffer.from('SECOND-RESTORED-ENTRY');
+  const { createHash } = await import('node:crypto');
+  const digest = bytes => 'sha256:' + createHash('sha256').update(bytes).digest('hex');
+  const relativeDir = '.development-kit/autopilot/state/';
+  backup.files.push({
+    ...first, path: relativeDir + 's.json',
+    bytes: firstBytes.length, fingerprint: digest(firstBytes),
+    contentBase64: firstBytes.toString('base64'),
+  });
+  backup.files.push({
+    ...first, path: relativeDir + longS + '.json',
+    bytes: secondBytes.length, fingerprint: digest(secondBytes),
+    contentBase64: secondBytes.toString('base64'),
+  });
+  backup.fileCount = backup.files.length;
+  const stable = value => Array.isArray(value) ? value.map(stable)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])]))
+      : value;
+  const manifest = backup.files.map(e => ({ path: e.path, fingerprint: e.fingerprint, bytes: e.bytes }));
+  backup.sourceFingerprint = digest(JSON.stringify(stable(manifest)));
+  const hostileBackup = path.join(source, 'ntfs-alias-backup.json');
+  fs.writeFileSync(hostileBackup, JSON.stringify(backup));
+  const targetRoot = tempProject(t, 'dk-ntfs-unicode-alias-target-');
+  const original = path.join(targetRoot, 'original.txt');
+  fs.writeFileSync(original, 'KEEP-ORIGINAL');
+  assert.throws(
+    () => restoreLegacyBackup({ backupPath: hostileBackup, targetRoot, confirmOffline: true }),
+    /duplicate|alias|collision|physical identity/i,
+    'Two different backup paths naming one physical NTFS file must fail closed before publication',
+  );
+  assert.equal(fs.readFileSync(original, 'utf8'), 'KEEP-ORIGINAL');
+  assert.equal(fs.existsSync(path.join(targetRoot, relativeDir, 's.json')), false,
+    'Rejected backup must not publish the staged candidate');
+});
