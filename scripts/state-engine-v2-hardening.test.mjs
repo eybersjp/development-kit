@@ -1046,3 +1046,39 @@ test('T04-H50 Windows flushes pending-journal directory before any physical cano
   assert.equal(fs.existsSync(paths.pending), false);
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+test('T04-P1 initial layout cannot overwrite an acknowledged concurrent first event', (t) => {
+  const rootDir = tempProject(t);
+  const paths = getStateEnginePaths(rootDir);
+  const originalRename = fs.renameSync;
+  const originalOpen = fs.openSync;
+  let injected = false;
+  const injectWriter = () => {
+    injected = true;
+    appendMetadataEvent({
+      rootDir, eventType: 'RACE_COMMIT', actorClass: 'concurrency-regression',
+      payload: { witness: 'acknowledged-before-initial-layout' },
+    });
+  };
+  fs.renameSync = function raceOnFirstLedgerPublication(from, to, ...rest) {
+    if (!injected && to === paths.events && String(from).includes('events.jsonl.tmp-')) {
+      injectWriter();
+    }
+    return originalRename.call(this, from, to, ...rest);
+  };
+  fs.openSync = function raceOnExclusiveLedgerCreation(file, flags, ...rest) {
+    if (!injected && file === paths.events && flags === 'wx') injectWriter();
+    return originalOpen.call(this, file, flags, ...rest);
+  };
+  try {
+    ensureStateEngineLayout(rootDir);
+  } finally {
+    fs.renameSync = originalRename;
+    fs.openSync = originalOpen;
+  }
+  assert.equal(injected, true, 'fixture must interleave first layout with a successful writer');
+  const ledger = fs.readFileSync(paths.events, 'utf8');
+  assert.match(ledger, /RACE_COMMIT/, 'initialization must not replace an acknowledged canonical event');
+  assert.equal(loadCanonicalEvents(rootDir).length, 1);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
