@@ -423,7 +423,7 @@ test('V13-SEC-ENTITY-01 prototype-sensitive entity identities and index referenc
     'assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);',
     'assert.equal(Object.hasOwn(Object.prototype, "state"), false);',
     'assert.equal(Object.hasOwn(Object.prototype, "stateRevision"), false);',
-  ].join("\\n");
+   ].join("\n");
   const child = spawnSync(process.execPath, ['--input-type=module', '-e', childCode, rootDir],
     { encoding: 'utf8', timeout: 20000 });
   assert.equal(child.status, 0, 'Identity replay must not pollute inherited objects or lose records: ' + child.stderr);
