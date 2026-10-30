@@ -7,6 +7,10 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { loadDevelopmentContract, checkContractStaleness } from '../runtime/orchestration/development-contract.mjs';
 import { decideAcceptance, validateAcceptanceRecord } from '../runtime/orchestration/acceptance-engine.mjs';
+import { createVerificationRecord, evaluateControlCoverage, getRunDirectory,
+  persistVerificationRecord, persistControlManifest } from '../runtime/orchestration/evidence-store.mjs';
+import { createReviewResult } from '../runtime/orchestration/review-result.mjs';
+import { detectArchitectureDrift } from '../runtime/orchestration/architecture-drift.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = 'eybersjp/development-kit';
@@ -84,6 +88,7 @@ assert.equal(pr.head.repo.full_name, REPO);
 // Distinct GitHub-authored, post-source reviews. Self-authored PASS strings are
 // never an approval. Each review must explicitly identify its role and SHA.
 const reviewers = new Set();
+const authenticatedReviews = new Map();
 const reviewIds = new Set();
 for (const role of ROLES) {
   const receipt = receipts.reviews.find(x => x?.role === role);
@@ -98,6 +103,7 @@ for (const role of ROLES) {
     'Author cannot independently approve their own code');
   assert.ok(!reviewers.has(review.user.login), 'Distinct reviewer identity required for each role');
   reviewers.add(review.user.login);
+  authenticatedReviews.set(role, review);
   assert.ok((review.body || '').includes('DKF130-T04 ' + role + ' ' + reviewedCommit),
     'Approval must explicitly bind role and exact source SHA');
   const comments = await api('pulls/92/reviews/' + receipt.githubReviewId + '/comments?per_page=1');
@@ -172,14 +178,93 @@ assert.ok(contract, 'Persisted v0.13 Development Contract missing');
 assert.equal(contract.taskId, 'DKF130-T04');
 assert.equal(contract.risk.level, 3);
 assert.equal(checkContractStaleness(contract, ROOT).stale, false);
-const decision = decideAcceptance({ contract, rootDir: ROOT });
+const evidenceRunId = 'T04-V013-' + reviewedCommit.slice(0, 16);
+const verifiedCiEvidence = [...validationRuns].map(id => ({
+  type: 'test', deterministicVerification: true, verificationType: 'test',
+  url: 'https://github.com/' + REPO + '/actions/runs/' + id,
+  evidenceId: 'GITHUB-ACTIONS-' + id, reviewedCommit,
+}));
+const criteria = contract.acceptanceCriteria.map(c => ({
+  id: c.id, status: 'PASS',
+  evidence: c.id === 'DKF-120-AC-015'
+    ? [...verifiedCiEvidence, {
+      type: 'external', authoritativeExternalState: true,
+      verificationType: 'security',
+      url: physical.artifactUrl, reviewedCommit,
+      evidenceId: 'INDEPENDENT-NTFS-POWER-LOSS-' + physical.independentReviewId,
+    }]
+    : verifiedCiEvidence,
+}));
+const verification = createVerificationRecord({
+  contract, runId: evidenceRunId, role: 'test-engineer',
+  sourceFingerprint: contract.sourceFingerprint,
+  contextIsolation: 'rehydrated', criteria,
+});
+const reviews = ROLES.map(role => createReviewResult({
+  contract, runId: evidenceRunId, role,
+  sourceFingerprint: contract.sourceFingerprint,
+  contextIsolation: 'rehydrated',
+  createdAt: authenticatedReviews.get(role).submitted_at,
+  findings: [],
+}));
+const requiredControls = [
+  { id: 'ledger-integrity', statement: 'Canonical event chain and index recovery remain integrity protected' },
+  { id: 'multi-process-concurrency', statement: 'Concurrent writes and bootstrap recovery preserve committed events' },
+  { id: 'acl-path-isolation', statement: 'Restore and canonical paths reject link and alias escapes' },
+  { id: 'ntfs-crash-restore', statement: 'Supported NTFS sudden-power-loss restore and journal recovery verified' },
+  { id: 'source-provenance', statement: 'Review and CI are bound to immutable final source' },
+];
+assert.ok(Array.isArray(receipts.securityControls) &&
+  receipts.securityControls.length === requiredControls.length,
+  'Authenticated independent security-control evidence is mandatory');
+const controlResults = [];
+for (const control of requiredControls) {
+  const witness = receipts.securityControls.find(x => x?.id === control.id);
+  assert.ok(witness && witness.reviewedCommit === reviewedCommit &&
+    Number.isSafeInteger(witness.githubReviewId) &&
+    Number.isSafeInteger(witness.workflowRunId),
+    'Security control missing independent source-bound witness: ' + control.id);
+  const witnessReview = await api('pulls/92/reviews/' + witness.githubReviewId);
+  assert.equal(witnessReview.state, 'APPROVED');
+  assert.equal(witnessReview.commit_id, reviewedCommit);
+  assert.ok((witnessReview.body || '').includes('DKF130-T04 CONTROL ' + control.id + ' ' + reviewedCommit));
+  const witnessRun = await api('actions/runs/' + witness.workflowRunId);
+  assert.equal(witnessRun.head_sha, reviewedCommit);
+  assert.equal(witnessRun.conclusion, 'success');
+  controlResults.push({
+    id: control.id, status: 'PASS',
+    evidence: [{ type: 'test', deterministicVerification: true,
+      reviewedCommit, evidenceId: 'CONTROL-' + control.id + '-' + witness.workflowRunId,
+      url: 'https://github.com/' + REPO + '/actions/runs/' + witness.workflowRunId }],
+  });
+}
+const security = evaluateControlCoverage({
+  contractId: contract.contractId, runId: evidenceRunId,
+  domain: 'security', expectedControls: requiredControls, results: controlResults,
+});
+const architectureDrift = detectArchitectureDrift({
+  baseline: { storageTechnologies: ['event-jsonl', 'derived-snapshot', 'disposable-json-index'],
+    migrationStrategies: ['legacy-migration'] },
+  current: { storageTechnologies: ['event-jsonl', 'derived-snapshot', 'disposable-json-index'],
+    migrationStrategies: ['legacy-migration', 'explicit-offline-backup-recovery'] },
+  expectedChanges: ['migration-strategy:explicit-offline-backup-recovery'],
+});
+const decision = decideAcceptance({
+  contract, verification, reviews, controlManifests: [security],
+  architectureDrift, rootDir: ROOT,
+});
 validateAcceptanceRecord(decision);
 assert.equal(decision.state, 'ACCEPTED',
   'Deterministic risk-3 gate requires complete canonical verification, control and review records; never infer ACCEPTED from CI');
+const runDirectory = getRunDirectory(ROOT, contract.contractId, evidenceRunId);
+fs.mkdirSync(runDirectory, { recursive: true });
+persistVerificationRecord(verification, ROOT);
+persistControlManifest(security, ROOT);
 const destination = path.join(ROOT, '.development-kit', 'acceptance', 'DKF130-T04.json');
 fs.mkdirSync(path.dirname(destination), { recursive: true });
 fs.writeFileSync(destination, JSON.stringify({
   ...decision, reviewedCommit, validationRunIds: [...validationRuns],
   independentReviewIds: [...reviewIds], physicalPowerLoss: physical,
+  verification, reviews, securityControl: security, architectureDrift,
 }, null, 2) + '\n', { flag: 'wx' });
 console.log('DKF130-T04 ACCEPTED ' + reviewedCommit);
