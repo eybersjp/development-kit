@@ -506,6 +506,8 @@ function schemaDocument() {
 function createInitialStateFile(filePath, content) {
   const directory = path.dirname(filePath);
   const dirFd = fs.openSync(directory, 'r');
+  let temporary = null;
+  let fd;
   try {
     const pinned = fs.fstatSync(dirFd);
     const observed = fs.lstatSync(directory);
@@ -515,21 +517,49 @@ function createInitialStateFile(filePath, content) {
     }
     const root = path.dirname(path.dirname(directory));
     assertStateRootRealpathSafe({ root, stateRoot: directory });
-    const destination = process.platform === 'linux'
-      ? path.join('/proc/self/fd/' + dirFd, path.basename(filePath))
-      : filePath;
-    let fd;
-    try {
-      fd = fs.openSync(destination, 'wx', 0o600);
-    } catch (error) {
-      if (error.code === 'EEXIST') return false;
-      throw error;
-    }
-    try {
+    const pinnedDirectory = process.platform === 'linux' ? '/proc/self/fd/' + dirFd : directory;
+    const destination = path.join(pinnedDirectory, path.basename(filePath));
+
+    if (content === '') {
+      // An empty ledger is already a complete valid file at exclusive create.
+      // O_EXCL ensures a competing writer's committed ledger is never replaced.
+      try {
+        fd = fs.openSync(destination, 'wx', 0o600);
+      } catch (error) {
+        if (error.code === 'EEXIST') return false;
+        throw error;
+      }
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+      fd = undefined;
+    } else {
+      // Publishing a non-empty schema/snapshot/index with O_EXCL exposes an
+      // incomplete file to concurrent readers and leaves invalid state if the
+      // process dies before fsync. Prepare and fsync privately, then create
+      // the canonical name with an atomic, non-replacing same-directory link.
+      // No rename-overwrite is allowed; on unsupported filesystems fail closed.
+      temporary = path.join(pinnedDirectory,
+        path.basename(filePath) + '.tmp-' + process.pid + '-' + crypto.randomUUID());
+      fd = fs.openSync(temporary, 'wx', 0o600);
       fs.writeFileSync(fd, content, 'utf8');
       fs.fsyncSync(fd);
-    } finally {
       fs.closeSync(fd);
+      fd = undefined;
+      const beforePublish = fs.lstatSync(directory);
+      if (!beforePublish.isDirectory() || beforePublish.isSymbolicLink() ||
+        beforePublish.dev !== pinned.dev || beforePublish.ino !== pinned.ino) {
+        throw new StateEngineError('State Engine directory changed before initial publication');
+      }
+      try {
+        fs.linkSync(temporary, destination);
+      } catch (error) {
+        if (error.code === 'EEXIST') return false;
+        throw error;
+      }
+      // Remove the staging name immediately, before any observer can treat
+      // a temporary second hard link as an enduring canonical-file hazard.
+      fs.unlinkSync(temporary);
+      temporary = null;
     }
     const latest = fs.lstatSync(directory);
     if (!latest.isDirectory() || latest.isSymbolicLink() ||
@@ -539,6 +569,12 @@ function createInitialStateFile(filePath, content) {
     flushStateDirectory(directory, dirFd);
     return true;
   } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+    if (temporary !== null) {
+      try { fs.unlinkSync(temporary); } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+    }
     fs.closeSync(dirFd);
   }
 }
