@@ -496,30 +496,77 @@ function schemaDocument() {
   });
 }
 
+/**
+ * Create an initial layout entry without ever replacing a concurrently
+ * published canonical file. Atomic rename of an empty bootstrap ledger is
+ * unsafe: an independent writer may commit between existsSync and rename.
+ * O_EXCL ('wx') makes the first creator win; an existing entry is never
+ * overwritten. Directory identity and durability checks match atomicWrite.
+ */
+function createInitialStateFile(filePath, content) {
+  const directory = path.dirname(filePath);
+  const dirFd = fs.openSync(directory, 'r');
+  try {
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(directory);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed before exclusive initialization');
+    }
+    const root = path.dirname(path.dirname(directory));
+    assertStateRootRealpathSafe({ root, stateRoot: directory });
+    const destination = process.platform === 'linux'
+      ? path.join('/proc/self/fd/' + dirFd, path.basename(filePath))
+      : filePath;
+    let fd;
+    try {
+      fd = fs.openSync(destination, 'wx', 0o600);
+    } catch (error) {
+      if (error.code === 'EEXIST') return false;
+      throw error;
+    }
+    try {
+      fs.writeFileSync(fd, content, 'utf8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const latest = fs.lstatSync(directory);
+    if (!latest.isDirectory() || latest.isSymbolicLink() ||
+      latest.dev !== pinned.dev || latest.ino !== pinned.ino) {
+      throw new StateEngineError('State Engine directory changed during exclusive initialization');
+    }
+    flushStateDirectory(directory, dirFd);
+    return true;
+  } finally {
+    fs.closeSync(dirFd);
+  }
+}
+
 export function ensureStateEngineLayout(rootDir = process.cwd()) {
   const paths = statePaths(rootDir);
   fs.mkdirSync(paths.stateRoot, { recursive: true });
   assertStateRootRealpathSafe(paths);
 
   const expectedSchema = stablePretty(schemaDocument());
-  if (fs.existsSync(paths.schema)) {
-    const existing = fs.readFileSync(paths.schema, 'utf8');
-    if (existing !== expectedSchema) {
-      throw new StateEngineError('State Engine schema.json does not match the runtime schema contract');
-    }
-  } else {
-    atomicWrite(paths.schema, expectedSchema);
+  if (!fs.existsSync(paths.schema)) createInitialStateFile(paths.schema, expectedSchema);
+  if (fs.readFileSync(paths.schema, 'utf8') !== expectedSchema) {
+    throw new StateEngineError('State Engine schema.json does not match the runtime schema contract');
   }
 
   if (!fs.existsSync(paths.events)) {
     if (fs.existsSync(paths.pending)) {
       throw new StateEngineError('State Engine events.jsonl is missing while pending-commit.json is present; state integrity compromised');
     }
-    atomicWrite(paths.events, '');
+    createInitialStateFile(paths.events, '');
   }
-  if (!fs.existsSync(paths.snapshot)) atomicWrite(paths.snapshot, stablePretty(emptySnapshot()));
-  if (!fs.existsSync(paths.index)) atomicWrite(paths.index, stablePretty(buildStateIndex(emptySnapshot())));
-
+  if (!fs.existsSync(paths.snapshot)) {
+    createInitialStateFile(paths.snapshot, stablePretty(emptySnapshot()));
+  }
+  if (!fs.existsSync(paths.index)) {
+    createInitialStateFile(paths.index, stablePretty(buildStateIndex(emptySnapshot())));
+  }
+  assertStateFilesNotLinks(paths);
   return paths;
 }
 
