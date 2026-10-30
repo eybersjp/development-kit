@@ -106,10 +106,19 @@ public static class DkfWindowsDurability {
         string name, uint objectType, uint securityInfo,
         IntPtr owner, IntPtr group, IntPtr dacl, IntPtr sacl);
 
+    // Legacy DACLs without SE_DACL_AUTO_INHERITED must not be silently
+    // converted into auto-inheriting descriptors by SetNamedSecurityInfoW.
+    // SetFileSecurityW is used only for this legacy exact-control case.
+    [DllImport("advapi32.dll", EntryPoint = "SetFileSecurityW",
+        CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetFileSecurity(
+        string name, uint securityInfo, IntPtr securityDescriptor);
+
     [DllImport("kernel32.dll", EntryPoint = "LocalFree")]
     private static extern IntPtr LocalFree(IntPtr handle);
 
-    public static void CopyDaclWithInheritance(string from, string to, bool protectedDacl) {
+    public static void CopyDaclWithInheritance(string from, string to, bool protectedDacl, bool autoInherited) {
         IntPtr owner, group, dacl, sacl, descriptor;
         uint status = GetNamedSecurityInfo(from, SE_FILE_OBJECT,
             DACL_SECURITY_INFORMATION, out owner, out group, out dacl,
@@ -122,13 +131,19 @@ public static class DkfWindowsDurability {
             if (dacl == IntPtr.Zero) {
                 throw new InvalidOperationException("Source has a NULL DACL; refusing staged ACL publication");
             }
-            uint flags = DACL_SECURITY_INFORMATION |
-                (protectedDacl ? PROTECTED_DACL_SECURITY_INFORMATION :
-                                 UNPROTECTED_DACL_SECURITY_INFORMATION);
-            status = SetNamedSecurityInfo(to, SE_FILE_OBJECT, flags,
-                IntPtr.Zero, IntPtr.Zero, dacl, IntPtr.Zero);
-            if (status != 0) {
-                throw new Win32Exception((int)status, "SetNamedSecurityInfoW staged DACL failed");
+            if (autoInherited) {
+                uint flags = DACL_SECURITY_INFORMATION |
+                    (protectedDacl ? PROTECTED_DACL_SECURITY_INFORMATION :
+                                     UNPROTECTED_DACL_SECURITY_INFORMATION);
+                status = SetNamedSecurityInfo(to, SE_FILE_OBJECT, flags,
+                    IntPtr.Zero, IntPtr.Zero, dacl, IntPtr.Zero);
+                if (status != 0) {
+                    throw new Win32Exception((int)status, "SetNamedSecurityInfoW staged DACL failed");
+                }
+            } else {
+                if (!SetFileSecurity(to, DACL_SECURITY_INFORMATION, descriptor)) {
+                    throw LastError("SetFileSecurityW legacy DACL copy failed");
+                }
             }
         } finally {
             if (descriptor != IntPtr.Zero) LocalFree(descriptor);
@@ -265,7 +280,7 @@ function New-DkfSecureStage([string]$StagePath, [string]$SourcePath) {
         # Apply the original security descriptor while the stage is EMPTY.
         # Failure leaves the original untouched; no data has been copied.
         $expectedAcl = [System.IO.Directory]::GetAccessControl($SourcePath)
-        [DkfWindowsDurability]::CopyDaclWithInheritance($SourcePath, $stage, $expectedAcl.AreAccessRulesProtected)
+        [DkfWindowsDurability]::CopyDaclWithInheritance($SourcePath, $stage, $expectedAcl.AreAccessRulesProtected, ($expectedAcl.GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access) -match '^D:(?:P)?AI'))
     }
     $actual = [System.IO.Directory]::GetAccessControl($stage)
     $access = [System.Security.AccessControl.AccessControlSections]::Access
@@ -303,7 +318,7 @@ function Copy-DkfAclTree([string]$Source, [string]$Destination, [bool]$VerifyOnl
     }
     if ($src.PSIsContainer) {
         $acl = [System.IO.Directory]::GetAccessControl($Source)
-        if (-not $VerifyOnly) { [DkfWindowsDurability]::CopyDaclWithInheritance($Source, $Destination, $acl.AreAccessRulesProtected) }
+        if (-not $VerifyOnly) { [DkfWindowsDurability]::CopyDaclWithInheritance($Source, $Destination, $acl.AreAccessRulesProtected, ($acl.GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access) -match '^D:(?:P)?AI')) }
         $actualAcl = [System.IO.Directory]::GetAccessControl($Destination)
     } else {
         $acl = [System.IO.File]::GetAccessControl($Source)
