@@ -1606,7 +1606,12 @@ export function restoreLegacyBackup({
   for (const { entry, destination } of destinations) {
     const key = destination
       .normalize('NFC')
-      .toLowerCase()
+      // NTFS filename collation is based on uppercase mappings; lowercase
+      // folding misses valid aliases such as U+017F (long s) versus s.
+      // This is conservative only: actual NTFS $UpCase tables may differ
+      // from JavaScript Unicode, so the staged physical identity guard below
+      // remains mandatory for 8.3 and volume-specific aliases.
+      .toUpperCase()
       .split(/[\\/]+/)
       .map((part) => part.replace(/[. ]+$/, ''))
       .join('/');
@@ -1665,8 +1670,20 @@ export function restoreLegacyBackup({
     }
 
     const restored = [];
+    // A second signed path can name an already restored physical file via
+    // NTFS 8.3 or volume-specific $UpCase aliases even when string folding
+    // finds no duplicate. Check the file identity before every replacement.
+    const writtenStageFileIds = new Set();
     for (const { entry } of destinations) {
       const destination = resolveSafeRestoreDestination(stage, entry.path, { createMissing: true });
+      try {
+        const existing = fs.lstatSync(destination, { bigint: true });
+        if (writtenStageFileIds.has(existing.dev.toString() + ':' + existing.ino.toString())) {
+          throw new StateMigrationError('Duplicate physical restore destination alias: ' + entry.path);
+        }
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
       const content = Buffer.from(entry.contentBase64, 'base64');
       const tempFile = destination + '.tmp-' + crypto.randomUUID();
       const fd = fs.openSync(tempFile, 'wx', 0o600);
@@ -1677,6 +1694,8 @@ export function restoreLegacyBackup({
         fs.closeSync(fd);
       }
       fs.renameSync(tempFile, destination);
+      const writtenIdentity = fs.lstatSync(destination, { bigint: true });
+      writtenStageFileIds.add(writtenIdentity.dev.toString() + ':' + writtenIdentity.ino.toString());
       if (stateSha256(fs.readFileSync(destination)) !== entry.fingerprint) {
         throw new StateMigrationError('Staged legacy file failed fingerprint verification: ' + entry.path);
       }
