@@ -385,13 +385,15 @@ test('TEST M: remembered approval still cannot authorize /dk-ship or any consequ
 test('V13-CI-ROUTING: v0.13 validation is selected by source presence, not mutable PR branch name', (t) => {
   // The published v0.12.1 line does not contain this contract. Its CI must
   // continue running the v0.12 release scope without enabling deferred T04.
-  const contract = join(REPO_ROOT, 'scripts', 'v013-state-engine-v2-contract.mjs');
-  if (!existsSync(contract)) {
-    t.skip('v0.13 T04 source is absent from the released baseline');
+  const engine = join(REPO_ROOT, 'runtime', 'orchestration', 'state-engine-v2.mjs');
+  if (!existsSync(engine)) {
+    t.skip('v0.13 T04 runtime is absent from the released baseline');
     return;
   }
+  assert.ok(existsSync(join(REPO_ROOT, 'scripts', 'v013-state-engine-v2-contract.mjs')),
+    'Present v0.13 runtime must retain its required risk-3 Development Contract');
   const workflow = readFileSync(join(REPO_ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
-  const sourceProbe = String.raw`hashFiles\('scripts/v013-state-engine-v2-contract\.mjs'\)`;
+  const sourceProbe = String.raw`hashFiles\('runtime/orchestration/state-engine-v2\.mjs'\)`;
   const positive = new RegExp(String.raw`if:\s*\$\{\{\s*${sourceProbe}\s*!=\s*''\s*\}\}`);
   const negative = new RegExp(String.raw`if:\s*\$\{\{\s*${sourceProbe}\s*==\s*''\s*\}\}`);
   assert.doesNotMatch(workflow, /github\.head_ref/, 'Branch-name conditions can silently skip T04 validation after a merge or branch rename');
