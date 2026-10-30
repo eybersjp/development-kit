@@ -835,3 +835,61 @@ test('V13-API-PROJECTION-01 scale-context observes canonical V2 workflow without
     await service.stop();
   }
 });
+
+test('V13-API-PROJECTION-02 read-only projection never repairs unmigrated legacy pointer under V2 metadata', async (t) => {
+  const rootDir = tempDir(t, 'dk-v013-api-legacy-pointer-');
+  const legacyDir = path.join(rootDir, '.development-kit', 'autopilot', 'state');
+  fs.mkdirSync(legacyDir, { recursive: true });
+  const legacy = createInitialState({ autonomy: 'guided-autopilot' }, rootDir);
+  const revisionFile = 'revision-' + String(legacy.stateRevision).padStart(6, '0') + '.json';
+  fs.writeFileSync(path.join(legacyDir, revisionFile), JSON.stringify(legacy));
+  const pointerPath = path.join(legacyDir, 'current.json');
+  const invalidPointer = '{"invalid":';
+  fs.writeFileSync(pointerPath, invalidPointer);
+  appendMetadataEvent({ rootDir, eventType: 'UNRELATED_METADATA', payload: { note: 'unmigrated' } });
+  const paths = getStateEnginePaths(rootDir);
+  const originalEvents = fs.readFileSync(paths.events, 'utf8');
+
+  const service = new RuntimeApiService({ rootDir });
+  const info = await service.start();
+  try {
+    const response = await fetch(info.url + '/v1/scale-context');
+    assert.equal(response.status, 200);
+    const projection = await response.json();
+    assert.equal(projection.stateHealth, 'degraded',
+      'Corrupt legacy pointer must be reported, not silently repaired');
+    assert.equal(projection.state.active, false);
+    assert.equal(fs.readFileSync(pointerPath, 'utf8'), invalidPointer,
+      'Read-only projection must preserve the exact corrupt pointer evidence');
+    assert.equal(fs.readFileSync(paths.events, 'utf8'), originalEvents,
+      'Read-only projection must not modify canonical V2 events');
+  } finally {
+    await service.stop();
+  }
+});
+
+test('V13-API-PROJECTION-03 V2 metadata alone does not hide valid unmigrated legacy workflow', async (t) => {
+  const rootDir = tempDir(t, 'dk-v013-api-legacy-valid-');
+  const legacyDir = path.join(rootDir, '.development-kit', 'autopilot', 'state');
+  fs.mkdirSync(legacyDir, { recursive: true });
+  const legacy = createInitialState({ autonomy: 'guided-autopilot' }, rootDir);
+  const revisionFile = 'revision-' + String(legacy.stateRevision).padStart(6, '0') + '.json';
+  fs.writeFileSync(path.join(legacyDir, revisionFile), JSON.stringify(legacy));
+  const pointerPath = path.join(legacyDir, 'current.json');
+  const pointer = JSON.stringify({ currentRevision: legacy.stateRevision,
+    currentRevisionFile: revisionFile, workflowId: legacy.workflowId });
+  fs.writeFileSync(pointerPath, pointer);
+  appendMetadataEvent({ rootDir, eventType: 'UNRELATED_METADATA', payload: { note: 'unmigrated' } });
+  const service = new RuntimeApiService({ rootDir });
+  const info = await service.start();
+  try {
+    const response = await fetch(info.url + '/v1/scale-context');
+    assert.equal(response.status, 200);
+    const projection = await response.json();
+    assert.equal(projection.state.active, true);
+    assert.equal(projection.state.revision, legacy.stateRevision);
+    assert.equal(fs.readFileSync(pointerPath, 'utf8'), pointer);
+  } finally {
+    await service.stop();
+  }
+});
