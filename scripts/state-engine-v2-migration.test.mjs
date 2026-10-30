@@ -1366,3 +1366,33 @@ test('T04-H55/H56 forced-termination witness rejects ordinary exception exit', (
     'A nonzero ordinary exception must not be accepted as a real process kill',
   );
 });
+
+
+test('T04-H57 completed restore retains the original directory as a rollback witness after journal acknowledgement', (t) => {
+  const source = tempProject(t, 'dk-h57-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const parent = tempProject(t, 'dk-h57-parent-');
+  const root = path.join(parent, 'target');
+  fs.mkdirSync(root);
+  const sentinel = path.join(root, 'original-witness.txt');
+  fs.writeFileSync(sentinel, 'H57-ORIGINAL', 'utf8');
+  const before = fs.lstatSync(root, { bigint: true });
+
+  const restored = restoreLegacyBackup({
+    confirmOffline: true, backupPath: migrated.backupPath, targetRoot: root,
+  });
+  assert.ok(restored.displacedOriginal,
+    'Successful restore must report a retained original for audit and rollback');
+  const displaced = fs.lstatSync(restored.displacedOriginal, { bigint: true });
+  assert.equal(displaced.dev, before.dev);
+  assert.equal(displaced.ino, before.ino,
+    'Retained original must be the same directory inode, not a reconstructed copy');
+  assert.equal(fs.readFileSync(path.join(restored.displacedOriginal, 'original-witness.txt'), 'utf8'),
+    'H57-ORIGINAL');
+  assert.equal(fs.readFileSync(sentinel, 'utf8'), 'H57-ORIGINAL');
+  const journalPath = path.join(parent, '.dk-restore-journal-' +
+    createHash('sha256').update(path.resolve(root)).digest('hex').slice(0, 24) + '.json');
+  assert.equal(fs.existsSync(journalPath), false,
+    'Completed restore must not leave a live pending journal');
+});
