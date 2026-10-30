@@ -86,6 +86,55 @@ public static class DkfWindowsDurability {
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool FlushFileBuffers(SafeFileHandle handle);
 
+    // SetNamedSecurityInfoW applies NTFS auto-inheritance; .NET SetAccessControl
+    // may clear SE_DACL_AUTO_INHERITED even when all current ACEs match.
+    private const uint SE_FILE_OBJECT = 1;
+    private const uint DACL_SECURITY_INFORMATION = 0x00000004;
+    private const uint PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000;
+    private const uint UNPROTECTED_DACL_SECURITY_INFORMATION = 0x20000000;
+
+    [DllImport("advapi32.dll", EntryPoint = "GetNamedSecurityInfoW",
+        CharSet = CharSet.Unicode)]
+    private static extern uint GetNamedSecurityInfo(
+        string name, uint objectType, uint securityInfo,
+        out IntPtr owner, out IntPtr group, out IntPtr dacl,
+        out IntPtr sacl, out IntPtr securityDescriptor);
+
+    [DllImport("advapi32.dll", EntryPoint = "SetNamedSecurityInfoW",
+        CharSet = CharSet.Unicode)]
+    private static extern uint SetNamedSecurityInfo(
+        string name, uint objectType, uint securityInfo,
+        IntPtr owner, IntPtr group, IntPtr dacl, IntPtr sacl);
+
+    [DllImport("kernel32.dll", EntryPoint = "LocalFree")]
+    private static extern IntPtr LocalFree(IntPtr handle);
+
+    public static void CopyDaclWithInheritance(string from, string to, bool protectedDacl) {
+        IntPtr owner, group, dacl, sacl, descriptor;
+        uint status = GetNamedSecurityInfo(from, SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION, out owner, out group, out dacl,
+            out sacl, out descriptor);
+        if (status != 0) {
+            throw new Win32Exception((int)status, "GetNamedSecurityInfoW source DACL failed");
+        }
+        try {
+            // Never install a NULL DACL: it grants unrestricted access.
+            if (dacl == IntPtr.Zero) {
+                throw new InvalidOperationException("Source has a NULL DACL; refusing staged ACL publication");
+            }
+            uint flags = DACL_SECURITY_INFORMATION |
+                (protectedDacl ? PROTECTED_DACL_SECURITY_INFORMATION :
+                                 UNPROTECTED_DACL_SECURITY_INFORMATION);
+            status = SetNamedSecurityInfo(to, SE_FILE_OBJECT, flags,
+                IntPtr.Zero, IntPtr.Zero, dacl, IntPtr.Zero);
+            if (status != 0) {
+                throw new Win32Exception((int)status, "SetNamedSecurityInfoW staged DACL failed");
+            }
+        } finally {
+            if (descriptor != IntPtr.Zero) LocalFree(descriptor);
+        }
+    }
+
     private static Win32Exception LastError(string operation) {
         return new Win32Exception(Marshal.GetLastWin32Error(), operation);
     }
@@ -216,7 +265,7 @@ function New-DkfSecureStage([string]$StagePath, [string]$SourcePath) {
         # Apply the original security descriptor while the stage is EMPTY.
         # Failure leaves the original untouched; no data has been copied.
         $expectedAcl = [System.IO.Directory]::GetAccessControl($SourcePath)
-        [System.IO.Directory]::SetAccessControl($stage, $expectedAcl)
+        [DkfWindowsDurability]::CopyDaclWithInheritance($SourcePath, $stage, $expectedAcl.AreAccessRulesProtected)
     }
     $actual = [System.IO.Directory]::GetAccessControl($stage)
     $access = [System.Security.AccessControl.AccessControlSections]::Access
@@ -254,11 +303,11 @@ function Copy-DkfAclTree([string]$Source, [string]$Destination) {
     }
     if ($src.PSIsContainer) {
         $acl = [System.IO.Directory]::GetAccessControl($Source)
-        [System.IO.Directory]::SetAccessControl($Destination, $acl)
+        [DkfWindowsDurability]::CopyDaclWithInheritance($Source, $Destination, $acl.AreAccessRulesProtected)
         $actualAcl = [System.IO.Directory]::GetAccessControl($Destination)
     } else {
         $acl = [System.IO.File]::GetAccessControl($Source)
-        [System.IO.File]::SetAccessControl($Destination, $acl)
+        [DkfWindowsDurability]::CopyDaclWithInheritance($Source, $Destination, $acl.AreAccessRulesProtected)
         $actualAcl = [System.IO.File]::GetAccessControl($Destination)
     }
     $sections = [System.Security.AccessControl.AccessControlSections]::Access
