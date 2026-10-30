@@ -221,3 +221,26 @@ test('W73-10 no transaction and no witness reports no recovery work', (t) => {
     { recovered: false },
   );
 });
+
+
+test('W73-11 terminal restore log cannot certify a missing promoted root', (t) => {
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-terminal-witness-');
+  const targetRoot = path.join(parent, 'restored-project');
+  const result = restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true });
+  assert.equal(fs.existsSync(result.transactionLog), true);
+  assert.equal(fs.existsSync(targetRoot), true);
+
+  // Model a persisted terminal record whose corresponding directory rename
+  // was not durable across a power interruption. No attacker is assumed.
+  // A terminal record must never be sufficient to declare recovery complete.
+  const moved = path.join(parent, 'simulated-unpersisted-promotion');
+  fs.renameSync(targetRoot, moved);
+  assert.throws(
+    () => recoverLegacyRestore({ targetRoot, confirmOffline: true }),
+    /terminal.*(root|witness)|terminal.*identity/i,
+    'Missing promoted root must fail closed despite a valid terminal journal',
+  );
+  assert.equal(fs.existsSync(moved), true, 'Do not destroy recovery evidence');
+  assert.equal(fs.existsSync(result.transactionLog), true, 'Retain authenticated journal');
+});
