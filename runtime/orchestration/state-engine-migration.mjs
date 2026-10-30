@@ -793,7 +793,53 @@ function orphanRestoreWitnesses(targetRoot) {
     .sort();
 }
 
+/**
+ * Windows path lookup is ordinarily case-insensitive, but the historical
+ * transaction-log digest is based on the caller's exact path spelling.
+ * When a published root is missing after a crash, realpath cannot recover
+ * its original casing. Inspect bounded first-record witnesses in sibling
+ * journals before treating a differently cased target as a fresh project.
+ *
+ * This is a fail-closed alias guard, not proof of physical power-loss
+ * durability or a defence against a hostile same-account filesystem writer.
+ */
+function assertNoWindowsCaseAliasedRestoreJournal(targetRoot) {
+  if (process.platform !== 'win32') return;
+  const root = path.resolve(targetRoot);
+  const parent = path.dirname(root);
+  if (!fs.existsSync(parent)) return;
+  const expectedJournal = path.basename(restoreJournalPath(root)).toLowerCase();
+  const targetKey = root.normalize('NFC').toLowerCase();
+  for (const name of fs.readdirSync(parent)) {
+    if (!/^\\.dk-restore-transaction-[a-f0-9]{24}\\.jsonl$/i.test(name) ||
+        name.toLowerCase() === expectedJournal) continue;
+    const candidate = path.join(parent, name);
+    const stat = fs.lstatSync(candidate);
+    if (!stat.isFile() || stat.isSymbolicLink()) continue;
+    const fd = fs.openSync(candidate, 'r');
+    let firstLine;
+    try {
+      const bytes = Buffer.alloc(8192);
+      const length = fs.readSync(fd, bytes, 0, bytes.length, 0);
+      firstLine = bytes.subarray(0, length).toString('utf8').split('\\n', 1)[0];
+    } finally {
+      fs.closeSync(fd);
+    }
+    let witness;
+    try { witness = JSON.parse(firstLine); }
+    catch { continue; }
+    if (typeof witness?.targetRoot !== 'string' ||
+        path.resolve(witness.targetRoot).normalize('NFC').toLowerCase() !== targetKey) continue;
+    validateRestoreRecord(witness);
+    throw new StateMigrationError(
+      'Terminal restore root witness exists under a Windows case alias; refusing destructive mutation',
+      { code: 'RESTORE_CASE_ALIAS_WITNESS', journal: candidate },
+    );
+  }
+}
+
 function assertNoUnjournaledRestoreWitness(targetRoot) {
+  assertNoWindowsCaseAliasedRestoreJournal(targetRoot);
   if (fs.existsSync(restoreJournalPath(targetRoot)) || fs.existsSync(legacyRestoreJournalPath(targetRoot))) return;
   const witnesses = orphanRestoreWitnesses(targetRoot);
   if (witnesses.length > 0) {
@@ -1129,6 +1175,7 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
 
   const root = path.resolve(targetRoot);
   const parent = path.dirname(root);
+  assertNoWindowsCaseAliasedRestoreJournal(root);
   const legacyJournal = legacyRestoreJournalPath(root);
   if (fs.existsSync(legacyJournal)) {
     return recoverLegacyRestoreV1({ root, parent, journalPath: legacyJournal });
