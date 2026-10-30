@@ -17,4 +17,4 @@ jobs:
         with:
           node-version: 22
       - name: Focused real NTFS restore, ACL and compatibility fixtures
-        run: node --test --test-name-pattern="W73-21|T04-H32|AC-015 bundled|W73-12" scripts/state-engine-v013.test.mjs scripts/state-engine-v2-migration.test.mjs
+        run: node --test --test-name-pattern="W73-21|W73-09|T04-H32|AC-015 bundled|W73-12" scripts/state-engine-v013.test.mjs scripts/state-engine-v2-migration.test.mjs
