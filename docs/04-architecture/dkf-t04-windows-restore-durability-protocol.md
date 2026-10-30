@@ -15,7 +15,7 @@ The offline legacy restore transaction is separate and requires explicit `confir
 4. Move existing root to a distinct displaced-original sibling; flush the parent namespace before moving the candidate.
 5. Move staged candidate to root; flush parent namespace before acknowledging success.
 6. Delete recovery journal only after durable promotion/verification, then flush parent namespace. Preserve the displaced original until this acknowledgement is complete.
-7. Delete the displaced original as a separate best-effort cleanup. Flush parent after cleanup when supported.
+7. **Retain the displaced original after acknowledgement**, expose its exact path in the restore result, and require a separate offline, independently reviewed retention/cleanup decision. Do not automatically delete the only original-tree witness while Windows journal-unlink persistence remains unproven. This is a risk-reduction measure, **not** evidence of a power-loss-durable transaction; retained trees consume disk space and require access-control and retention management.
 8. On interruption, operator-recovery verifies path/transaction identity and inode witnesses. Recovery either restores displaced original when root is absent, retains displaced original if promotion completed, or fails closed on ambiguous evidence. Never delete the sole recovery evidence before a successful barrier.
 9. Any unsupported namespace flush or failed barrier fails closed. Preserve the original root, displaced original, stage and journal to the maximum safe extent. The API must never claim a successful restore after an ambiguous outcome.
 10. Distinguish fresh initialization, ordinary State Engine append/migration and offline restore; none may silently substitute for another.
