@@ -229,6 +229,50 @@ switch ($Operation) {
         break
     }
 
+    'CopyDacl' {
+        if ([string]::IsNullOrWhiteSpace($From) -or [string]::IsNullOrWhiteSpace($To)) {
+            throw 'From and To are required for CopyDacl'
+        }
+        $sourcePath = [System.IO.Path]::GetFullPath($From)
+        $destinationPath = [System.IO.Path]::GetFullPath($To)
+        $sourceProfile = Get-DkfStorageProfile $sourcePath
+        $destinationProfile = Get-DkfStorageProfile $destinationPath
+        if (-not $sourceProfile.supportedAutomaticRestore -or
+            -not $destinationProfile.supportedAutomaticRestore -or
+            $sourceProfile.volumeRoot -ne $destinationProfile.volumeRoot) {
+            throw 'CopyDacl requires source and destination on the same local fixed NTFS volume'
+        }
+        if (-not [System.IO.Directory]::Exists($sourcePath) -or
+            -not [System.IO.Directory]::Exists($destinationPath)) {
+            throw 'CopyDacl requires existing ordinary directories'
+        }
+        $sourceAttrs = [System.IO.File]::GetAttributes($sourcePath)
+        $destinationAttrs = [System.IO.File]::GetAttributes($destinationPath)
+        if (($sourceAttrs -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            ($destinationAttrs -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'CopyDacl refuses reparse-point directories'
+        }
+
+        # Apply the original root access descriptor BEFORE sensitive file bytes
+        # are copied. In particular, do not leave a sibling stage readable by
+        # principals allowed by the parent but denied by the original root.
+        $sections = [System.Security.AccessControl.AccessControlSections]::Access
+        $original = [System.IO.Directory]::GetAccessControl($sourcePath, $sections)
+        [System.IO.Directory]::SetAccessControl($destinationPath, $original)
+        $expected = $original.GetSecurityDescriptorSddlForm($sections)
+        $actual = ([System.IO.Directory]::GetAccessControl($destinationPath, $sections)).GetSecurityDescriptorSddlForm($sections)
+        if ($actual -cne $expected) {
+            throw 'CopyDacl verification mismatch; refusing sensitive file copy'
+        }
+        [PSCustomObject]@{
+            operation = 'CopyDacl'
+            source = $sourcePath
+            destination = $destinationPath
+            verified = $true
+        } | ConvertTo-Json -Compress -Depth 4
+        break
+    }
+
     'Rename' {
         if ([string]::IsNullOrWhiteSpace($From) -or [string]::IsNullOrWhiteSpace($To)) {
             throw 'From and To are required for Rename'
