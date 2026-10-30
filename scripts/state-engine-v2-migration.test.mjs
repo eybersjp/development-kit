@@ -1054,22 +1054,27 @@ test('W73-27 Windows 8.3 ancestor alias cannot bypass an existing restore journa
     t.skip('NTFS 8.3 alias regression requires Windows'); return;
   }
   const home = os.homedir();
-  const systemRoot = process.env.SystemRoot;
-  assert.ok(systemRoot && path.win32.isAbsolute(systemRoot),
-    'A trusted absolute Windows system directory is required');
-  const cmd = path.win32.join(systemRoot, 'System32', 'cmd.exe');
-  const shortResult = requireSpawnSync(cmd,
-    ['/d', '/c', 'for %I in ("' + home + '") do @echo %~sI'],
-    { encoding: 'utf8', windowsHide: true, timeout: 10_000 });
-  assert.equal(shortResult.status, 0, shortResult.stderr);
-  const shortHome = shortResult.stdout.trim().split(/\r?\n/).at(-1).trim();
-  if (!shortHome || shortHome.toLowerCase() === home.toLowerCase()) {
-    t.skip('NTFS 8.3 short names are not enabled for this test volume'); return;
-  }
+  // Verify an actual NTFS 8.3 alias by physical directory identity; do not
+  // mistake cmd.exe's quoted or unexpanded output for a short path.
   const originalHome = fs.statSync(home, { bigint: true });
-  const aliasHome = fs.statSync(shortHome, { bigint: true });
-  assert.equal(aliasHome.dev, originalHome.dev);
-  assert.equal(aliasHome.ino, originalHome.ino);
+  const prefix = path.basename(home).replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6);
+  let shortHome = null;
+  for (let n = 1; n <= 9; n += 1) {
+    const candidate = path.join(path.dirname(home), prefix + '~' + n);
+    try {
+      const alias = fs.statSync(candidate, { bigint: true });
+      if (alias.isDirectory() && alias.dev === originalHome.dev &&
+          alias.ino === originalHome.ino && candidate.toLowerCase() !== home.toLowerCase()) {
+        shortHome = candidate;
+        break;
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+  if (!shortHome) {
+    t.skip('A real NTFS 8.3 home-directory alias is unavailable on this host'); return;
+  }
 
   const source = tempProject(t, 'dk-win-short-journal-source-');
   writeLegacyAutopilot(source, 2);
