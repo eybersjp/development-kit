@@ -171,12 +171,13 @@ function Get-DkfStorageProfile([string]$InputPath) {
 
 # Windows may clear the SE_DACL_AUTO_INHERITED control bit on a protected
 # DACL when applying an otherwise identical descriptor to a new object.
-# Compare protection and ACE SDDL exactly; ignore only that inert protected
-# auto-inheritance marker, never an inherited ACE, SID, mask or deny entry.
+# Compare protection and ACE SDDL exactly; ignore only the auto-inherited
+# control marker (D:AI or D:PAI), which Windows may clear on SetAccessControl.
+# Never discard protected status, inherited ACE flags, SID, mask or deny entry.
 function Get-DkfComparableDacl([System.Security.AccessControl.ObjectSecurity]$Acl) {
     $section = [System.Security.AccessControl.AccessControlSections]::Access
     $sddl = $Acl.GetSecurityDescriptorSddlForm($section)
-    return ($sddl -replace '^D:PAI', 'D:P')
+    return ($sddl -replace '^D:(P?)AI(?=\()', 'D:$1')
 }
 
 # Create a protected staging root with its DACL supplied atomically at mkdir
@@ -263,7 +264,7 @@ function Copy-DkfAclTree([string]$Source, [string]$Destination) {
     $sections = [System.Security.AccessControl.AccessControlSections]::Access
     $expected = $acl.GetSecurityDescriptorSddlForm($sections)
     $actual = $actualAcl.GetSecurityDescriptorSddlForm($sections)
-    if (($expected -replace '^D:PAI', 'D:P') -cne ($actual -replace '^D:PAI', 'D:P')) {
+    if (($expected -replace '^D:(P?)AI(?=\()', 'D:$1') -cne ($actual -replace '^D:(P?)AI(?=\()', 'D:$1')) {
         throw ('Staged NTFS DACL does not match source after copy: source={0} staged={1}' -f $expected, $actual)
     }
 }
