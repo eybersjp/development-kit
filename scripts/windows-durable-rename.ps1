@@ -211,7 +211,8 @@ function New-DkfSecureStage([string]$StagePath, [string]$SourcePath) {
     $access = [System.Security.AccessControl.AccessControlSections]::Access
     if ($actual.GetSecurityDescriptorSddlForm($access) -cne
         $expectedAcl.GetSecurityDescriptorSddlForm($access)) {
-        throw 'Stage DACL differs from required source security descriptor'
+        throw ('Stage DACL differs from required source security descriptor: expected={0} actual={1}' -f
+            $expectedAcl.GetSecurityDescriptorSddlForm($access), $actual.GetSecurityDescriptorSddlForm($access))
     }
     return $stage
 }
