@@ -9,6 +9,7 @@ import {
   appendMetadataEvent,
   getStateEnginePaths,
   loadCanonicalEvents,
+  loadEntityState,
   loadStateSnapshot,
   rebuildStateIndex,
   verifyStateEngineIntegrity,
@@ -21,6 +22,7 @@ import {
 } from '../runtime/orchestration/state-engine-migration.mjs';
 import { createInitialState } from '../runtime/autopilot/transition-model.mjs';
 import { saveStateRevision } from '../runtime/autopilot/state-store.mjs';
+import { persistRunManifest, persistRunStateRevision, updateRun } from '../runtime/orchestration/orchestration-run.mjs';
 
 function tempDir(t, prefix = 'dk-v013-state-') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -320,4 +322,78 @@ test('W73-14 retained original from one project must not block unrelated target 
   assert.equal(fs.existsSync(second.transactionLog), true);
   assert.equal(fs.readFileSync(path.join(first.displacedOriginal, 'first-original.txt'), 'utf8'),
     'FIRST-ORIGINAL', 'Original rollback witness must survive the other restore');
+});
+
+
+test('W73-15 a terminal journal with a missing root blocks the next restore without superseding evidence', (t) => {
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-terminal-preflight-');
+  const targetRoot = path.join(parent, 'project');
+  fs.mkdirSync(targetRoot);
+  fs.writeFileSync(path.join(targetRoot, 'original.txt'), 'KEEP-ORIGINAL');
+  const first = restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true });
+  assert.ok(first.displacedOriginal);
+  const before = fs.readFileSync(first.transactionLog, 'utf8');
+
+  // Model terminal journal persistence without the preceding root publication.
+  const unpersisted = path.join(parent, 'unpersisted-published-root');
+  fs.renameSync(targetRoot, unpersisted);
+  assert.throws(
+    () => restoreLegacyBackup({ backupPath, targetRoot, confirmOffline: true }),
+    /terminal.*(root|witness)|terminal.*identity/i,
+    'A newer restore must not supersede an unresolved terminal root witness',
+  );
+  assert.equal(fs.existsSync(targetRoot), false);
+  assert.equal(fs.readFileSync(first.transactionLog, 'utf8'), before);
+  assert.equal(fs.readFileSync(path.join(first.displacedOriginal, 'original.txt'), 'utf8'), 'KEEP-ORIGINAL');
+});
+
+test('W73-16 imported V1 terminal outcomes remain idempotently recoverable', (t) => {
+  const parent = tempDir(t, 'dk-v013-imported-v1-');
+  const targetRoot = path.join(parent, 'project');
+  fs.mkdirSync(targetRoot);
+  fs.writeFileSync(path.join(targetRoot, 'original.txt'), 'V1-ORIGINAL');
+  const original = fs.lstatSync(targetRoot, { bigint: true });
+  const transactionId = 'a'.repeat(32);
+  const stageName = '.dk-legacy-restore-stage-' + transactionId;
+  const digest = crypto.createHash('sha256').update(path.resolve(targetRoot)).digest('hex').slice(0, 24);
+  const journal = path.join(parent, '.dk-restore-journal-' + digest + '.json');
+  fs.writeFileSync(journal, JSON.stringify({
+    schemaVersion: '1.0.0', transactionId, targetRoot, stageName,
+    existed: true, originalDev: original.dev.toString(), originalIno: original.ino.toString(),
+    stageDev: '1', stageIno: '1',
+  }));
+  const first = recoverLegacyRestore({ targetRoot, confirmOffline: true });
+  assert.equal(first.legacyJournal, true);
+  assert.equal(first.outcome, 'uncommitted-original-unchanged');
+  assert.equal(fs.existsSync(first.retainedJournal), true);
+  const second = recoverLegacyRestore({ targetRoot, confirmOffline: true });
+  assert.equal(second.alreadyComplete, true);
+  assert.equal(fs.readFileSync(path.join(targetRoot, 'original.txt'), 'utf8'), 'V1-ORIGINAL');
+});
+
+test('W73-17 mixed legacy Autopilot and canonical V2 orchestration runs migrate without revision regression', (t) => {
+  const rootDir = tempDir(t, 'dk-v013-mixed-state-');
+  const legacy = createInitialState({ autonomy: 'guided-autopilot' }, rootDir);
+  const legacyDir = path.join(rootDir, '.development-kit', 'autopilot', 'state');
+  fs.mkdirSync(legacyDir, { recursive: true });
+  fs.writeFileSync(path.join(legacyDir, 'revision-000001.json'), JSON.stringify(legacy, null, 2));
+  saveStateRevision(legacy, rootDir);
+
+  const run = {
+    schemaVersion: '1.0.0', contractId: 'contract-mixed', taskId: 'task-mixed',
+    runId: 'run-mixed', sourceFingerprint: 'sha256:' + 'a'.repeat(64),
+    createdAt: '2026-10-30T00:00:00.000Z', updatedAt: '2026-10-30T00:00:00.000Z',
+    stateRevision: 1, state: 'READY', executionStrategy: 'direct',
+    hostCapabilities: {}, manualEvidenceRequired: false, requiredGates: {},
+    completedGates: [], correctionAttempt: 0, failureSignatures: [],
+    verificationVerdict: null, acceptanceState: 'PENDING',
+  };
+  persistRunManifest(run, rootDir);
+  assert.equal(persistRunStateRevision(run, rootDir).stateEngine, 'v2');
+  const revised = updateRun(run, { state: 'IMPLEMENTING' }, '2026-10-30T00:01:00.000Z');
+  assert.equal(persistRunStateRevision(revised, rootDir).stateEngine, 'v2');
+  const migration = migrateLegacyStateToV2({ rootDir, completedAt: '2026-10-30T00:02:00.000Z' });
+  assert.equal(migration.semanticEquivalence, true);
+  assert.equal(loadEntityState('orchestration-run', 'contract-mixed/run-mixed', rootDir).stateRevision, 2);
 });
