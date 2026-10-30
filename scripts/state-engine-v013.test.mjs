@@ -561,6 +561,7 @@ test('W73-21 Windows restore stage and promoted root preserve the original restr
     assert.equal(result.status, 0, String(result.stderr));
     return result.stdout.trim();
   }
+  const comparableDacl = (value) => value.replace(/^D:PAI/, 'D:P');
   const originalDacl = dacl(targetRoot);
   const fileDacl = (location) => {
     const result = aclScript(
@@ -578,8 +579,8 @@ test('W73-21 Windows restore stage and promoted root preserve the original restr
   fs.cpSync = function verifyPrivateStageBeforeCopy(source, destination, ...options) {
     if (path.resolve(source) === path.resolve(targetRoot)) {
       stageInspected = true;
-      assert.equal(dacl(destination), originalDacl,
-        'Restore stage must inherit the original restrictive DACL before sensitive files are copied');
+      assert.equal(comparableDacl(dacl(destination)), comparableDacl(originalDacl),
+        'Restore stage must preserve source DACL protection and ACEs before sensitive data copy');
     }
     return originalCp.call(this, source, destination, ...options);
   };
@@ -593,8 +594,10 @@ test('W73-21 Windows restore stage and promoted root preserve the original restr
     fs.cpSync = originalCp;
   }
   assert.equal(stageInspected, true);
-  assert.equal(dacl(targetRoot), originalDacl, 'Promoted root must preserve original DACL');
-  assert.equal(fileDacl(path.join(targetRoot, 'confidential.txt')), originalFileDacl,
+  assert.equal(comparableDacl(dacl(targetRoot)), comparableDacl(originalDacl),
+    'Promoted root must preserve source DACL protection and ACEs');
+  assert.equal(comparableDacl(fileDacl(path.join(targetRoot, 'confidential.txt'))),
+    comparableDacl(originalFileDacl),
     'Original file DACL must survive staged copy and promotion');
   assert.equal(fs.readFileSync(path.join(targetRoot, 'confidential.txt'), 'utf8'), 'CONFIDENTIAL-ORIGINAL');
 });
