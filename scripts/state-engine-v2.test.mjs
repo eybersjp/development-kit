@@ -581,7 +581,7 @@ test('V13-CONC-BOOTSTRAP-04 live initializer staging links are not reclaimed', (
 });
 
 test('T04-P2 JSON object keys including empty, control and Unicode strings survive patch update and deletion', (t) => {
-  for (const [index, key] of ['', '\\n', '\\r', '\\u0000', 'x\\ny', 'é', '__proto__'].entries()) {
+  for (const [index, key] of ['', '\n', '\r', '\u0000', 'x\ny', 'é', '__proto__'].entries()) {
     const rootDir = tempProject(t, 'dk-v13-patch-key-');
     const entityId = 'literal-key-' + index;
     const first = { stateRevision: 1, metadata: { [key]: { count: 1 } } };
