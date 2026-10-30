@@ -1,7 +1,7 @@
 # DKF120-T04 — Windows restore and State Engine durability protocol
 
 **Status:** Proposed engineering protocol; **not** an independently approved Windows power-loss guarantee.
-**Decision authority:** Product Owner requires full Windows legacy-backup restore/recovery support in v0.12.0 (Issue #73). The unrelated hostile same-account process-isolation enhancement remains deferred (Issue #72).
+**Decision authority:** The Product Owner retains full Windows legacy-backup restore/recovery support as mandatory for the **v0.13.0 P0** T04 feature (Issues #82/#84); v0.12.0 was released without T04. The unrelated hostile same-account process-isolation enhancement remains deferred (Issue #72). Windows durability Issue #73 is not waived.
 
 ## Exact persistence dependencies
 
@@ -22,7 +22,7 @@ The offline legacy restore transaction is separate and requires explicit `confir
 
 ## OS primitives and evidence boundary
 
-**Implementation currently under review:** Node.js `fs.fsyncSync` on a directory descriptor opened `r+` on Windows, `r` on POSIX. `state-engine-v2.mjs` now also flushes the State Engine parent after publishing `pending-commit.json` and before any in-place canonical append. The migration module flushes parent namespace after restore renames and journal cleanup.
+**Implementation currently under review:** Node.js `fs.fsyncSync` on a directory descriptor opened `r+` on Windows, `r` on POSIX. `state-engine-v2.mjs` also flushes the State Engine parent after publishing `pending-commit.json` and before any in-place canonical append. The migration module currently uses **Node `fs.renameSync` followed by `syncRestoreParent`** for rollback, promotion and journal cleanup ordering. The source-controlled `scripts/windows-durable-rename.ps1` wrapper for `MoveFileExW` is **not invoked by the runtime**; it is an unused candidate, not native Windows durability evidence. See `docs/03-reference/scripts/windows-durable-rename.md`.
 
 **Primary Microsoft documentation:**
 
@@ -38,7 +38,7 @@ Production-support requirements include a documented local-volume/NTFS test envi
 ## Test evidence required
 
 - **Runtime journal ordering:** T04-H49 injects a parent-directory flush failure and asserts no ledger bytes are appended and the pending marker is retained; T04-H50 verifies directory flush completes before physical canonical append.
-- **Restore rollback ordering:** T04-H47/H48 observe the proper parent-directory flush before removal of the restore journal on applicable hosts.
+- **Restore rollback ordering:** T04-H47/H48 observe Node rename followed by a successful parent-directory flush before journal deletion on applicable hosts. They **do not** invoke the unused PowerShell `MoveFileExW` helper or prove host power-loss durability.
 - **Transaction fault injection:** before and after journal publication, original displacement, stage promotion, journal unlink, original cleanup and explicit recovery. Validate original-file identity, fingerprint, canonical ledger history and recovery witnesses.
 - **Hardware/OS durability:** dedicated power-loss/reboot test harness is still required to distinguish normal process termination from forced host power loss and to validate persistence on each claimed Windows filesystem.
 
