@@ -1207,3 +1207,121 @@ for (const scenario of [
     assert.equal(recoverLegacyRestore({ targetRoot: root, confirmOffline: true }).recovered, false);
   });
 }
+
+
+/**
+ * T04-H55/H56: a second *real* process termination during OFFLINE recovery
+ * must not lose the original witness or acknowledge the only journal early.
+ * These are OS-process termination tests, NOT physical power-loss tests.
+ */
+for (const scenario of [
+  { id: 'T04-H55', boundary: 'rollback-renamed' },
+  { id: 'T04-H56', boundary: 'stage-cleaned' },
+]) {
+  test(scenario.id + ' killed recovery remains retryable with original inode and journal', (t) => {
+    const source = tempProject(t, 'dk-restore-recovery-kill-source-');
+    writeLegacyAutopilot(source, 2);
+    const migrated = migrateLegacyStateToV2({ rootDir: source });
+    const root = tempProject(t, 'dk-restore-recovery-kill-target-');
+    const originalWitness = path.join(root, 'original-witness.txt');
+    fs.writeFileSync(originalWitness, scenario.id + '-ORIGINAL', 'utf8');
+    const parent = path.dirname(root);
+    const journalPath = path.join(parent, '.dk-restore-journal-' +
+      createHash('sha256').update(path.resolve(root)).digest('hex').slice(0, 24) + '.json');
+
+    // First kill the actual restore after original displacement, before promotion.
+    const restoreScript = [
+      'import fs from "node:fs";',
+      'import {restoreLegacyBackup} from ' +
+        JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href) + ';',
+      'const backup=process.argv[1],root=process.argv[2];',
+      'const rename=fs.renameSync;',
+      'fs.renameSync=function(from,to,...args){',
+      ' const result=rename.call(this,from,to,...args);',
+      ' if(from===root && to.endsWith("-original")){',
+      '   process.kill(process.pid,"SIGKILL");',
+      '   throw Error("restore kill returned unexpectedly");',
+      ' }',
+      ' return result;',
+      '};',
+      'restoreLegacyBackup({backupPath:backup,targetRoot:root,confirmOffline:true});',
+      'throw Error("restore unexpectedly acknowledged");',
+    ].join('\n');
+    const restoreChild = requireSpawnSync(process.execPath,
+      ['--input-type=module', '-e', restoreScript, migrated.backupPath, root],
+      { encoding: 'utf8' });
+    assert.equal(restoreChild.error, undefined, 'Restore child must launch');
+    assert.notEqual(restoreChild.status, 0, 'Restore child must be killed');
+    assert.doesNotMatch(restoreChild.stderr || '',
+      /restore kill returned unexpectedly|restore unexpectedly acknowledged/,
+      'Restore must not exit via a sentinel exception');
+
+    assert.equal(fs.existsSync(journalPath), true, 'Exact journal survives first termination');
+    const tx = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
+    assert.equal(tx.targetRoot, path.resolve(root));
+    assert.match(tx.transactionId, /^[a-f0-9]{32}$/);
+    const stage = path.join(parent, tx.stageName);
+    const displaced = stage + '-original';
+    assert.equal(fs.existsSync(root), false);
+    assert.equal(fs.existsSync(stage), true);
+    assert.equal(fs.readFileSync(path.join(displaced, 'original-witness.txt'), 'utf8'),
+      scenario.id + '-ORIGINAL');
+
+    // Now terminate recovery at the exact rollback-rename or stage-cleanup edge.
+    const recoveryScript = [
+      'import fs from "node:fs";',
+      'import {recoverLegacyRestore} from ' +
+        JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href) + ';',
+      'const root=process.argv[1],stage=process.argv[2],displaced=process.argv[3],boundary=process.argv[4];',
+      'const rename=fs.renameSync,rm=fs.rmSync;',
+      'fs.renameSync=function(from,to,...args){',
+      ' const result=rename.call(this,from,to,...args);',
+      ' if(boundary==="rollback-renamed" && from===displaced && to===root){',
+      '   process.kill(process.pid,"SIGKILL");',
+      '   throw Error("recovery kill returned unexpectedly");',
+      ' }',
+      ' return result;',
+      '};',
+      'fs.rmSync=function(target,...args){',
+      ' const result=rm.call(this,target,...args);',
+      ' if(boundary==="stage-cleaned" && target===stage){',
+      '   process.kill(process.pid,"SIGKILL");',
+      '   throw Error("recovery kill returned unexpectedly");',
+      ' }',
+      ' return result;',
+      '};',
+      'recoverLegacyRestore({targetRoot:root,confirmOffline:true});',
+      'throw Error("recovery unexpectedly acknowledged");',
+    ].join('\n');
+    const recoveryChild = requireSpawnSync(process.execPath,
+      ['--input-type=module', '-e', recoveryScript, root, stage, displaced, scenario.boundary],
+      { encoding: 'utf8' });
+    assert.equal(recoveryChild.error, undefined, 'Recovery child must launch');
+    assert.notEqual(recoveryChild.status, 0, 'Recovery child must be killed');
+    assert.doesNotMatch(recoveryChild.stderr || '',
+      /recovery kill returned unexpectedly|recovery unexpectedly acknowledged/,
+      'Recovery must not exit via a sentinel exception');
+
+    assert.equal(fs.existsSync(journalPath), true,
+      'Interrupted recovery must retain its exact journal');
+    assert.equal(fs.readFileSync(originalWitness, 'utf8'), scenario.id + '-ORIGINAL');
+    const rootStat = fs.lstatSync(root, { bigint: true });
+    assert.equal(rootStat.dev.toString(), tx.originalDev);
+    assert.equal(rootStat.ino.toString(), tx.originalIno);
+    assert.equal(fs.existsSync(displaced), false, 'Original is back at its original path');
+    assert.equal(fs.existsSync(stage), scenario.boundary === 'rollback-renamed',
+      'Stage cleanup must reflect the exact crash boundary');
+    assert.throws(() => restoreLegacyBackup({
+      backupPath: migrated.backupPath, targetRoot: root, confirmOffline: true,
+    }), /Incomplete legacy restore/i, 'Unacknowledged journal blocks a second restore');
+
+    const recovered = recoverLegacyRestore({ targetRoot: root, confirmOffline: true });
+    assert.equal(recovered.recovered, true);
+    assert.equal(recovered.outcome, 'uncommitted-original-unchanged');
+    assert.equal(fs.readFileSync(originalWitness, 'utf8'), scenario.id + '-ORIGINAL');
+    assert.equal(fs.existsSync(stage), false);
+    assert.equal(fs.existsSync(journalPath), false,
+      'Journal acknowledged only after completing retry recovery');
+    assert.equal(recoverLegacyRestore({ targetRoot: root, confirmOffline: true }).recovered, false);
+  });
+}
