@@ -908,16 +908,16 @@ export function restoreLegacyBackup({
     // new root is durably visible should the journal be acknowledged.
     fs.unlinkSync(journal);
     syncRestoreParent(parent);
-    // Promotion is now acknowledged and durable. An old tree kept in the
-    // displaced slot is not needed for this completed transaction.
-    if (originalRootExists) {
-      try { fs.rmSync(displaced, { recursive: true, force: true }); } catch {
-        // Retain rather than damage the newly promoted root if cleanup fails.
-      }
-    }
+    // Retain the displaced original as a separately identifiable rollback
+    // witness even after successful journal acknowledgement. The journal
+    // unlink's physical persistence on Windows is not independently proven:
+    // deleting the only original tree here could make a power-loss replay
+    // ambiguous and unrecoverable. Cleanup requires separate offline review;
+    // never silently discard the original as part of a successful restore.
     return Object.freeze({
       restoredFiles: restored.sort(),
       sourceFingerprint: bundle.sourceFingerprint,
+      displacedOriginal: originalRootExists ? displaced : null,
     });
   } finally {
     if (displacedOriginal) {
