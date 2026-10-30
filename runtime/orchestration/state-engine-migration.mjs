@@ -662,9 +662,22 @@ function validateRestoreRecord(record, previous = null) {
   return true;
 }
 
+function inspectSafeRestoreJournal(journal) {
+  let stat;
+  try { stat = fs.lstatSync(journal, { bigint: true }); }
+  catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1n) {
+    throw new StateMigrationError('Unsafe restore transaction journal link or object type; refusing filesystem mutation');
+  }
+  return stat;
+}
+
 function loadRestoreJournal(targetRoot) {
   const journal = restoreJournalPath(targetRoot);
-  if (!fs.existsSync(journal)) return [];
+  if (!inspectSafeRestoreJournal(journal)) return [];
   const content = fs.readFileSync(journal, 'utf8');
   if (!content) return [];
   if (!content.endsWith('\n')) {
@@ -730,9 +743,18 @@ function appendRestoreTransactionRecord({
   const record = { ...base, recordHash: restoreRecordHash(base) };
 
   fs.mkdirSync(path.dirname(journal), { recursive: true });
-  const existed = fs.existsSync(journal);
-  const fd = fs.openSync(journal, 'a', 0o600);
+  const prior = inspectSafeRestoreJournal(journal);
+  const existed = prior !== null;
+  const noFollow = process.platform !== 'win32' ? (fs.constants.O_NOFOLLOW || 0) : 0;
+  const flags = fs.constants.O_WRONLY | fs.constants.O_APPEND | noFollow |
+    (existed ? 0 : fs.constants.O_CREAT | fs.constants.O_EXCL);
+  const fd = fs.openSync(journal, flags, 0o600);
   try {
+    const opened = fs.fstatSync(fd, { bigint: true });
+    if (!opened.isFile() || opened.nlink !== 1n ||
+        (prior && (opened.dev !== prior.dev || opened.ino !== prior.ino))) {
+      throw new StateMigrationError('Restore transaction journal changed identity before append');
+    }
     fs.writeFileSync(fd, JSON.stringify(record) + '\n', 'utf8');
     fs.fsyncSync(fd);
   } finally {
