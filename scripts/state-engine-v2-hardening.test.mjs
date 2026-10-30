@@ -1030,3 +1030,95 @@ test('T04-H50 Windows flushes pending-journal directory before any physical cano
   assert.equal(fs.existsSync(paths.pending), false);
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+
+/**
+ * Process termination is not a physical power-loss test: OS page caches remain
+ * alive. These cases exercise real filesystem crash/restart recovery without
+ * claiming that NTFS directory metadata is durable after power interruption.
+ */
+for (const crashPoint of ['after-journal-rename', 'after-ledger-write']) {
+  test('T04-H51 process-kill recovery retains canonical history at ' + crashPoint, async (t) => {
+    const rootDir = tempProject(t);
+    appendMetadataEvent({ rootDir, eventType: 'H51_BASELINE', payload: { step: 1 } });
+    const paths = getStateEnginePaths(rootDir);
+    const exitWitness = path.join(rootDir, '.h51-process-exit-witness');
+    const childScript = String.raw`
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const moduleUrl = pathToFileURL(path.resolve(process.cwd(), 'runtime/orchestration/state-engine-v2.mjs')).href;
+const { appendMetadataEvent, getStateEnginePaths } = await import(moduleUrl);
+const rootDir = process.env.DKF_T04_CRASH_ROOT;
+const crashPoint = process.env.DKF_T04_CRASH_POINT;
+const paths = getStateEnginePaths(rootDir);
+process.on('exit', () => fs.writeFileSync(process.env.DKF_T04_EXIT_WITNESS, 'ORDINARY_EXIT'));
+const ledger = fs.statSync(paths.events);
+const originalRename = fs.renameSync;
+const originalWrite = fs.writeSync;
+fs.renameSync = function (...args) {
+  const result = originalRename.apply(this, args);
+  if (crashPoint === 'after-journal-rename' &&
+      path.basename(String(args[1])) === 'pending-commit.json') {
+    process.kill(process.pid, 'SIGKILL');
+    throw Error('Process termination unexpectedly returned');
+  }
+  return result;
+};
+fs.writeSync = function (fd, ...args) {
+  const result = originalWrite.call(this, fd, ...args);
+  const stat = fs.fstatSync(fd);
+  if (crashPoint === 'after-ledger-write' &&
+      stat.isFile() && stat.dev === ledger.dev && stat.ino === ledger.ino) {
+    process.kill(process.pid, 'SIGKILL');
+    throw Error('Process termination unexpectedly returned');
+  }
+  return result;
+};
+appendMetadataEvent({ rootDir, eventType: 'H51_INTERRUPTED', payload: { step: 2 } });
+throw Error('Expected forced termination at the selected filesystem boundary');
+`;
+    const result = await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, ['--input-type=module', '-e', childScript], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          DKF_T04_CRASH_ROOT: rootDir,
+          DKF_T04_CRASH_POINT: crashPoint,
+          DKF_T04_EXIT_WITNESS: exitWitness,
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let stderr = '';
+      child.stderr.setEncoding('utf8');
+      child.stderr.on('data', chunk => { stderr += chunk; });
+      child.once('error', reject);
+      child.once('close', (code, signal) => resolve({ code, signal, stderr }));
+    });
+    assert.equal(fs.existsSync(exitWitness), false,
+      'T04-H51 forced termination must bypass the normal Node exit hook');
+    if (process.platform !== 'win32') {
+      assert.equal(result.signal, 'SIGKILL', 'POSIX H51 must terminate with SIGKILL');
+      assert.equal(result.code, null, 'POSIX H51 must not return an ordinary exit code');
+    } else {
+      assert.notEqual(result.code, 0, 'Windows H51 must terminate abnormally');
+      assert.doesNotMatch(result.stderr, /(?:Error|Exception):|^\s+at\s/m,
+        'Windows H51 must not be an ordinary uncaught exception');
+    }
+    assert.equal(fs.existsSync(paths.pending), true,
+      'The interrupted commit must retain its pending recovery journal');
+    assert.equal(fs.existsSync(paths.lock), true,
+      'The terminated writer should leave its process-owned lock for safe reclamation');
+
+    // The writer was terminated, not cleanly released. Exercise the actual
+    // stale-owner reclaim path instead of removing the lock in the test.
+    const old = new Date(Date.now() - 30_000);
+    fs.utimesSync(paths.lock, old, old);
+    appendMetadataEvent({ rootDir, eventType: 'H51_RECOVERED', payload: { step: 3 } });
+    assert.deepEqual(loadCanonicalEvents(rootDir).map(event => event.eventType), [
+      'H51_BASELINE', 'H51_INTERRUPTED', 'H51_RECOVERED',
+    ]);
+    assert.equal(fs.existsSync(paths.pending), false);
+    assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+  });
+}
