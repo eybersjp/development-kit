@@ -811,7 +811,7 @@ function assertNoWindowsCaseAliasedRestoreJournal(targetRoot) {
   const expectedJournal = path.basename(restoreJournalPath(root)).toLowerCase();
   const targetKey = root.normalize('NFC').toLowerCase();
   for (const name of fs.readdirSync(parent)) {
-    if (!/^\\.dk-restore-transaction-[a-f0-9]{24}\\.jsonl$/i.test(name) ||
+    if (!/^\.dk-restore-transaction-[a-f0-9]{24}\.jsonl$/i.test(name) ||
         name.toLowerCase() === expectedJournal) continue;
     const candidate = path.join(parent, name);
     const stat = fs.lstatSync(candidate);
@@ -821,7 +821,7 @@ function assertNoWindowsCaseAliasedRestoreJournal(targetRoot) {
     try {
       const bytes = Buffer.alloc(8192);
       const length = fs.readSync(fd, bytes, 0, bytes.length, 0);
-      firstLine = bytes.subarray(0, length).toString('utf8').split('\\n', 1)[0];
+      firstLine = bytes.subarray(0, length).toString('utf8').split('\n', 1)[0];
     } finally {
       fs.closeSync(fd);
     }
