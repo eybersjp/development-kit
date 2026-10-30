@@ -1207,6 +1207,12 @@ export function loadStateIndex(rootDir = process.cwd(), { rebuildIfNeeded = true
   try {
     const index = JSON.parse(fs.readFileSync(paths.index, 'utf8'));
     validateStateIndex(index, snapshot);
+    // A matching sequence/hash only proves source freshness, not that the
+    // disposable reference maps were built with the current collision-free
+    // identity encoding. Reject stale or corrupted maps before any query.
+    if (stableJson(index) !== stableJson(buildStateIndex(snapshot))) {
+      throw new StateEngineError('State index is not semantically equivalent to canonical snapshot');
+    }
     return index;
   } catch (error) {
     if (!rebuildIfNeeded) throw error;
