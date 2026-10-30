@@ -10,7 +10,7 @@
 # arguments; this script never evaluates command text or interpolates a shell.
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Probe', 'Rename', 'FlushDirectory')]
+    [ValidateSet('Probe', 'Rename', 'FlushDirectory', 'CloneAcl')]
     [string]$Operation,
 
     [string]$Path,
@@ -169,6 +169,45 @@ function Get-DkfStorageProfile([string]$InputPath) {
 }
 
 switch ($Operation) {
+    'CloneAcl' {
+        if ([string]::IsNullOrWhiteSpace($From) -or [string]::IsNullOrWhiteSpace($To)) {
+            throw 'From and To are required for CloneAcl'
+        }
+        $sourcePath = [System.IO.Path]::GetFullPath($From)
+        $destinationPath = [System.IO.Path]::GetFullPath($To)
+        if (-not [System.IO.Directory]::Exists($sourcePath) -or
+            -not [System.IO.Directory]::Exists($destinationPath)) {
+            throw 'CloneAcl requires two existing directories'
+        }
+        $sourceProfile = Get-DkfStorageProfile $sourcePath
+        $destinationProfile = Get-DkfStorageProfile $destinationPath
+        if (-not $sourceProfile.supportedAutomaticRestore -or
+            -not $destinationProfile.supportedAutomaticRestore -or
+            $sourceProfile.volumeRoot -ne $destinationProfile.volumeRoot) {
+            throw 'CloneAcl requires the same supported local fixed NTFS volume'
+        }
+        $reparse = [System.IO.FileAttributes]::ReparsePoint
+        if (([System.IO.File]::GetAttributes($sourcePath) -band $reparse) -or
+            ([System.IO.File]::GetAttributes($destinationPath) -band $reparse)) {
+            throw 'CloneAcl refuses reparse-point directories'
+        }
+        $acl = [System.IO.Directory]::GetAccessControl($sourcePath)
+        [System.IO.Directory]::SetAccessControl($destinationPath, $acl)
+        $sections = [System.Security.AccessControl.AccessControlSections]::Access
+        $expected = $acl.GetSecurityDescriptorSddlForm($sections)
+        $actual = ([System.IO.Directory]::GetAccessControl($destinationPath)).GetSecurityDescriptorSddlForm($sections)
+        if ($actual -cne $expected) {
+            throw 'CloneAcl DACL verification failed; refusing restore promotion'
+        }
+        [PSCustomObject]@{
+            operation = 'CloneAcl'
+            source = $sourcePath
+            destination = $destinationPath
+            daclVerified = $true
+        } | ConvertTo-Json -Compress
+        break
+    }
+
     'Probe' {
         $profile = Get-DkfStorageProfile $Path
         $profile | ConvertTo-Json -Compress
