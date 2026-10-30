@@ -19,6 +19,7 @@ import {
   migrateLegacyStateToV2,
   recoverLegacyRestore,
   restoreLegacyBackup,
+  validateWindowsDurabilityHelperResult,
 } from '../runtime/orchestration/state-engine-migration.mjs';
 import { createInitialState } from '../runtime/autopilot/transition-model.mjs';
 import { saveStateRevision } from '../runtime/autopilot/state-store.mjs';
@@ -518,4 +519,41 @@ test('W73-20 Windows case alias cannot bypass an orphan displaced original after
   );
   assert.equal(fs.existsSync(aliasRoot), false);
   assert.equal(fs.readFileSync(path.join(first.displacedOriginal, 'original.txt'), 'utf8'), 'ORIGINAL-ORPHAN');
+});
+
+
+test('W73-21 Windows native helper must prove operation-specific success before advancing recovery', () => {
+  const probe = {
+    path: 'C:\\dk\\parent', volumeRoot: 'C:\\', fileSystem: 'NTFS',
+    driveType: 3, localFixed: true, supportedAutomaticRestore: true,
+  };
+  assert.deepEqual(validateWindowsDurabilityHelperResult('Probe', probe), probe);
+  assert.throws(() => validateWindowsDurabilityHelperResult('Probe', {
+    ...probe, supportedAutomaticRestore: false,
+  }), /unsupported|profile|probe/i);
+
+  const flush = { operation: 'FlushDirectory', profile: probe, flushed: true };
+  assert.deepEqual(validateWindowsDurabilityHelperResult('FlushDirectory', flush), flush);
+  for (const bad of [
+    { ...flush, flushed: false },
+    { ...flush, flushed: undefined },
+    { ...flush, operation: 'Rename' },
+    { ...flush, profile: { ...probe, supportedAutomaticRestore: false } },
+  ]) assert.throws(() => validateWindowsDurabilityHelperResult('FlushDirectory', bad),
+    /helper|flush|profile|operation/i);
+
+  const rename = {
+    operation: 'Rename', source: 'C:\\dk\\from', destination: 'C:\\dk\\to',
+    profile: probe, renamed: true, parentFlushCompleted: true,
+  };
+  assert.deepEqual(validateWindowsDurabilityHelperResult('Rename', rename), rename);
+  for (const bad of [
+    { ...rename, renamed: false },
+    { ...rename, renamed: undefined },
+    { ...rename, parentFlushCompleted: false },
+    { ...rename, parentFlushCompleted: undefined },
+    { ...rename, operation: 'Probe' },
+    { ...rename, profile: { ...probe, fileSystem: 'ReFS' } },
+  ]) assert.throws(() => validateWindowsDurabilityHelperResult('Rename', bad),
+    /helper|rename|profile|operation|flush/i);
 });
