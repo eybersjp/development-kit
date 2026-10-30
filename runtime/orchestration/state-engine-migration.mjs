@@ -976,14 +976,16 @@ function runWindowsDurabilityHelper(operation, args = {}) {
   if (!output) {
     throw new StateMigrationError('Windows durability helper returned no result');
   }
+  let parsed;
   try {
-    return validateWindowsDurabilityHelperResult(operation, JSON.parse(output.split(/\r?\n/).filter(Boolean).at(-1)));
+    parsed = JSON.parse(output.split(/\r?\n/).filter(Boolean).at(-1));
   } catch (error) {
     throw new StateMigrationError('Windows durability helper returned invalid JSON', {
       operation,
       cause: error.message,
     });
   }
+  return validateWindowsDurabilityHelperResult(operation, parsed);
 }
 
 function requireSupportedWindowsRestoreProfile(targetPath) {
