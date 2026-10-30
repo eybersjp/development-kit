@@ -765,9 +765,9 @@ function diffValues(before, after, pathSegments = []) {
     const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort();
     for (const key of keys) {
       const childPath = [...pathSegments, key];
-      if (!(key in after)) {
+      if (!Object.hasOwn(after, key)) {
         operations.push({ op: 'delete', path: childPath });
-      } else if (!(key in before)) {
+      } else if (!Object.hasOwn(before, key)) {
         operations.push({ op: 'set', path: childPath, value: cloneSerializable(after[key], 'Patch value') });
       } else {
         operations.push(...diffValues(before[key], after[key], childPath));
@@ -779,15 +779,25 @@ function diffValues(before, after, pathSegments = []) {
   return [{ op: 'set', path: pathSegments, value: cloneSerializable(after, 'Patch value') }];
 }
 
+function defineOwnPatchValue(target, key, value) {
+  // Literal JSON keys such as "__proto__" must remain own data properties.
+  // Assignment can invoke inherited setters and mutate a process prototype.
+  Object.defineProperty(target, key, {
+    value, enumerable: true, writable: true, configurable: true,
+  });
+}
+
 function setAtPath(target, segments, value) {
   if (segments.length === 0) return cloneSerializable(value, 'Patch root value');
   let cursor = target;
   for (let i = 0; i < segments.length - 1; i += 1) {
     const key = segments[i];
-    if (!plainObject(cursor[key])) cursor[key] = {};
+    if (!Object.hasOwn(cursor, key) || !plainObject(cursor[key])) {
+      defineOwnPatchValue(cursor, key, {});
+    }
     cursor = cursor[key];
   }
-  cursor[segments.at(-1)] = cloneSerializable(value, 'Patch value');
+  defineOwnPatchValue(cursor, segments.at(-1), cloneSerializable(value, 'Patch value'));
   return target;
 }
 
@@ -796,10 +806,10 @@ function deleteAtPath(target, segments) {
   let cursor = target;
   for (let i = 0; i < segments.length - 1; i += 1) {
     const key = segments[i];
-    if (!plainObject(cursor[key])) return target;
+    if (!Object.hasOwn(cursor, key) || !plainObject(cursor[key])) return target;
     cursor = cursor[key];
   }
-  delete cursor[segments.at(-1)];
+  if (Object.hasOwn(cursor, segments.at(-1))) delete cursor[segments.at(-1)];
   return target;
 }
 
