@@ -193,7 +193,12 @@ test('W73-09 a second restore appends a new transaction without deleting prior r
   const first = restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true });
   const firstLog = fs.readFileSync(first.transactionLog, 'utf8');
 
-  const second = restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true });
+  let second;
+  try {
+    second = restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true });
+  } catch (error) {
+    assert.fail('W73-09 second restore error: ' + error.message + ' details=' + JSON.stringify(error.details));
+  }
   assert.equal(second.transactionLog, first.transactionLog);
   const secondLog = fs.readFileSync(second.transactionLog, 'utf8');
   assert.ok(secondLog.startsWith(firstLog));
