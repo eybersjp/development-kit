@@ -323,7 +323,7 @@ function Copy-DkfAclTree([string]$Source, [string]$Destination, [bool]$VerifyOnl
         $actualAcl = [System.IO.Directory]::GetAccessControl($Destination)
     } else {
         $acl = [System.IO.File]::GetAccessControl($Source)
-        [DkfWindowsDurability]::CopyDaclWithInheritance($Source, $Destination, $acl.AreAccessRulesProtected)
+        if (-not $VerifyOnly) { [DkfWindowsDurability]::CopyDaclWithInheritance($Source, $Destination, $acl.AreAccessRulesProtected, ($acl.GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access) -match '^D:(?:P)?AI')) }
         $actualAcl = [System.IO.File]::GetAccessControl($Destination)
     }
     $sections = [System.Security.AccessControl.AccessControlSections]::Access
