@@ -391,9 +391,9 @@ test('V13-CI-ROUTING: v0.13 validation is selected by source presence, not mutab
     return;
   }
   const workflow = readFileSync(join(REPO_ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
-  const sourceProbe = String.raw`hashFiles\('scripts/v013-state-engine-v2-contract\\.mjs'\)`;
-  const positive = new RegExp("if:\\\\s*\\\\$\\\\{\\\\{\\\\s*" + sourceProbe + "\\\\s*!=\\\\s*''\\\\s*\\\\}\\\\}");
-  const negative = new RegExp("if:\\\\s*\\\\$\\\\{\\\\{\\\\s*" + sourceProbe + "\\\\s*==\\\\s*''\\\\s*\\\\}\\\\}");
+  const sourceProbe = String.raw`hashFiles\('scripts/v013-state-engine-v2-contract\.mjs'\)`;
+  const positive = new RegExp(String.raw`if:\s*\$\{\{\s*${sourceProbe}\s*!=\s*''\s*\}\}`);
+  const negative = new RegExp(String.raw`if:\s*\$\{\{\s*${sourceProbe}\s*==\s*''\s*\}\}`);
   assert.doesNotMatch(workflow, /github\.head_ref/, 'Branch-name conditions can silently skip T04 validation after a merge or branch rename');
   assert.match(workflow, positive, 'v0.13 test lane must run whenever its contract is in the checkout');
   assert.match(workflow, negative, 'v0.12-only release lane must run only without the v0.13 contract');
