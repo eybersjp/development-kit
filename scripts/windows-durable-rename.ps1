@@ -341,7 +341,7 @@ switch ($Operation) {
         [PSCustomObject]@{ operation = 'CreateSecureStage'; path = $created;
             profile = (Get-DkfStorageProfile $created); createdPrivately = $true;
             daclVerified = $true } |
-            ConvertTo-Json -Compress
+            ConvertTo-Json -Compress -Depth 4
         break
     }
 
