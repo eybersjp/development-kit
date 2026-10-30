@@ -215,9 +215,17 @@ function New-DkfSecureStage([string]$StagePath, [string]$SourcePath) {
 function Copy-DkfAclTree([string]$Source, [string]$Destination) {
     $src = Get-Item -LiteralPath $Source -Force -ErrorAction Stop
     $dst = Get-Item -LiteralPath $Destination -Force -ErrorAction Stop
-    if (($src.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or
-        ($dst.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-        throw 'Cannot preserve ACLs for a reparse point; refusing restore promotion'
+    $srcReparse = ($src.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+    $dstReparse = ($dst.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+    if ($srcReparse -or $dstReparse) {
+        # Do not follow symlinks or junctions while traversing source ACLs.
+        # Existing relative symbolic links are copied verbatim by fs.cpSync;
+        # their containing directory remains protected by its source DACL.
+        if ($srcReparse -and $dstReparse -and
+            $src.LinkType -eq 'SymbolicLink' -and $dst.LinkType -eq 'SymbolicLink') {
+            return
+        }
+        throw 'Unsupported or mismatched reparse point during NTFS ACL preservation'
     }
     if ($src.PSIsContainer -ne $dst.PSIsContainer) {
         throw 'Source and staged object kinds differ during ACL preservation'
