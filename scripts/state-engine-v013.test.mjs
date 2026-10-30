@@ -667,3 +667,81 @@ test('W73-23 native ACL helper responses must be explicit and path-bound', () =>
       /helper|acl|path|operation|source|destination/i);
   }
 });
+
+
+test('W73-24 staged confidential child is never copied under a broader root DACL', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('NTFS DACL isolation requires Windows'); return;
+  }
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-ntfs-private-stage-');
+  const targetRoot = path.join(parent, 'mixed-access-project');
+  const child = path.join(targetRoot, 'confidential.txt');
+  fs.mkdirSync(targetRoot);
+  fs.writeFileSync(child, 'CONFIDENTIAL-ORIGINAL');
+
+  function ps(script, location) {
+    return spawnSync('powershell.exe',
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+      { encoding: 'utf8', windowsHide: true, shell: false, timeout: 30000,
+        env: { ...process.env, DKF_TEST_ACL_PATH: location } });
+  }
+  const aclSetup = ps([
+    "$ErrorActionPreference='Stop'",
+    '$root=$env:DKF_TEST_ACL_PATH',
+    '$user=[System.Security.Principal.WindowsIdentity]::GetCurrent().User',
+    '$everyone=[System.Security.Principal.SecurityIdentifier]::new("S-1-1-0")',
+    '$full=[System.Security.AccessControl.FileSystemRights]::FullControl',
+    '$read=[System.Security.AccessControl.FileSystemRights]::ReadAndExecute',
+    '$inherit=[System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit',
+    '$allow=[System.Security.AccessControl.AccessControlType]::Allow',
+    '$none=[System.Security.AccessControl.PropagationFlags]::None',
+    '$acl=[System.IO.Directory]::GetAccessControl($root)',
+    '$acl.SetAccessRuleProtection($true,$false)',
+    '$acl.SetAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($user,$full,$inherit,$none,$allow))',
+    '$acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($everyone,$read,$inherit,$none,$allow))',
+    '[System.IO.Directory]::SetAccessControl($root,$acl)',
+    '$file=[System.IO.File]::GetAccessControl([System.IO.Path]::Combine($root,"confidential.txt"))',
+    '$file.SetAccessRuleProtection($true,$false)',
+    '$file.SetAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($user,$full,$allow))',
+    '[System.IO.File]::SetAccessControl([System.IO.Path]::Combine($root,"confidential.txt"),$file)',
+  ].join(';'), targetRoot);
+  assert.equal(aclSetup.status, 0, 'Windows DACL fixture must execute: ' + String(aclSetup.stderr));
+  function dacl(location, kind = 'Directory') {
+    const z = ps("$ErrorActionPreference='Stop'; ([System.IO." + kind +
+      "]::GetAccessControl($env:DKF_TEST_ACL_PATH)).GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)",
+      location);
+    assert.equal(z.status, 0, String(z.stderr));
+    return z.stdout.trim();
+  }
+  const rootAcl = dacl(targetRoot);
+  const childAcl = dacl(child, 'File');
+  assert.match(rootAcl, /;;;WD\)/, 'Fixture root must grant Everyone read access');
+  assert.doesNotMatch(childAcl, /;;;WD\)/, 'Fixture confidential child must deny Everyone access');
+
+  const originalCp = fs.cpSync;
+  let inspected = false;
+  fs.cpSync = function assertPrivateStageDuringCopy(source, destination, ...args) {
+    if (path.resolve(source) === path.resolve(targetRoot)) {
+      inspected = true;
+      const before = dacl(destination);
+      assert.match(before, /^D:P/, 'Stage root must have protected private DACL before copy');
+      assert.doesNotMatch(before, /;;;WD\)/, 'Stage root must not expose confidential children');
+      const result = originalCp.call(this, source, destination, ...args);
+      const during = dacl(destination);
+      assert.match(during, /^D:P/, 'Stage must remain private until child ACLs are restored');
+      assert.doesNotMatch(during, /;;;WD\)/, 'Copied confidential bytes must remain private');
+      return result;
+    }
+    return originalCp.call(this, source, destination, ...args);
+  };
+  try {
+    restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true });
+  } finally {
+    fs.cpSync = originalCp;
+  }
+  assert.equal(inspected, true, 'Test must observe the real copy boundary');
+  assert.equal(dacl(targetRoot), rootAcl, 'Published root must preserve the original DACL');
+  assert.equal(dacl(path.join(targetRoot, 'confidential.txt'), 'File'), childAcl,
+    'Published confidential child must preserve its more restrictive DACL');
+});
