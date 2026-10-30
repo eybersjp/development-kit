@@ -1042,6 +1042,7 @@ for (const crashPoint of ['after-journal-rename', 'after-ledger-write']) {
     const rootDir = tempProject(t);
     appendMetadataEvent({ rootDir, eventType: 'H51_BASELINE', payload: { step: 1 } });
     const paths = getStateEnginePaths(rootDir);
+    const exitWitness = path.join(rootDir, '.h51-process-exit-witness');
     const childScript = String.raw`
 import fs from 'node:fs';
 import path from 'node:path';
@@ -1051,6 +1052,7 @@ const { appendMetadataEvent, getStateEnginePaths } = await import(moduleUrl);
 const rootDir = process.env.DKF_T04_CRASH_ROOT;
 const crashPoint = process.env.DKF_T04_CRASH_POINT;
 const paths = getStateEnginePaths(rootDir);
+process.on('exit', () => fs.writeFileSync(process.env.DKF_T04_EXIT_WITNESS, 'ORDINARY_EXIT'));
 const ledger = fs.statSync(paths.events);
 const originalRename = fs.renameSync;
 const originalWrite = fs.writeSync;
@@ -1083,6 +1085,7 @@ throw Error('Expected forced termination at the selected filesystem boundary');
           ...process.env,
           DKF_T04_CRASH_ROOT: rootDir,
           DKF_T04_CRASH_POINT: crashPoint,
+          DKF_T04_EXIT_WITNESS: exitWitness,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -1092,11 +1095,16 @@ throw Error('Expected forced termination at the selected filesystem boundary');
       child.once('error', reject);
       child.once('close', (code, signal) => resolve({ code, signal, stderr }));
     });
-    assert.notEqual(result.code, 0,
-      'The child must terminate abruptly before the commit can acknowledge: ' + result.stderr);
-    assert.doesNotMatch(result.stderr,
-      /Process termination unexpectedly returned|Expected forced termination at the selected filesystem boundary/,
-      'The child must actually terminate, not merely throw an expected-error sentinel');
+    assert.equal(fs.existsSync(exitWitness), false,
+      'T04-H51 forced termination must bypass the normal Node exit hook');
+    if (process.platform !== 'win32') {
+      assert.equal(result.signal, 'SIGKILL', 'POSIX H51 must terminate with SIGKILL');
+      assert.equal(result.code, null, 'POSIX H51 must not return an ordinary exit code');
+    } else {
+      assert.notEqual(result.code, 0, 'Windows H51 must terminate abnormally');
+      assert.doesNotMatch(result.stderr, /(?:Error|Exception):|^\s+at\s/m,
+        'Windows H51 must not be an ordinary uncaught exception');
+    }
     assert.equal(fs.existsSync(paths.pending), true,
       'The interrupted commit must retain its pending recovery journal');
     assert.equal(fs.existsSync(paths.lock), true,
