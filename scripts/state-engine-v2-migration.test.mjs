@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync as requireSpawnSync } from 'node:child_process';
@@ -1098,8 +1099,11 @@ test('T04-H52 killed restore after promotion retains displaced original and jour
     'The child must really terminate rather than throwing a sentinel');
 
   const parent = path.dirname(root);
-  const journals = fs.readdirSync(parent).filter(name => name.startsWith('.dk-restore-journal-'));
-  assert.equal(journals.length, 1, 'The sole restore journal must survive process termination');
+  const journalName = '.dk-restore-journal-' +
+    createHash('sha256').update(path.resolve(root)).digest('hex').slice(0, 24) + '.json';
+  const journalPath = path.join(parent, journalName);
+  assert.equal(fs.existsSync(journalPath), true,
+    'The exact target-root restore journal must survive process termination');
   assert.equal(fs.readFileSync(sentinel, 'utf8'), 'ORIGINAL-H52');
   assert.throws(() => restoreLegacyBackup({
     backupPath: migrated.backupPath, targetRoot: root, confirmOffline: true,
@@ -1111,7 +1115,7 @@ test('T04-H52 killed restore after promotion retains displaced original and jour
   assert.equal(fs.readFileSync(path.join(recovered.displacedOriginal, 'original-witness.txt'), 'utf8'),
     'ORIGINAL-H52');
   assert.equal(fs.readFileSync(sentinel, 'utf8'), 'ORIGINAL-H52');
-  assert.equal(fs.existsSync(path.join(parent, journals[0])), false,
+  assert.equal(fs.existsSync(journalPath), false,
     'Recovery acknowledges the journal only after verifying both root witnesses');
   assert.equal(recoverLegacyRestore({ targetRoot: root, confirmOffline: true }).recovered, false);
 });
