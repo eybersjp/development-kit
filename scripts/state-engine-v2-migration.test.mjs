@@ -36,6 +36,28 @@ function tempProject(t, prefix = 'dk-state-migration-') {
   return rootDir;
 }
 
+
+/**
+ * A nonzero child status alone does not prove a SIGKILL: an ordinary throw
+ * also exits nonzero and can leave exactly the same filesystem witnesses.
+ * POSIX supplies the terminating signal. Windows does not reliably surface
+ * that signal through spawnSync, so require a writable exit-hook witness that
+ * a graceful exit or uncaught exception would create, plus no error stack.
+ */
+function assertForcedTermination(child, exitWitness, label) {
+  assert.equal(child.error, undefined, label + ' child must launch');
+  assert.equal(fs.existsSync(exitWitness), false,
+    label + ' forced termination must bypass the normal process exit hook');
+  if (process.platform !== 'win32') {
+    assert.equal(child.signal, 'SIGKILL', label + ' must terminate with SIGKILL');
+    assert.equal(child.status, null, label + ' must not return an ordinary exit code');
+  } else {
+    assert.notEqual(child.status, 0, label + ' must terminate abnormally');
+    assert.doesNotMatch(child.stderr || '', /(?:Error|Exception):|^\s+at\s/m,
+      label + ' must not masquerade as a normal uncaught exception');
+  }
+}
+
 function workflowState(revision, workflowId = 'wf-legacy-001') {
   return {
     schemaVersion: '1.0.0',
@@ -1226,6 +1248,9 @@ for (const scenario of [
     const originalWitness = path.join(root, 'original-witness.txt');
     fs.writeFileSync(originalWitness, scenario.id + '-ORIGINAL', 'utf8');
     const parent = path.dirname(root);
+    const exitWitnessDir = tempProject(t, 'dk-kill-exit-witness-');
+    const restoreExitWitness = path.join(exitWitnessDir, 'restore-exit.txt');
+    const recoveryExitWitness = path.join(exitWitnessDir, 'recovery-exit.txt');
     const journalPath = path.join(parent, '.dk-restore-journal-' +
       createHash('sha256').update(path.resolve(root)).digest('hex').slice(0, 24) + '.json');
 
@@ -1235,6 +1260,7 @@ for (const scenario of [
       'import {restoreLegacyBackup} from ' +
         JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href) + ';',
       'const backup=process.argv[1],root=process.argv[2];',
+      'process.on("exit",()=>fs.writeFileSync(process.argv[3],"RESTORE_EXIT"));',
       'const rename=fs.renameSync;',
       'fs.renameSync=function(from,to,...args){',
       ' const result=rename.call(this,from,to,...args);',
@@ -1248,13 +1274,9 @@ for (const scenario of [
       'throw Error("restore unexpectedly acknowledged");',
     ].join('\n');
     const restoreChild = requireSpawnSync(process.execPath,
-      ['--input-type=module', '-e', restoreScript, migrated.backupPath, root],
+      ['--input-type=module', '-e', restoreScript, migrated.backupPath, root, restoreExitWitness],
       { encoding: 'utf8' });
-    assert.equal(restoreChild.error, undefined, 'Restore child must launch');
-    assert.notEqual(restoreChild.status, 0, 'Restore child must be killed');
-    assert.doesNotMatch(restoreChild.stderr || '',
-      /restore kill returned unexpectedly|restore unexpectedly acknowledged/,
-      'Restore must not exit via a sentinel exception');
+    assertForcedTermination(restoreChild, restoreExitWitness, scenario.id + ' restore');
 
     assert.equal(fs.existsSync(journalPath), true, 'Exact journal survives first termination');
     const tx = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
@@ -1273,6 +1295,7 @@ for (const scenario of [
       'import {recoverLegacyRestore} from ' +
         JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href) + ';',
       'const root=process.argv[1],stage=process.argv[2],displaced=process.argv[3],boundary=process.argv[4];',
+      'process.on("exit",()=>fs.writeFileSync(process.argv[5],"RECOVERY_EXIT"));',
       'const rename=fs.renameSync,rm=fs.rmSync;',
       'fs.renameSync=function(from,to,...args){',
       ' const result=rename.call(this,from,to,...args);',
@@ -1294,13 +1317,9 @@ for (const scenario of [
       'throw Error("recovery unexpectedly acknowledged");',
     ].join('\n');
     const recoveryChild = requireSpawnSync(process.execPath,
-      ['--input-type=module', '-e', recoveryScript, root, stage, displaced, scenario.boundary],
+      ['--input-type=module', '-e', recoveryScript, root, stage, displaced, scenario.boundary, recoveryExitWitness],
       { encoding: 'utf8' });
-    assert.equal(recoveryChild.error, undefined, 'Recovery child must launch');
-    assert.notEqual(recoveryChild.status, 0, 'Recovery child must be killed');
-    assert.doesNotMatch(recoveryChild.stderr || '',
-      /recovery kill returned unexpectedly|recovery unexpectedly acknowledged/,
-      'Recovery must not exit via a sentinel exception');
+    assertForcedTermination(recoveryChild, recoveryExitWitness, scenario.id + ' recovery');
 
     assert.equal(fs.existsSync(journalPath), true,
       'Interrupted recovery must retain its exact journal');
