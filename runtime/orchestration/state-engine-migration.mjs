@@ -910,6 +910,12 @@ export function validateWindowsDurabilityHelperResult(operation, result, expecte
     throw new StateMigrationError('Windows durability helper returned unverified ' + reason, {
       code: 'WINDOWS_DURABILITY_HELPER_INVALID_RESULT',
       operation,
+      diagnostic: operation === 'CreateSecureStage' ? {
+        observedOperation: result?.operation,
+        observedPath: result?.path,
+        expectedPath: expected?.Path,
+        observedProtected: result?.protected,
+      } : undefined,
     });
   };
   if (!result || typeof result !== 'object' || Array.isArray(result)) invalid('result');
