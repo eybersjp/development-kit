@@ -579,3 +579,24 @@ test('V13-CONC-BOOTSTRAP-04 live initializer staging links are not reclaimed', (
   }
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+test('T04-P2 JSON object keys including empty, control and Unicode strings survive patch update and deletion', (t) => {
+  for (const [index, key] of ['', '\\n', '\\r', '\\u0000', 'x\\ny', 'é', '__proto__'].entries()) {
+    const rootDir = tempProject(t, 'dk-v13-patch-key-');
+    const entityId = 'literal-key-' + index;
+    const first = { stateRevision: 1, metadata: { [key]: { count: 1 } } };
+    const second = { stateRevision: 2, metadata: { [key]: { count: 2 } } };
+    const third = { stateRevision: 3, metadata: {} };
+    appendEntityState({ rootDir, entityType: 'generic-state', entityId,
+      state: first, actorClass: 'regression' });
+    appendEntityState({ rootDir, entityType: 'generic-state', entityId,
+      state: second, actorClass: 'regression' });
+    assert.deepEqual(loadStateSnapshot(rootDir, { rebuildIfNeeded: true })
+      .entities['generic-state'][entityId].state, second, 'update key ' + JSON.stringify(key));
+    appendEntityState({ rootDir, entityType: 'generic-state', entityId,
+      state: third, actorClass: 'regression' });
+    assert.deepEqual(rebuildSnapshotFromEvents(loadCanonicalEvents(rootDir))
+      .entities['generic-state'][entityId].state, third, 'delete key ' + JSON.stringify(key));
+    assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+  }
+});
