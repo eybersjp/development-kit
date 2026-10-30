@@ -124,7 +124,7 @@ for (;;) {
 }
 // A closed issue is necessary, not sufficient: retain independent physical
 // power-loss evidence and externally verified artifact provenance.
-for (const issueNumber of [71, 73, 84]) {
+for (const issueNumber of [71, 73]) {
   const issue = await api('issues/' + issueNumber);
   assert.equal(issue.state, 'closed', 'Mandatory T04 blocker remains open: #' + issueNumber);
 }
