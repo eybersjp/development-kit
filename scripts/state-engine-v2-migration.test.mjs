@@ -1059,3 +1059,59 @@ test('T04-H39 backup with trailing dot or space path alias is refused before res
   );
   assert.deepEqual(fs.readdirSync(targetRoot), []);
 });
+
+
+/**
+ * T04-H52 exercises a real terminated writer after staged-root promotion,
+ * before journal acknowledgement. Process death is NOT power-loss evidence:
+ * the operating system and storage caches remain active.
+ */
+test('T04-H52 killed restore after promotion retains displaced original and journal for recovery', (t) => {
+  const source = tempProject(t, 'dk-h52-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const root = tempProject(t, 'dk-h52-target-');
+  const sentinel = path.join(root, 'original-witness.txt');
+  fs.writeFileSync(sentinel, 'ORIGINAL-H52', 'utf8');
+  const script = [
+    'import fs from "node:fs";',
+    'import { restoreLegacyBackup } from ' +
+      JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href) + ';',
+    'const backup=process.argv[1],root=process.argv[2],rename=fs.renameSync;',
+    'fs.renameSync=function(from,to,...rest){',
+    ' const result=rename.call(this,from,to,...rest);',
+    ' if(to===root && String(from).includes(".dk-legacy-restore-stage-")) {',
+    '   process.kill(process.pid,"SIGKILL");',
+    '   throw Error("H52 kill returned unexpectedly");',
+    ' }',
+    ' return result;',
+    '};',
+    'restoreLegacyBackup({backupPath:backup,targetRoot:root,confirmOffline:true});',
+    'throw Error("H52 restore unexpectedly acknowledged");',
+  ].join('\n');
+  const result = requireSpawnSync(process.execPath,
+    ['--input-type=module', '-e', script, migrated.backupPath, root],
+    { encoding: 'utf8' });
+  assert.notEqual(result.status, 0, 'The child must terminate before restore acknowledgement');
+  assert.doesNotMatch(result.stderr || '',
+    /H52 kill returned unexpectedly|H52 restore unexpectedly acknowledged/,
+    'The child must really terminate rather than throwing a sentinel');
+
+  const parent = path.dirname(root);
+  const journals = fs.readdirSync(parent).filter(name => name.startsWith('.dk-restore-journal-'));
+  assert.equal(journals.length, 1, 'The sole restore journal must survive process termination');
+  assert.equal(fs.readFileSync(sentinel, 'utf8'), 'ORIGINAL-H52');
+  assert.throws(() => restoreLegacyBackup({
+    backupPath: migrated.backupPath, targetRoot: root, confirmOffline: true,
+  }), /Incomplete legacy restore/i);
+  const recovered = recoverLegacyRestore({ targetRoot: root, confirmOffline: true });
+  assert.equal(recovered.recovered, true);
+  assert.equal(recovered.outcome, 'promoted-original-retained');
+  assert.ok(recovered.displacedOriginal, 'Original root must remain available as rollback evidence');
+  assert.equal(fs.readFileSync(path.join(recovered.displacedOriginal, 'original-witness.txt'), 'utf8'),
+    'ORIGINAL-H52');
+  assert.equal(fs.readFileSync(sentinel, 'utf8'), 'ORIGINAL-H52');
+  assert.equal(fs.existsSync(path.join(parent, journals[0])), false,
+    'Recovery acknowledges the journal only after verifying both root witnesses');
+  assert.equal(recoverLegacyRestore({ targetRoot: root, confirmOffline: true }).recovered, false);
+});
