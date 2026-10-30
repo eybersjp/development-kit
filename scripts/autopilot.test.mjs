@@ -92,6 +92,12 @@ test('3. Immutable Revision Persistence & Reading', () => {
 test('4. Corrupt Pointer Recovery', () => {
   const tmpDir = createTempDir();
   const state1 = createInitialState({ autonomy: 'guided-autopilot' }, tmpDir);
+  // This test intentionally corrupts the legacy current.json pointer. Seed
+  // an unmigrated legacy revision so the v0.13 compatibility adapter keeps
+  // using the legacy authority rather than a fresh canonical V2 ledger.
+  const legacyDir = path.join(tmpDir, '.development-kit', 'autopilot', 'state');
+  fs.mkdirSync(legacyDir, { recursive: true });
+  fs.writeFileSync(path.join(legacyDir, 'revision-000001.json'), JSON.stringify(state1, null, 2));
   saveStateRevision(state1, tmpDir);
 
   // Corrupt current.json
