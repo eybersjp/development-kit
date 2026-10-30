@@ -1497,11 +1497,29 @@ function recoverPendingCommitLocked(rootDir) {
       // Validate the entire proposed ledger and the materialized snapshot witness
       // before any truncate/append/fsync can mutate canonical crash evidence.
       let witness = null;
+      let witnessBytes;
       try {
-        witness = JSON.parse(fs.readFileSync(snapshotTarget, 'utf8'));
-        validateStateSnapshot(witness);
-      } catch {
-        witness = null;
+        witnessBytes = fs.readFileSync(snapshotTarget, 'utf8');
+      } catch (error) {
+        // A missing disposable snapshot may be rebuilt from canonical events.
+        // Permission, sharing and I/O failures are different: ignoring them
+        // would allow canonical ledger mutation without inspecting an existing
+        // witness that may prove the proposed pending suffix is stale.
+        if (error.code !== 'ENOENT') {
+          throw new StateEngineError(
+            'Cannot inspect materialized snapshot witness before pending recovery: ' +
+              (error.code || error.message),
+          );
+        }
+      }
+      if (witnessBytes !== undefined) {
+        try {
+          witness = JSON.parse(witnessBytes);
+          validateStateSnapshot(witness);
+        } catch {
+          // Malformed derived state is disposable, unlike unreadable evidence.
+          witness = null;
+        }
       }
       if (witness && witness.lastEventSequence > canonical.lastEventSequence) {
         throw new StateEngineError('Cannot recover a pending commit over a later snapshot integrity witness');
