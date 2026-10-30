@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 import {
   appendMetadataEvent,
@@ -556,4 +557,113 @@ test('W73-22 Windows native helper must prove operation-specific success before 
     { ...rename, profile: { ...probe, fileSystem: 'ReFS' } },
   ]) assert.throws(() => validateWindowsDurabilityHelperResult('Rename', bad),
     /helper|rename|profile|operation|flush/i);
+});
+
+test('W73-21 Windows restore stage and promoted root preserve the original restrictive NTFS DACL', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('NTFS ACL fixture requires Windows'); return;
+  }
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-ntfs-acl-');
+  const targetRoot = path.join(parent, 'restricted-project');
+  fs.mkdirSync(targetRoot);
+  fs.writeFileSync(path.join(targetRoot, 'confidential.txt'), 'CONFIDENTIAL-ORIGINAL');
+
+  function aclScript(script, location) {
+    return spawnSync('powershell.exe',
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+      { encoding: 'utf8', windowsHide: true, shell: false, timeout: 30000,
+        env: { ...process.env, DKF_TEST_ACL_PATH: location } });
+  }
+  const restrict = aclScript([
+    "$ErrorActionPreference='Stop'",
+    '$acl=[System.IO.Directory]::GetAccessControl($env:DKF_TEST_ACL_PATH)',
+    '$acl.SetAccessRuleProtection($true,$false)',
+    '$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User',
+    '$rights=[System.Security.AccessControl.FileSystemRights]::FullControl',
+    '$flags=[System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit',
+    '$rule=[System.Security.AccessControl.FileSystemAccessRule]::new($sid,$rights,$flags,[System.Security.AccessControl.PropagationFlags]::None,[System.Security.AccessControl.AccessControlType]::Allow)',
+    '$acl.SetAccessRule($rule)',
+    '[System.IO.Directory]::SetAccessControl($env:DKF_TEST_ACL_PATH,$acl)',
+  ].join(';'), targetRoot);
+  if (restrict.status !== 0) {
+    t.skip('Host cannot create restrictive NTFS DACL fixture: ' + String(restrict.stderr).slice(0, 200));
+    return;
+  }
+  function dacl(location) {
+    const result = aclScript(
+      "$ErrorActionPreference='Stop'; ([System.IO.Directory]::GetAccessControl($env:DKF_TEST_ACL_PATH)).GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)",
+      location,
+    );
+    assert.equal(result.status, 0, String(result.stderr));
+    return result.stdout.trim();
+  }
+  const comparableDacl = (value) => value;
+  const originalDacl = dacl(targetRoot);
+  const fileDacl = (location) => {
+    const result = aclScript(
+      "$ErrorActionPreference='Stop'; ([System.IO.File]::GetAccessControl($env:DKF_TEST_ACL_PATH)).GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)",
+      location,
+    );
+    assert.equal(result.status, 0, String(result.stderr));
+    return result.stdout.trim();
+  };
+  const originalFileDacl = fileDacl(path.join(targetRoot, 'confidential.txt'));
+  assert.notEqual(originalDacl, dacl(parent), 'Fixture must differ from inherited parent DACL');
+
+  const originalCp = fs.cpSync;
+  let stageInspected = false;
+  fs.cpSync = function verifyPrivateStageBeforeCopy(source, destination, ...options) {
+    if (path.resolve(source) === path.resolve(targetRoot)) {
+      stageInspected = true;
+      assert.equal(comparableDacl(dacl(destination)), comparableDacl(originalDacl),
+        'Restore stage must preserve source DACL protection and ACEs before sensitive data copy');
+    }
+    return originalCp.call(this, source, destination, ...options);
+  };
+  try {
+    try {
+      restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true });
+    } catch (error) {
+      assert.fail('W73-21 restore error: ' + error.message + ' details=' + JSON.stringify(error.details));
+    }
+  } finally {
+    fs.cpSync = originalCp;
+  }
+  assert.equal(stageInspected, true);
+  assert.equal(comparableDacl(dacl(targetRoot)), comparableDacl(originalDacl),
+    'Promoted root must preserve source DACL protection and ACEs');
+  assert.equal(comparableDacl(fileDacl(path.join(targetRoot, 'confidential.txt'))),
+    comparableDacl(originalFileDacl),
+    'Original file DACL must survive staged copy and promotion');
+  assert.equal(fs.readFileSync(path.join(targetRoot, 'confidential.txt'), 'utf8'), 'CONFIDENTIAL-ORIGINAL');
+});
+
+test('W73-23 native ACL helper responses must be explicit and path-bound', () => {
+  const stage = { operation: 'CreateSecureStage', path: 'C:\\dk\\stage', protected: true };
+  assert.deepEqual(validateWindowsDurabilityHelperResult('CreateSecureStage', stage,
+    { Path: 'C:\\dk\\stage' }), stage);
+  for (const invalid of [
+    { ...stage, protected: false },
+    { ...stage, path: 'C:\\dk\\other' },
+    { ...stage, operation: 'Rename' },
+  ]) {
+    assert.throws(() => validateWindowsDurabilityHelperResult('CreateSecureStage', invalid,
+      { Path: 'C:\\dk\\stage' }), /helper|stage|path|operation|protect/i);
+  }
+
+  const tree = { operation: 'CopyAclTree', source: 'C:\\dk\\source',
+    destination: 'C:\\dk\\stage', verified: true };
+  assert.deepEqual(validateWindowsDurabilityHelperResult('CopyAclTree', tree,
+    { From: 'C:\\dk\\source', To: 'C:\\dk\\stage' }), tree);
+  for (const invalid of [
+    { ...tree, verified: false },
+    { ...tree, source: 'C:\\dk\\wrong' },
+    { ...tree, destination: 'C:\\dk\\wrong' },
+    { ...tree, operation: 'Rename' },
+  ]) {
+    assert.throws(() => validateWindowsDurabilityHelperResult('CopyAclTree', invalid,
+      { From: 'C:\\dk\\source', To: 'C:\\dk\\stage' }),
+      /helper|acl|path|operation|source|destination/i);
+  }
 });
