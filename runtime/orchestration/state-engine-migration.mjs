@@ -905,7 +905,7 @@ const WINDOWS_DURABILITY_HELPER = path.resolve(
  * before any restore phase can be acknowledged. This validates API evidence,
  * not physical power-loss persistence on a particular NTFS device.
  */
-export function validateWindowsDurabilityHelperResult(operation, result) {
+export function validateWindowsDurabilityHelperResult(operation, result, requested = {}) {
   const invalid = (reason) => {
     throw new StateMigrationError('Windows durability helper returned unverified ' + reason, {
       code: 'WINDOWS_DURABILITY_HELPER_INVALID_RESULT',
@@ -919,6 +919,10 @@ export function validateWindowsDurabilityHelperResult(operation, result) {
       || String(profile.fileSystem || '').toUpperCase() !== 'NTFS') {
     invalid('storage profile');
   }
+  const sameWindowsPath = (actual, expected) =>
+    typeof actual === 'string' && actual.length > 0 &&
+    typeof expected === 'string' && expected.length > 0 &&
+    path.win32.normalize(actual).toLowerCase() === path.win32.normalize(expected).toLowerCase();
   if (operation === 'Probe') return result;
   if (result.operation !== operation) invalid('operation');
   if (operation === 'FlushDirectory') {
@@ -926,6 +930,19 @@ export function validateWindowsDurabilityHelperResult(operation, result) {
   } else if (operation === 'Rename') {
     if (result.renamed !== true || result.parentFlushCompleted !== true) {
       invalid('rename or parent-directory flush');
+    }
+  } else if (operation === 'CreateSecureStage') {
+    if (result.createdPrivately !== true || result.daclVerified !== true ||
+        !sameWindowsPath(result.path, requested.Path) ||
+        !sameWindowsPath(profile.path, requested.Path)) {
+      invalid('private stage DACL verification or path');
+    }
+  } else if (operation === 'CopyAclTree') {
+    if (result.verified !== true ||
+        !sameWindowsPath(result.source, requested.From) ||
+        !sameWindowsPath(result.destination, requested.To) ||
+        !sameWindowsPath(profile.path, requested.To)) {
+      invalid('ACL tree verification or path');
     }
   } else {
     invalid('operation');
@@ -985,7 +1002,7 @@ function runWindowsDurabilityHelper(operation, args = {}) {
       cause: error.message,
     });
   }
-  return validateWindowsDurabilityHelperResult(operation, parsed);
+  return validateWindowsDurabilityHelperResult(operation, parsed, args);
 }
 
 function requireSupportedWindowsRestoreProfile(targetPath) {
@@ -1504,14 +1521,21 @@ export function restoreLegacyBackup({
   const stage = path.join(parent, '.dk-legacy-restore-stage-' +
     restoreJournalDigest(resolvedRoot) + '-' + transactionId);
   const displaced = stage + '-original';
-  fs.mkdirSync(stage, { mode: 0o700 });
+  if (process.platform === 'win32') {
+    // Stage creation is private and ACL-verified before copying any data.
+    runWindowsDurabilityHelper('CreateSecureStage', {
+      Path: stage, ...(originalRootExists ? { From: resolvedRoot } : {}),
+    });
+  } else {
+    fs.mkdirSync(stage, { mode: 0o700 });
+  }
 
   let promoted = false;
   let displacedOriginal = false;
   let transaction = null;
 
   try {
-    fs.chmodSync(stage, 0o700);
+    if (process.platform !== 'win32') fs.chmodSync(stage, 0o700);
     if (originalRootExists) {
       fs.cpSync(resolvedRoot, stage, {
         recursive: true,
@@ -1542,6 +1566,12 @@ export function restoreLegacyBackup({
 
     syncRestoreTree(stage);
     if (rootStat) applyRestoreMetadata(stage, originalMetadata);
+    if (process.platform === 'win32' && originalRootExists) {
+      // Preserve exact NTFS inheritance/protection semantics on every
+      // original object, then verify descendants after parent propagation.
+      runWindowsDurabilityHelper('CopyAclTree', { From: resolvedRoot, To: stage });
+      syncRestoreTree(stage);
+    }
 
     const stageStat = fs.lstatSync(stage, { bigint: true });
     transaction = {
