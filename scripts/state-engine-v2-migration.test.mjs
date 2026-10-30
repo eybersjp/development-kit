@@ -1119,3 +1119,80 @@ test('T04-H52 killed restore after promotion retains displaced original and jour
     'Recovery acknowledges the journal only after verifying both root witnesses');
   assert.equal(recoverLegacyRestore({ targetRoot: root, confirmOffline: true }).recovered, false);
 });
+
+
+/**
+ * T04-H53/H54 exercise real process termination at the two earlier offline
+ * restore boundaries. They prove process-crash recovery, NOT storage persistence
+ * after a Windows host power cut. The exact journal and inode witnesses are
+ * checked; no unrelated temporary-directory files can satisfy this test.
+ */
+for (const scenario of [
+  { id: 'T04-H53', boundary: 'original-displaced', outcome: 'rolled-back-original' },
+  { id: 'T04-H54', boundary: 'journal-published', outcome: 'uncommitted-original-unchanged' },
+]) {
+  test(scenario.id + ' killed restore preserves original and recovers exact transaction', (t) => {
+    const source = tempProject(t, 'dk-restore-kill-source-');
+    writeLegacyAutopilot(source, 2);
+    const migrated = migrateLegacyStateToV2({ rootDir: source });
+    const root = tempProject(t, 'dk-restore-kill-target-');
+    const sentinel = path.join(root, 'original-witness.txt');
+    fs.writeFileSync(sentinel, scenario.id + '-ORIGINAL', 'utf8');
+    const parent = path.dirname(root);
+    const journalPath = path.join(parent, '.dk-restore-journal-' +
+      createHash('sha256').update(path.resolve(root)).digest('hex').slice(0, 24) + '.json');
+    const script = [
+      'import fs from "node:fs";',
+      'import { restoreLegacyBackup } from ' +
+        JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href) + ';',
+      'const backup=process.argv[1],root=process.argv[2],journal=process.argv[3],boundary=process.argv[4];',
+      'const rename=fs.renameSync;',
+      'fs.renameSync=function(from,to,...rest){',
+      ' const result=rename.call(this,from,to,...rest);',
+      ' const displaced=boundary==="original-displaced" && from===root && to.endsWith("-original");',
+      ' const published=boundary==="journal-published" && to===journal;',
+      ' if(displaced || published){',
+      '   process.kill(process.pid,"SIGKILL");',
+      '   throw Error("restore kill returned unexpectedly");',
+      ' }',
+      ' return result;',
+      '};',
+      'restoreLegacyBackup({backupPath:backup,targetRoot:root,confirmOffline:true});',
+      'throw Error("restore unexpectedly acknowledged");',
+    ].join('\n');
+    const child = requireSpawnSync(process.execPath,
+      ['--input-type=module', '-e', script, migrated.backupPath, root, journalPath, scenario.boundary],
+      { encoding: 'utf8' });
+    assert.equal(child.error, undefined, 'Child must launch successfully');
+    assert.notEqual(child.status, 0, 'Child must terminate before restore acknowledgement');
+    assert.doesNotMatch(child.stderr || '',
+      /restore kill returned unexpectedly|restore unexpectedly acknowledged/,
+      'The child must terminate, not return through a thrown sentinel');
+    assert.equal(fs.existsSync(journalPath), true, 'Exact restore journal must survive process death');
+    const tx = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
+    assert.equal(tx.targetRoot, path.resolve(root));
+    assert.match(tx.transactionId, /^[a-f0-9]{32}$/);
+    const stage = path.join(parent, tx.stageName);
+    const displaced = stage + '-original';
+    assert.equal(fs.existsSync(stage), true, 'Staged replacement must remain recoverable');
+    if (scenario.boundary === 'original-displaced') {
+      assert.equal(fs.existsSync(root), false, 'Original root must be in displaced slot');
+      assert.equal(fs.readFileSync(path.join(displaced, 'original-witness.txt'), 'utf8'),
+        scenario.id + '-ORIGINAL');
+    } else {
+      assert.equal(fs.readFileSync(sentinel, 'utf8'), scenario.id + '-ORIGINAL');
+      assert.equal(fs.existsSync(displaced), false, 'Original root was not yet displaced');
+    }
+    assert.throws(() => restoreLegacyBackup({
+      backupPath: migrated.backupPath, targetRoot: root, confirmOffline: true,
+    }), /Incomplete legacy restore/i);
+    const recovered = recoverLegacyRestore({ targetRoot: root, confirmOffline: true });
+    assert.equal(recovered.recovered, true);
+    assert.equal(recovered.outcome, scenario.outcome);
+    assert.equal(fs.readFileSync(sentinel, 'utf8'), scenario.id + '-ORIGINAL');
+    assert.equal(fs.existsSync(stage), false, 'Recovery must clean the exact staging directory');
+    assert.equal(fs.existsSync(displaced), false, 'Original root must be restored in place');
+    assert.equal(fs.existsSync(journalPath), false, 'Journal only acknowledged after recovery');
+    assert.equal(recoverLegacyRestore({ targetRoot: root, confirmOffline: true }).recovered, false);
+  });
+}
