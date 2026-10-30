@@ -647,14 +647,14 @@ test('W73-23 Windows ACL helper must prove private stage creation and exact tree
   };
   const stage = {
     operation: 'CreateSecureStage', path: 'C:\\dk\\stage', profile,
-    createdPrivately: true, sourceDaclVerified: true,
+    createdPrivately: true, daclVerified: true,
   };
   assert.deepEqual(validateWindowsDurabilityHelperResult('CreateSecureStage', stage, {
     Path: 'C:\\dk\\stage',
   }), stage);
   for (const bad of [
     { ...stage, createdPrivately: false },
-    { ...stage, sourceDaclVerified: false },
+    { ...stage, daclVerified: false },
     { ...stage, profile: { ...profile, fileSystem: 'ReFS' } },
     { ...stage, path: 'C:\\other\\stage' },
   ]) {
