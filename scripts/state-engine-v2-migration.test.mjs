@@ -1047,3 +1047,50 @@ test('T04-H39 backup with trailing dot or space path alias is refused before res
   );
   assert.deepEqual(fs.readdirSync(targetRoot), []);
 });
+
+
+test('T04-WACL01 Windows restore retains restrictive NTFS DACL on published root and original file', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('Windows NTFS DACL preservation requires Windows'); return;
+  }
+  const source = tempProject(t, 'dk-wacl-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const targetRoot = tempProject(t, 'dk-wacl-target-');
+  const sentinel = path.join(targetRoot, 'unrelated-secret.txt');
+  fs.writeFileSync(sentinel, 'must-survive-with-original-security', 'utf8');
+
+  function powershell(script) {
+    const result = requireSpawnSync('powershell.exe',
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+      { encoding: 'utf8', windowsHide: true, timeout: 30000 });
+    assert.equal(result.status, 0, result.stderr || result.error?.message || script);
+    return result.stdout.trim();
+  }
+  const literal = (value) => "'" + value.replace(/'/g, "''") + "'";
+  const rootLiteral = literal(targetRoot);
+  powershell([
+    '$p=' + rootLiteral,
+    '$acl=Get-Acl -LiteralPath $p',
+    '$acl.SetAccessRuleProtection($true,$false)',
+    '$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User',
+    '$rule=New-Object System.Security.AccessControl.FileSystemAccessRule($sid,"FullControl","ContainerInherit,ObjectInherit","None","Allow")',
+    '$acl.SetAccessRule($rule)',
+    'Set-Acl -LiteralPath $p -AclObject $acl',
+  ].join(';'));
+  const dacl = (file) => powershell(
+    '$a=Get-Acl -LiteralPath ' + literal(file) +
+    ';$a.GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)');
+  const originalRootDacl = dacl(targetRoot);
+  const originalFileDacl = dacl(sentinel);
+
+  const restored = restoreLegacyBackup({
+    backupPath: migrated.backupPath, targetRoot, confirmOffline: true,
+  });
+  assert.equal(restored.cleanupPending, true, 'Original must be retained as a recovery witness');
+  assert.equal(fs.readFileSync(sentinel, 'utf8'), 'must-survive-with-original-security');
+  assert.equal(dacl(targetRoot), originalRootDacl,
+    'Published root must retain the original NTFS DACL, not inherit its sibling parent ACL');
+  assert.equal(dacl(sentinel), originalFileDacl,
+    'Copied original files must retain their exact NTFS DACL');
+});
