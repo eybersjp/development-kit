@@ -1047,3 +1047,32 @@ test('T04-H39 backup with trailing dot or space path alias is refused before res
   );
   assert.deepEqual(fs.readdirSync(targetRoot), []);
 });
+
+
+test('W73-26 Windows helper launch ignores a forged powershell.exe in the working directory', (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('Windows executable-search hijack regression requires Windows'); return;
+  }
+  const source = tempProject(t, 'dk-win-helper-launch-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const hostileWorkingDir = tempProject(t, 'dk-win-helper-launch-cwd-');
+  // A copy of Node named powershell.exe is an executable canary: invoking it
+  // with PowerShell flags fails. The restore must instead use the trusted
+  // system interpreter by absolute path, never libuv's cwd-first lookup.
+  fs.copyFileSync(process.execPath, path.join(hostileWorkingDir, 'powershell.exe'));
+  const targetRoot = path.join(hostileWorkingDir, 'restored-project');
+  const script = [
+    'import { restoreLegacyBackup } from ' +
+      JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href) + ';',
+    'restoreLegacyBackup({ backupPath: process.argv[1], targetRoot: process.argv[2], confirmOffline: true });',
+  ].join('\n');
+  const child = requireSpawnSync(process.execPath,
+    ['--input-type=module', '-e', script, migrated.backupPath, targetRoot], {
+      cwd: hostileWorkingDir, encoding: 'utf8', timeout: 120_000, windowsHide: true,
+    });
+  assert.equal(child.status, 0,
+    'Windows restore must not execute cwd/powershell.exe: ' + (child.stderr || child.stdout));
+  assert.equal(fs.existsSync(path.join(targetRoot, '.development-kit', 'autopilot', 'state', 'current.json')), true,
+    'A trusted helper launch must complete the original legacy backup restoration');
+});
