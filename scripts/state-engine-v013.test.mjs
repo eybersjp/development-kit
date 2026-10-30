@@ -397,3 +397,74 @@ test('W73-17 mixed legacy Autopilot and canonical V2 orchestration runs migrate 
   assert.equal(migration.semanticEquivalence, true);
   assert.equal(loadEntityState('orchestration-run', 'contract-mixed/run-mixed', rootDir).stateRevision, 2);
 });
+
+
+test('W73-18 recovery cannot acknowledge candidate promotion without retrying parent flush', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('POSIX fsync injection; Windows native-helper barrier requires its own fault hook'); return;
+  }
+  const { backupPath } = createLegacyBackupFixture(t);
+  const parent = tempDir(t, 'dk-v013-publication-barrier-');
+  const targetRoot = path.join(parent, 'project');
+  fs.mkdirSync(targetRoot);
+  fs.writeFileSync(path.join(targetRoot, 'original.txt'), 'RETAIN-ORIGINAL');
+  const originalRename = fs.renameSync;
+  const originalFsync = fs.fsyncSync;
+  const parentStat = fs.statSync(parent);
+  let promoted = false;
+  let injected = false;
+  fs.renameSync = function watchPromotion(from, to, ...args) {
+    const result = originalRename.call(this, from, to, ...args);
+    if (typeof from === 'string' && from.includes('.dk-legacy-restore-stage-') &&
+        !from.endsWith('-original') && to === targetRoot) promoted = true;
+    return result;
+  };
+  fs.fsyncSync = function failPublicationBarrier(fd) {
+    const stat = fs.fstatSync(fd);
+    if (promoted && !injected && stat.isDirectory() &&
+        stat.dev === parentStat.dev && stat.ino === parentStat.ino) {
+      injected = true;
+      throw new Error('simulated publication parent flush failure');
+    }
+    return originalFsync.call(this, fd);
+  };
+  try {
+    assert.throws(
+      () => restoreLegacyBackup({ backupPath, targetRoot, overwrite: true, confirmOffline: true }),
+      /simulated publication parent flush failure/,
+    );
+    assert.equal(injected, true);
+  } finally {
+    fs.renameSync = originalRename;
+    fs.fsyncSync = originalFsync;
+  }
+  const journal = fs.readdirSync(parent).find((name) => name.startsWith('.dk-restore-transaction-'));
+  assert.ok(journal);
+  const journalPath = path.join(parent, journal);
+  assert.equal(fs.readFileSync(journalPath, 'utf8').includes('"phase":"CLEANUP_SAFE"'), false);
+
+  let recoveryBarrierAttempted = false;
+  fs.fsyncSync = function failRecoveryBarrier(fd) {
+    const stat = fs.fstatSync(fd);
+    if (!recoveryBarrierAttempted && stat.isDirectory() &&
+        stat.dev === parentStat.dev && stat.ino === parentStat.ino) {
+      recoveryBarrierAttempted = true;
+      throw new Error('simulated recovery publication flush failure');
+    }
+    return originalFsync.call(this, fd);
+  };
+  try {
+    assert.throws(
+      () => recoverLegacyRestore({ targetRoot, confirmOffline: true }),
+      /simulated recovery publication flush failure|flush barrier failed/i,
+    );
+    assert.equal(recoveryBarrierAttempted, true, 'Recovery must retry the publication flush');
+    assert.equal(fs.readFileSync(journalPath, 'utf8').includes('"phase":"CLEANUP_SAFE"'), false,
+      'No terminal acknowledgement after a failed recovery barrier');
+  } finally {
+    fs.fsyncSync = originalFsync;
+  }
+  const recovered = recoverLegacyRestore({ targetRoot, confirmOffline: true });
+  assert.equal(recovered.outcome, 'promoted-original-retained');
+  assert.equal(fs.existsSync(recovered.displacedOriginal), true);
+});
