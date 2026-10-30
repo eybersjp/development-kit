@@ -278,7 +278,7 @@ function New-DkfSecureStage([string]$StagePath, [string]$SourcePath) {
 # Post-order: descendants are copied while the staging root remains private.
 # Copy exact source DACLs only after all copied bytes are present. Any failure
 # prevents promotion and leaves the original untouched.
-function Copy-DkfAclTree([string]$Source, [string]$Destination) {
+function Copy-DkfAclTree([string]$Source, [string]$Destination, [bool]$VerifyOnly = $false) {
     $src = Get-Item -LiteralPath $Source -Force -ErrorAction Stop
     $dst = Get-Item -LiteralPath $Destination -Force -ErrorAction Stop
     $srcReparse = ($src.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
@@ -298,12 +298,12 @@ function Copy-DkfAclTree([string]$Source, [string]$Destination) {
     }
     if ($src.PSIsContainer) {
         foreach ($child in Get-ChildItem -LiteralPath $Source -Force -ErrorAction Stop) {
-            Copy-DkfAclTree (Join-Path $Source $child.Name) (Join-Path $Destination $child.Name)
+            Copy-DkfAclTree (Join-Path $Source $child.Name) (Join-Path $Destination $child.Name) $VerifyOnly
         }
     }
     if ($src.PSIsContainer) {
         $acl = [System.IO.Directory]::GetAccessControl($Source)
-        [DkfWindowsDurability]::CopyDaclWithInheritance($Source, $Destination, $acl.AreAccessRulesProtected)
+        if (-not $VerifyOnly) { [DkfWindowsDurability]::CopyDaclWithInheritance($Source, $Destination, $acl.AreAccessRulesProtected) }
         $actualAcl = [System.IO.Directory]::GetAccessControl($Destination)
     } else {
         $acl = [System.IO.File]::GetAccessControl($Source)
@@ -341,6 +341,9 @@ switch ($Operation) {
             throw 'NTFS ACL copy requires local fixed same-volume source and stage'
         }
         Copy-DkfAclTree $sourcePath $destinationPath
+        # A parent DACL change can propagate to already-copied descendants.
+        # Verify the entire tree again after all parent operations complete.
+        Copy-DkfAclTree $sourcePath $destinationPath $true
         [PSCustomObject]@{ operation = 'CopyAclTree'; source = $sourcePath;
             destination = $destinationPath; verified = $true } | ConvertTo-Json -Compress
         break
