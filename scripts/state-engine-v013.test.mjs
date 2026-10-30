@@ -24,6 +24,7 @@ import {
 } from '../runtime/orchestration/state-engine-migration.mjs';
 import { createInitialState } from '../runtime/autopilot/transition-model.mjs';
 import { saveStateRevision } from '../runtime/autopilot/state-store.mjs';
+import { RuntimeApiService } from '../runtime/api/runtime-api-service.mjs';
 import { persistRunManifest, persistRunStateRevision, updateRun } from '../runtime/orchestration/orchestration-run.mjs';
 
 function tempDir(t, prefix = 'dk-v013-state-') {
@@ -800,4 +801,37 @@ test('W73-24 staged confidential child is never copied under a broader root DACL
   assert.equal(dacl(targetRoot), rootAcl, 'Published root must preserve the original DACL');
   assert.equal(dacl(path.join(targetRoot, 'confidential.txt'), 'File'), childAcl,
     'Published confidential child must preserve its more restrictive DACL');
+});
+
+test('V13-API-PROJECTION-01 scale-context observes canonical V2 workflow without a legacy pointer', async (t) => {
+  const rootDir = tempDir(t, 'dk-v013-control-center-v2-');
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, rootDir);
+  saveStateRevision(state, rootDir);
+  const legacyPointer = path.join(rootDir, '.development-kit', 'autopilot', 'state', 'current.json');
+  assert.equal(fs.existsSync(legacyPointer), false,
+    'Fresh V2 projects must not fabricate a legacy pointer for UI compatibility');
+  const service = new RuntimeApiService({ rootDir });
+  const info = await service.start();
+  try {
+    const get = async route => {
+      const response = await fetch(info.url + route);
+      assert.equal(response.status, 200, route);
+      return response.json();
+    };
+    const workflow = await get('/v1/workflow');
+    assert.equal(workflow.state?.workflowId, state.workflowId);
+    const projection = await get('/v1/scale-context');
+    assert.equal(projection.state.active, true,
+      'Scale & Context must not report inactive while canonical V2 workflow is active');
+    assert.equal(projection.state.currentStage, state.currentStage);
+    assert.equal(projection.state.revision, state.stateRevision);
+    assert.equal(projection.canonicalStateStore, 'state-engine-v2-event-ledger');
+    assert.equal(projection.capabilities.stateEngineV2.installed, true);
+    assert.equal(projection.capabilities.stateEngineV2.accepted, null,
+      'Installed and active is not independently ACCEPTED');
+    assert.equal(fs.existsSync(legacyPointer), false,
+      'Read-only projection must not create or mutate legacy authority');
+  } finally {
+    await service.stop();
+  }
 });
