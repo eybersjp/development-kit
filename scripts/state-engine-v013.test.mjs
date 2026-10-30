@@ -601,6 +601,7 @@ test('W73-25 native Windows helper cannot acknowledge an unrelated filesystem pa
   );
   for (const wrong of [
     { ...rename, source: 'C:\\dk\\unrelated' },
+    { ...rename, source: 'C:\\other-parent\\stage' },
     { ...rename, destination: 'C:\\dk\\unrelated' },
     { ...rename, profile: { ...profile, path: 'C:\\dk\\unrelated' } },
   ]) {
