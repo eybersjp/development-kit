@@ -754,7 +754,7 @@ test('T04-H47 POSIX rollback parent flush precedes append-only terminal acknowle
     ' return rename.call(this,a,b,...rest);',
     '};',
     'restoreLegacyBackup({backupPath:backup,targetRoot:root,confirmOffline:true});',
-  ].join('\\n');
+  ].join('\n');
   const result = requireSpawnSync(process.execPath,
     ['--input-type=module', '-e', script, migrated.backupPath, root]);
   assert.equal(result.status, 91, result.stderr);
@@ -826,7 +826,7 @@ test('T04-H48 Windows native rollback completes directory flush before retained 
     ' return out;',
     '};',
     'restoreLegacyBackup({backupPath:backup,targetRoot:root,confirmOffline:true});',
-  ].join('\\n');
+  ].join('\n');
   const result = requireSpawnSync(process.execPath,
     ['--input-type=module', '-e', script, migrated.backupPath, root]);
   assert.equal(result.status, 91, result.stderr);
@@ -836,7 +836,7 @@ test('T04-H48 Windows native rollback completes directory flush before retained 
   assert.equal(recovery.outcome, 'rolled-back-original');
   assert.equal(fs.readFileSync(sentinel, 'utf8'), 'WINDOWS-ORIGINAL');
   assert.equal(fs.existsSync(recovery.transactionLog), true, 'Native recovery retains journal');
-  const records = fs.readFileSync(recovery.transactionLog, 'utf8').trimEnd().split('\\n').map(JSON.parse);
+  const records = fs.readFileSync(recovery.transactionLog, 'utf8').trimEnd().split('\n').map(JSON.parse);
   assert.equal(records.at(-1).phase, 'CLEANUP_SAFE');
   assert.equal(records.at(-1).outcome, 'rolled-back-original');
 });
