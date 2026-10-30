@@ -928,8 +928,8 @@ export function validateWindowsDurabilityHelperResult(operation, result, expecte
         path.win32.normalize(requested).toLowerCase()) return true;
     // Windows may expand an 8.3 path component (RUNNER~1 -> runneradmin)
     // while producing the helper response. Require both spellings to resolve
-    // to the same ordinary directory identity; never accept mere textual
-    // similarity, a reparse point, or a nonexistent destination.
+    // to the same ordinary directory or file identity; never accept mere
+    // textual similarity, a reparse point, or a nonexistent destination.
     try {
       const a = fs.lstatSync(actual, { bigint: true });
       const b = fs.lstatSync(requested, { bigint: true });
