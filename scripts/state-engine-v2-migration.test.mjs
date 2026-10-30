@@ -1140,23 +1140,13 @@ test('W73-27 Windows 8.3 ancestor alias cannot bypass an interrupted restore jou
 });
 
 
-test('W73-28 NTFS Unicode file-name alias cannot overwrite a prior staged backup entry', async (t) => {
-  if (process.platform !== 'win32') {
-    t.skip('NTFS case-fold alias requires Windows'); return;
-  }
-  const probeRoot = tempProject(t, 'dk-ntfs-unicode-alias-probe-');
-  const longS = '\u017f'; // NTFS upcase may map LATIN SMALL LETTER LONG S to S.
-  const probeA = path.join(probeRoot, 's.json');
-  const probeB = path.join(probeRoot, longS + '.json');
-  fs.writeFileSync(probeA, 'PROBE');
-  if (!fs.existsSync(probeB)) {
-    t.skip('This Windows filesystem does not alias long-s and s'); return;
-  }
-  const firstStat = fs.statSync(probeA, { bigint: true });
-  const secondStat = fs.statSync(probeB, { bigint: true });
-  if (firstStat.dev !== secondStat.dev || firstStat.ino !== secondStat.ino) {
-    t.skip('This Windows filesystem does not share the same physical file identity'); return;
-  }
+test('W73-28 Unicode uppercase-folded restore aliases fail closed before publication on every OS', async (t) => {
+  // NTFS case-insensitive name comparison uses an uppercase mapping. A
+  // conservative preflight must also reject these aliases on POSIX so the
+  // signed backup cannot behave differently on a Windows restore target.
+  const longS = '\u017f'; // LATIN SMALL LETTER LONG S; uppercase maps to S.
+  assert.equal(longS.toUpperCase(), 'S');
+  assert.notEqual(longS.toLowerCase(), 's');
 
   const source = tempProject(t, 'dk-ntfs-unicode-alias-source-');
   writeLegacyAutopilot(source, 2);
