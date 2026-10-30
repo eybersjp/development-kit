@@ -922,9 +922,24 @@ export function validateWindowsDurabilityHelperResult(operation, result, expecte
   // ACL helper calls are path-scoped and have no storage-profile field. The
   // parent restore path was separately probed; accept only an affirmative
   // response for the exact operation and expected source/destination paths.
-  const samePath = (actual, requested) =>
-    typeof actual === 'string' && typeof requested === 'string' &&
-    path.win32.normalize(actual).toLowerCase() === path.win32.normalize(requested).toLowerCase();
+  const samePath = (actual, requested) => {
+    if (typeof actual !== 'string' || typeof requested !== 'string') return false;
+    if (path.win32.normalize(actual).toLowerCase() ===
+        path.win32.normalize(requested).toLowerCase()) return true;
+    // Windows may expand an 8.3 path component (RUNNER~1 -> runneradmin)
+    // while producing the helper response. Require both spellings to resolve
+    // to the same ordinary directory identity; never accept mere textual
+    // similarity, a reparse point, or a nonexistent destination.
+    try {
+      const a = fs.lstatSync(actual, { bigint: true });
+      const b = fs.lstatSync(requested, { bigint: true });
+      return a.isDirectory() && b.isDirectory() &&
+        !a.isSymbolicLink() && !b.isSymbolicLink() &&
+        a.ino !== 0n && a.dev === b.dev && a.ino === b.ino;
+    } catch {
+      return false;
+    }
+  };
   if (operation === 'CreateSecureStage') {
     if (result.operation !== operation || result.protected !== true ||
         !samePath(result.path, expected.Path)) invalid('private stage or path');
