@@ -11,6 +11,7 @@ import {
   cleanupOrphanedStateTemps,
   countStateEngineFiles,
   getStateEnginePaths,
+  ensureStateEngineLayout,
   loadCanonicalEvents,
   loadStateIndex,
   loadStateSnapshot,
