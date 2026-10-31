@@ -54,21 +54,44 @@ function getLegacyCurrentState(rootDir) {
   const stateDir = getStateDir(rootDir);
   const currentFile = path.join(stateDir, 'current.json');
 
-  if (!fs.existsSync(currentFile)) return null;
-
+  // Only an actually absent pointer may return null. Read failures such as
+  // EIO/EACCES must not be treated as malformed content and trigger a write.
+  let pointerContent;
   try {
-    const pointer = JSON.parse(fs.readFileSync(currentFile, 'utf8'));
-    const revFile = path.join(stateDir, pointer.currentRevisionFile);
-    if (fs.existsSync(revFile)) {
-      const state = JSON.parse(fs.readFileSync(revFile, 'utf8'));
-      validateWorkflowState(state);
-      return state;
-    }
-  } catch {
-    // Pointer or state file corrupt — attempt legacy recovery.
+    pointerContent = fs.readFileSync(currentFile, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
   }
 
-  return recoverLatestLegacyState(rootDir);
+  let pointer;
+  try {
+    pointer = JSON.parse(pointerContent);
+  } catch {
+    // Syntactically invalid pointer content may be recovered under the gate.
+    return recoverLatestLegacyState(rootDir);
+  }
+  if (!pointer || typeof pointer.currentRevisionFile !== 'string'
+      || !/^revision-\d{6}\.json$/.test(pointer.currentRevisionFile)) {
+    return recoverLatestLegacyState(rootDir);
+  }
+
+  const revFile = path.join(stateDir, pointer.currentRevisionFile);
+  let revisionContent;
+  try {
+    revisionContent = fs.readFileSync(revFile, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return recoverLatestLegacyState(rootDir);
+    throw error;
+  }
+  try {
+    const state = JSON.parse(revisionContent);
+    validateWorkflowState(state);
+    return state;
+  } catch {
+    // Only malformed revision content/validation may select recovery.
+    return recoverLatestLegacyState(rootDir);
+  }
 }
 
 export function getCurrentState(rootDir = process.cwd()) {
