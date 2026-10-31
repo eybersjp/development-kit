@@ -1437,3 +1437,71 @@ test('T04-H71 legacy current revision EIO fails closed without rewriting pointer
   assert.deepEqual(fs.readFileSync(pointerPath), originalPointer);
   assert.equal(getCurrentState(rootDir).stateRevision, 2);
 });
+
+
+test('T04-H72 symlinked legacy Autopilot revision cannot be omitted from backup or certified', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h72-revision-link-');
+  const legacy = writeLegacyAutopilot(rootDir, 1);
+  const revision = path.join(legacy.stateDir, 'revision-000001.json');
+  const external = path.join(rootDir, 'external-revision.json');
+  fs.renameSync(revision, external);
+  try {
+    fs.symlinkSync(external, revision, 'file');
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+      t.skip('Host does not permit file symlink creation');
+      return;
+    }
+    throw error;
+  }
+  const before = fs.readFileSync(external);
+  assert.throws(() => inspectLegacyState(rootDir), /symbolic link|symlink/i,
+    'inspection must not certify a backup that omits an imported revision');
+  assert.throws(() => migrateLegacyStateToV2({ rootDir }), /symbolic link|symlink/i);
+  assert.deepEqual(fs.readFileSync(external), before, 'original revision must remain unchanged');
+  assert.equal(fs.readlinkSync(revision), external, 'original link must remain intact');
+  assert.equal(fs.existsSync(path.join(rootDir, '.development-kit', 'state')), false,
+    'rejected migration must not publish a V2 ledger or partial backup');
+});
+
+test('T04-H72 symlinked legacy Autopilot pointer cannot be omitted from backup', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h72-pointer-link-');
+  const legacy = writeLegacyAutopilot(rootDir, 1);
+  const pointer = path.join(legacy.stateDir, 'current.json');
+  const external = path.join(rootDir, 'external-current.json');
+  fs.renameSync(pointer, external);
+  try {
+    fs.symlinkSync(external, pointer, 'file');
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+      t.skip('Host does not permit file symlink creation');
+      return;
+    }
+    throw error;
+  }
+  assert.throws(() => inspectLegacyState(rootDir), /symbolic link|symlink/i);
+  assert.throws(() => migrateLegacyStateToV2({ rootDir }), /symbolic link|symlink/i);
+  assert.equal(fs.existsSync(path.join(rootDir, '.development-kit', 'state')), false);
+});
+
+
+test('T04-H72 junctioned legacy state root cannot publish a fingerprint for external inputs', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h72-state-junction-');
+  const legacy = writeLegacyAutopilot(rootDir, 1);
+  const external = path.join(rootDir, 'external-legacy-state');
+  fs.renameSync(legacy.stateDir, external);
+  try {
+    fs.symlinkSync(external, legacy.stateDir, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+      t.skip('Host does not permit directory junction/symlink creation');
+      return;
+    }
+    throw error;
+  }
+  assert.throws(() => inspectLegacyState(rootDir), /symbolic link|symlink/i);
+  assert.throws(() => migrateLegacyStateToV2({ rootDir }), /symbolic link|symlink/i);
+  assert.equal(fs.existsSync(path.join(rootDir, '.development-kit', 'state')), false);
+  assert.equal(fs.existsSync(path.join(external, 'revision-000001.json')), true,
+    'rejected migration must retain original revision bytes');
+});
