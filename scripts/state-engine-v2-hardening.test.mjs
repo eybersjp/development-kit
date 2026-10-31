@@ -1287,3 +1287,46 @@ test('T04-H60 valid unterminated ledger event survives ENOSPC during newline rep
   assert.deepEqual(fs.readFileSync(paths.events), validWithoutNewline,
     'A failed newline repair must preserve the complete valid event bytes');
 });
+
+
+test('T04-H61 failed lock metadata fsync must not strand an orphaned lock', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H61_BASELINE', payload: { step: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const before = fs.readFileSync(paths.events);
+  const originalFsync = fs.fsyncSync;
+  let injected = false;
+  fs.fsyncSync = function denyNewLockDurability(fd, ...args) {
+    const opened = fs.fstatSync(fd, { bigint: true });
+    let entry = null;
+    try {
+      entry = fs.lstatSync(paths.lock, { bigint: true });
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    if (!injected && entry && opened.isFile() &&
+        opened.dev === entry.dev && opened.ino === entry.ino) {
+      injected = true;
+      const error = new Error('injected lock-file fsync failure');
+      error.code = 'EIO';
+      throw error;
+    }
+    return originalFsync.call(this, fd, ...args);
+  };
+  try {
+    assert.throws(
+      () => appendMetadataEvent({ rootDir, eventType: 'H61_REJECTED', payload: { step: 2 } }),
+      /lock|EIO|durability/i,
+    );
+  } finally {
+    fs.fsyncSync = originalFsync;
+  }
+  assert.equal(injected, true, 'Must exercise failure after exclusive lock-file creation');
+  assert.equal(fs.existsSync(paths.lock), false,
+    'A failed lock initialization must not strand an unowned lock file');
+  assert.deepEqual(fs.readFileSync(paths.events), before,
+    'Lock initialization failure must not mutate canonical history');
+  appendMetadataEvent({ rootDir, eventType: 'H61_RETRY', payload: { step: 3 } });
+  assert.equal(loadCanonicalEvents(rootDir).length, 2);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
