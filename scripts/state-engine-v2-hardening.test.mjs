@@ -12,6 +12,7 @@ import {
   getStateEnginePaths,
   loadCanonicalEvents,
   loadStateSnapshot,
+  loadStateIndex,
   rebuildStateSnapshot,
   verifyStateEngineIntegrity,
   recoverAbandonedStateLock,
@@ -1643,4 +1644,93 @@ test('T04-H65 index-only witness rejects a conflicting valid pending-recovery su
   assert.equal(fs.readFileSync(paths.events, 'utf8'), prefix);
   assert.deepEqual(fs.readFileSync(paths.index), indexWitness);
   assert.equal(fs.readFileSync(paths.pending, 'utf8'), pending);
+});
+
+test('T04-H66 index rebuild cannot erase a later acknowledged witness behind a valid prefix', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H66_FIRST', payload: { order: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const prefix = fs.readFileSync(paths.events, 'utf8');
+  const oldSnapshot = fs.readFileSync(paths.snapshot);
+  appendMetadataEvent({ rootDir, eventType: 'H66_ACKNOWLEDGED', payload: { order: 2 } });
+  const indexWitness = fs.readFileSync(paths.index);
+  fs.writeFileSync(paths.events, prefix, 'utf8');
+  fs.writeFileSync(paths.snapshot, oldSnapshot);
+  assert.throws(() => loadStateIndex(rootDir), /index|witness|canonical|history|truncat|integrity/i,
+    'Index repair must not overwrite a later acknowledged index with an older canonical prefix');
+  assert.equal(fs.readFileSync(paths.events, 'utf8'), prefix);
+  assert.deepEqual(fs.readFileSync(paths.index), indexWitness);
+  assert.deepEqual(fs.readFileSync(paths.snapshot), oldSnapshot);
+});
+
+test('T04-H66 an unreadable index witness cannot authorize index replacement', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H66_BASELINE', payload: { order: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const indexWitness = fs.readFileSync(paths.index);
+  const ledgerWitness = fs.readFileSync(paths.events);
+  const originalRead = fs.readFileSync;
+  let denied = 0;
+  fs.readFileSync = function denyIndexRead(target, ...args) {
+    if (String(target) === paths.index) {
+      denied += 1;
+      const error = new Error('Synthetic index witness EIO');
+      error.code = 'EIO';
+      throw error;
+    }
+    return originalRead.call(this, target, ...args);
+  };
+  try {
+    assert.throws(() => loadStateIndex(rootDir), /index|witness|EIO|inspect/i,
+      'Read failure must not cause replacement of a potentially acknowledged index witness');
+  } finally {
+    fs.readFileSync = originalRead;
+  }
+  assert.ok(denied > 0);
+  assert.deepEqual(fs.readFileSync(paths.index), indexWitness);
+  assert.deepEqual(fs.readFileSync(paths.events), ledgerWitness);
+});
+
+test('T04-H66 pending recovery must compare an older index witness to its exact proposed event prefix', (t) => {
+  const rootDir = tempProject(t);
+  const alternativeRoot = tempProject(t);
+  const at = '2026-10-31T00:00:00.000Z';
+  for (const root of [rootDir, alternativeRoot]) {
+    appendMetadataEvent({ rootDir: root, eventType: 'H66_FIRST', payload: { order: 1 }, timestamp: at });
+  }
+  appendMetadataEvent({ rootDir, eventType: 'H66_ACKNOWLEDGED', payload: { order: 2 }, timestamp: at });
+  appendMetadataEvent({ rootDir: alternativeRoot, eventType: 'H66_CONFLICT', payload: { order: 99 }, timestamp: at });
+  appendMetadataEvent({ rootDir: alternativeRoot, eventType: 'H66_THIRD', payload: { order: 3 }, timestamp: at });
+  const paths = getStateEnginePaths(rootDir);
+  const ledger = fs.readFileSync(paths.events, 'utf8');
+  const prefix = ledger.slice(0, ledger.indexOf('\n') + 1);
+  const alternativeLedger = fs.readFileSync(getStateEnginePaths(alternativeRoot).events, 'utf8');
+  assert.ok(alternativeLedger.startsWith(prefix));
+  const indexWitness = fs.readFileSync(paths.index);
+  fs.writeFileSync(paths.events, prefix);
+  fs.unlinkSync(paths.snapshot);
+  const pending = JSON.stringify({
+    schemaVersion: '1.0.0',
+    previousByteLength: Buffer.byteLength(prefix),
+    previousHash: 'sha256:' + createHash('sha256').update(prefix).digest('hex'),
+    suffix: alternativeLedger.slice(prefix.length),
+  });
+  fs.writeFileSync(paths.pending, pending);
+  assert.throws(() => loadCanonicalEvents(rootDir), /index|witness|canonical|history|conflict|hash/i,
+    'Later proposed events cannot hide a conflict at the earlier acknowledged witness sequence');
+  assert.equal(fs.readFileSync(paths.events, 'utf8'), prefix);
+  assert.deepEqual(fs.readFileSync(paths.index), indexWitness);
+  assert.equal(fs.readFileSync(paths.pending, 'utf8'), pending);
+});
+
+test('T04-H66 older index witness with a matching canonical event prefix remains rebuildable', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H66_FIRST', payload: { order: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const oldIndex = fs.readFileSync(paths.index);
+  appendMetadataEvent({ rootDir, eventType: 'H66_SECOND', payload: { order: 2 } });
+  appendMetadataEvent({ rootDir, eventType: 'H66_THIRD', payload: { order: 3 } });
+  fs.writeFileSync(paths.index, oldIndex);
+  assert.equal(loadStateIndex(rootDir).sourceSequence, 3);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
