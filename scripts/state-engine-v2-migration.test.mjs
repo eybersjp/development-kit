@@ -28,6 +28,7 @@ import {
 import {
   loadCurrentRunState,
 } from '../runtime/orchestration/orchestration-run.mjs';
+import { withMigrationGate } from '../runtime/orchestration/state-migration-gate.mjs';
 
 function tempProject(t, prefix = 'dk-state-migration-') {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -1188,4 +1189,85 @@ test('W73-28 Unicode uppercase-folded restore aliases fail closed before publica
   assert.equal(fs.readFileSync(original, 'utf8'), 'KEEP-ORIGINAL');
   assert.equal(fs.existsSync(path.join(targetRoot, relativeDir, 's.json')), false,
     'Rejected backup must not publish the staged candidate');
+});
+
+
+test('T04-H68 migration serializes a competing Autopilot writer across cutover', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h68-legacy-cutover-');
+  const legacy = writeLegacyAutopilot(rootDir, 1);
+  const backupPath = getLegacyBackupPath(rootDir);
+  const originalRename = fs.renameSync;
+  let injected = false;
+  try {
+    fs.renameSync = function (from, to) {
+      const result = originalRename.call(fs, from, to);
+      if (!injected && path.resolve(to) === path.resolve(backupPath)) {
+        injected = true;
+        // A writer racing migration must not acknowledge an unbacked legacy
+        // revision. The migration owns the gate before inspection; a nested
+        // competing writer fails closed, then may retry after cutover.
+        assert.throws(
+          () => saveStateRevision(workflowState(2, legacy.workflowId), rootDir),
+          /migration|cutover|gate|orphaned/i,
+        );
+      }
+      return result;
+    };
+    const migrated = migrateLegacyStateToV2({
+      rootDir, completedAt: '2026-10-31T19:00:00.000Z',
+    });
+    assert.equal(migrated.semanticEquivalence, true);
+  } finally {
+    fs.renameSync = originalRename;
+  }
+
+  assert.equal(injected, true);
+  assert.equal(fs.existsSync(path.join(legacy.stateDir, 'revision-000002.json')), false,
+    'a competing writer cannot publish an unbacked legacy revision');
+  assert.equal(getCurrentState(rootDir).stateRevision, 1);
+  assert.equal(loadCanonicalEvents(rootDir).filter((event) =>
+    event.eventType === 'MIGRATION_COMPLETED').length, 1);
+
+  // The rejected writer can retry after cutover and must append to V2.
+  saveStateRevision(workflowState(2, legacy.workflowId), rootDir);
+  assert.equal(getCurrentState(rootDir).stateRevision, 2);
+  assert.equal(loadEntityState('autopilot-workflow', legacy.workflowId, rootDir).stateRevision, 2);
+  assert.equal(fs.existsSync(path.join(legacy.stateDir, 'revision-000002.json')), false);
+});
+
+test('T04-H68 orphaned migration gate fails closed without reclaiming a journal or original tree', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h68-orphan-');
+  const legacy = writeLegacyAutopilot(rootDir, 1);
+  const gatePath = path.join(rootDir, '.development-kit', '.state-migration.lock');
+  const witness = '{"owner":"unknown"}\\n';
+  fs.writeFileSync(gatePath, witness, { flag: 'wx' });
+  assert.throws(() => migrateLegacyStateToV2({ rootDir }), /migration|gate|orphaned/i);
+  assert.equal(fs.readFileSync(gatePath, 'utf8'), witness);
+  assert.equal(getCurrentState(rootDir).stateRevision, 1);
+  assert.equal(fs.existsSync(getLegacyBackupPath(rootDir)), false);
+  assert.equal(fs.existsSync(path.join(legacy.stateDir, 'revision-000001.json')), true);
+});
+
+test('T04-H68 separate process cannot acknowledge legacy state while migration gate is owned', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h68-cross-process-');
+  const legacy = writeLegacyAutopilot(rootDir, 1);
+  const state = workflowState(2, legacy.workflowId);
+  const childScript = [
+    'import { saveStateRevision } from ' +
+      JSON.stringify(new URL('../runtime/autopilot/state-store.mjs', import.meta.url).href) + ';',
+    'const state = JSON.parse(process.argv[2]);',
+    'saveStateRevision(state, process.argv[1]);',
+  ].join('\n');
+  withMigrationGate(rootDir, () => {
+    const child = requireSpawnSync(process.execPath,
+      ['--input-type=module', '-e', childScript, rootDir, JSON.stringify(state)],
+      { encoding: 'utf8', timeout: 15_000 });
+    assert.notEqual(child.status, 0, 'separate writer must not acknowledge during cutover');
+    assert.match(child.stderr, /MigrationGateError|migration.*gate|orphaned/i);
+    assert.equal(getCurrentState(rootDir).stateRevision, 1);
+    assert.equal(fs.existsSync(path.join(legacy.stateDir, 'revision-000002.json')), false);
+  });
+  // A separate-process denial must not poison the gate after safe release.
+  saveStateRevision(state, rootDir);
+  assert.equal(getCurrentState(rootDir).stateRevision, 2);
 });

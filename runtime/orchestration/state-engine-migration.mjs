@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { validateWorkflowState } from '../autopilot/validators.mjs';
+import { withMigrationGate } from './state-migration-gate.mjs';
 import { validateOrchestrationRun } from './orchestration-run.mjs';
 import {
   appendEntityState,
@@ -458,7 +459,7 @@ function verifySemanticEquivalence(histories, rootDir) {
   };
 }
 
-export function migrateLegacyStateToV2({
+function migrateLegacyStateToV2Unlocked({
   rootDir = process.cwd(),
   completedAt = new Date().toISOString(),
 } = {}) {
@@ -535,6 +536,14 @@ export function migrateLegacyStateToV2({
     legacyRetained: true,
     backupPath: backupResult.backupPath,
   });
+}
+
+// The gate must span inspection, backup publication, all canonical imports,
+// equivalence verification and MIGRATION_COMPLETED publication. A writer must
+// take the same gate *before* choosing legacy or V2 authority.
+export function migrateLegacyStateToV2(options = {}) {
+  const rootDir = options.rootDir ?? process.cwd();
+  return withMigrationGate(rootDir, () => migrateLegacyStateToV2Unlocked(options));
 }
 
 function resolveSafeRestoreDestination(targetRoot, relativePath, { createMissing = false } = {}) {
