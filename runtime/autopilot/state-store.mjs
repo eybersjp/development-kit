@@ -14,6 +14,7 @@ import path from 'node:path';
 
 import { validateWorkflowState } from './validators.mjs';
 import { acquireTransactionLock, releaseTransactionLock } from './lock-manager.mjs';
+import { withMigrationGate } from '../orchestration/state-migration-gate.mjs';
 import {
   appendEntityState,
   hasCompletedStateMigration,
@@ -120,7 +121,7 @@ function saveLegacyStateRevision(state, rootDir) {
   }
 }
 
-export function saveStateRevision(state, rootDir = process.cwd()) {
+function saveStateRevisionUnlocked(state, rootDir = process.cwd()) {
   validateWorkflowState(state);
 
   if (!shouldUseV2(rootDir)) {
@@ -136,6 +137,10 @@ export function saveStateRevision(state, rootDir = process.cwd()) {
     timestamp: state.updatedAt,
   });
   return state;
+}
+
+export function saveStateRevision(state, rootDir = process.cwd()) {
+  return withMigrationGate(rootDir, () => saveStateRevisionUnlocked(state, rootDir));
 }
 
 function recoverLatestLegacyState(rootDir) {
