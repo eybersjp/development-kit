@@ -11,6 +11,7 @@ import { createVerificationRecord, evaluateControlCoverage, getRunDirectory,
   persistVerificationRecord, persistControlManifest } from '../runtime/orchestration/evidence-store.mjs';
 import { createReviewResult } from '../runtime/orchestration/review-result.mjs';
 import { detectArchitectureDrift } from '../runtime/orchestration/architecture-drift.mjs';
+import { assertCurrentRoleApproval } from './v013-t04-review-provenance.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = 'eybersjp/development-kit';
@@ -87,6 +88,17 @@ assert.equal(pr.head.repo.full_name, REPO);
 
 // Distinct GitHub-authored, post-source reviews. Self-authored PASS strings are
 // never an approval. Each review must explicitly identify its role and SHA.
+// Fetch all submitted PR reviews, including later revocations or source-stale
+// reapprovals; the individual review endpoint alone cannot prove an approval
+// is still the effective review from that independent identity.
+const allSubmittedReviews = [];
+for (let page = 1; ; page++) {
+  const batch = await api('pulls/92/reviews?per_page=100&page=' + page);
+  assert.ok(Array.isArray(batch), 'Authenticated PR review timeline is unavailable');
+  allSubmittedReviews.push(...batch);
+  if (batch.length < 100) break;
+}
+
 const reviewers = new Set();
 const authenticatedReviews = new Map();
 const reviewIds = new Set();
@@ -103,6 +115,7 @@ for (const role of ROLES) {
     'Author cannot independently approve their own code');
   assert.ok(!reviewers.has(review.user.login), 'Distinct reviewer identity required for each role');
   reviewers.add(review.user.login);
+  assertCurrentRoleApproval(review, allSubmittedReviews, reviewedCommit);
   authenticatedReviews.set(role, review);
   assert.ok((review.body || '').includes('DKF130-T04 ' + role + ' ' + reviewedCommit),
     'Approval must explicitly bind role and exact source SHA');
