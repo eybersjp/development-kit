@@ -1437,3 +1437,62 @@ test('T04-H71 legacy current revision EIO fails closed without rewriting pointer
   assert.deepEqual(fs.readFileSync(pointerPath), originalPointer);
   assert.equal(getCurrentState(rootDir).stateRevision, 2);
 });
+
+
+test('T04-H72 legacy symlink classification cannot be silently omitted from certified backup', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h72-synthetic-symlink-');
+  const legacy = writeLegacyAutopilot(rootDir, 1);
+  const originalReaddir = fs.readdirSync;
+  let injected = 0;
+  fs.readdirSync = function (directory, options) {
+    const entries = originalReaddir.call(this, directory, options);
+    if (path.resolve(directory) !== path.resolve(legacy.stateDir) || !options?.withFileTypes) {
+      return entries;
+    }
+    return entries.map((entry) => {
+      if (entry.name !== 'revision-000001.json') return entry;
+      injected += 1;
+      return {
+        name: entry.name,
+        isDirectory: () => false,
+        isFile: () => false,
+        isSymbolicLink: () => true,
+      };
+    });
+  };
+  try {
+    assert.throws(() => migrateLegacyStateToV2({ rootDir }),
+      /symbolic link|symlink|unsafe legacy/i,
+      'backup collection must reject a symlinked legacy revision, not omit it');
+  } finally {
+    fs.readdirSync = originalReaddir;
+  }
+  assert.ok(injected > 0, 'the backup walker must inspect the legacy revision');
+  assert.equal(fs.existsSync(getLegacyBackupPath(rootDir)), false,
+    'an incomplete backup must never be published as migration evidence');
+  assert.equal(fs.existsSync(path.join(legacy.stateDir, 'revision-000001.json')), true);
+});
+
+test('T04-H72 real legacy revision symlink must fail before backup publication', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h72-real-symlink-');
+  const legacy = writeLegacyAutopilot(rootDir, 1);
+  const revision = path.join(legacy.stateDir, 'revision-000001.json');
+  const source = path.join(legacy.stateDir, 'revision-source.json');
+  fs.renameSync(revision, source);
+  try {
+    fs.symlinkSync('revision-source.json', revision, 'file');
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+      t.skip('Host does not permit real file symlink creation; synthetic H72 guard remains mandatory');
+      return;
+    }
+    throw error;
+  }
+  const sourceBytes = fs.readFileSync(source);
+  assert.throws(() => migrateLegacyStateToV2({ rootDir }),
+    /symbolic link|symlink|unsafe legacy/i,
+    'migration must not import bytes omitted from the backup source fingerprint');
+  assert.equal(fs.existsSync(getLegacyBackupPath(rootDir)), false);
+  assert.deepEqual(fs.readFileSync(source), sourceBytes);
+  assert.equal(fs.readlinkSync(revision), 'revision-source.json');
+});
