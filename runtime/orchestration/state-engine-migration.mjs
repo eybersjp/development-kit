@@ -91,13 +91,37 @@ function atomicWrite(filePath, content) {
   fs.renameSync(temp, filePath);
 }
 
-function listFilesRecursive(directory) {
-  if (!fs.existsSync(directory)) return [];
+function listFilesRecursive(directory, rootDir) {
+  // A legacy input consumed through a symlink cannot be silently omitted
+  // from the immutable backup manifest/fingerprint. Check every ancestor,
+  // including a junctioned state root, before inspecting its descendants.
+  let ancestor = path.resolve(rootDir);
+  for (const part of projectRelative(rootDir, directory).split('/')) {
+    ancestor = path.join(ancestor, part);
+    let metadata;
+    try {
+      metadata = fs.lstatSync(ancestor);
+    } catch (error) {
+      if (error.code === 'ENOENT') return [];
+      throw error;
+    }
+    if (metadata.isSymbolicLink()) {
+      throw new StateMigrationError(
+        'Legacy backup source contains symbolic link: ' + projectRelative(rootDir, ancestor),
+      );
+    }
+  }
+
   const files = [];
   function walk(current) {
     const entries = fs.readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
       const full = path.join(current, entry.name);
+      if (entry.isSymbolicLink()) {
+        throw new StateMigrationError(
+          'Legacy backup source contains symbolic link: ' + projectRelative(rootDir, full),
+        );
+      }
       if (entry.isDirectory()) walk(full);
       else if (entry.isFile()) files.push(full);
     }
@@ -109,13 +133,13 @@ function listFilesRecursive(directory) {
 function collectLegacyBackupFiles(rootDir) {
   const files = new Set();
   const autopilotState = path.join(rootDir, '.development-kit', 'autopilot', 'state');
-  for (const file of listFilesRecursive(autopilotState)) {
+  for (const file of listFilesRecursive(autopilotState, rootDir)) {
     const name = path.basename(file);
     if (name === 'current.json' || /^revision-\d{6}\.json$/.test(name)) files.add(file);
   }
 
   const runsRoot = path.join(rootDir, '.development-kit', 'runs');
-  for (const file of listFilesRecursive(runsRoot)) {
+  for (const file of listFilesRecursive(runsRoot, rootDir)) {
     const name = path.basename(file);
     const parent = path.basename(path.dirname(file));
     if (
