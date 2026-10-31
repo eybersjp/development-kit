@@ -197,6 +197,7 @@
 * [phase05-execution-capsule-contract](03-reference/scripts/phase05-execution-capsule-contract.md)
 * [v013-state-engine-v2-contract](03-reference/scripts/v013-state-engine-v2-contract.md)
 * [v013-t04-acceptance-gate](03-reference/scripts/v013-t04-acceptance-gate.md)
+* [v013-t04-review-provenance](03-reference/scripts/v013-t04-review-provenance.md)
 * [state-engine-v2-benchmark](03-reference/scripts/state-engine-v2-benchmark.md)
 * [t04-review-thread-blockers](03-reference/scripts/t04-review-thread-blockers.md)
 * [sync-plugin](03-reference/scripts/sync-plugin.md)
