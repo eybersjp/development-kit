@@ -75,3 +75,21 @@ test('T04-A17 both platform validations execute the immutable PR head, never a s
   assert.match(checkout, /persist-credentials: false/,
     'Validation must not retain checkout credentials from untrusted PR source');
 });
+
+test('T04-A18 acceptance gate binds validation receipts to authentic full CI workflow and mandatory steps', () => {
+  const gate = fs.readFileSync(path.join(root, 'scripts/v013-t04-acceptance-gate.mjs'), 'utf8');
+  assert.match(gate, /run\.path, '\.github\/workflows\/ci\.yml'/,
+    'same-SHA workflow run IDs must identify the authoritative full CI workflow, not a synthetic green workflow');
+  assert.match(gate, /run\.repository\?\.full_name, REPO/,
+    'cross-repository validation runs must never count toward source acceptance');
+  for (const step of [
+    'Validate v0.13 State Engine V2 increment',
+    'Validate v0.13 full compatibility regression',
+    'Verify v0.13 risk-3 acceptance job contract (negative control)',
+  ]) {
+    assert.ok(gate.includes(step),
+      'each OS validation must have a successful mandatory v0.13 step: ' + step);
+  }
+  assert.match(gate, /step\.conclusion === 'success'/,
+    'the existence of a named validation step is insufficient without its successful conclusion');
+});
