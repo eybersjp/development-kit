@@ -5,6 +5,7 @@ import { validateDevelopmentContract } from './development-contract.mjs';
 import { resolveContractGateProfiles } from './gate-profiles.mjs';
 import { selectExecutionStrategy } from './host-capabilities.mjs';
 import { getRunDirectory } from './evidence-store.mjs';
+import { withMigrationGate } from './state-migration-gate.mjs';
 import {
   appendEntityState,
   canonicalStateJson,
@@ -174,14 +175,14 @@ export function validateOrchestrationRun(run) {
   return true;
 }
 
-export function persistRunManifest(run, rootDir = process.cwd()) {
+function persistRunManifestUnlocked(run, rootDir = process.cwd()) {
   validateOrchestrationRun(run);
   if (run.stateRevision !== 1) throw new OrchestrationRunError('Initial run manifest may only persist stateRevision 1');
   const runDir = getRunDirectory(rootDir, run.contractId, run.runId);
   return persistImmutable(path.join(runDir, 'manifest.json'), run, 'orchestration run manifest');
 }
 
-export function persistRunStateRevision(run, rootDir = process.cwd()) {
+function persistRunStateRevisionUnlocked(run, rootDir = process.cwd()) {
   validateOrchestrationRun(run);
 
   if (!shouldUseV2RunState(run.contractId, run.runId, rootDir)) {
@@ -236,13 +237,22 @@ export function persistRunStateRevision(run, rootDir = process.cwd()) {
   };
 }
 
-export function persistFinalRunState(run, rootDir = process.cwd()) {
+function persistFinalRunStateUnlocked(run, rootDir = process.cwd()) {
   validateOrchestrationRun(run);
   if (!['ACCEPTED', 'BLOCKED'].includes(run.state)) throw new OrchestrationRunError('Final run state requires ACCEPTED or BLOCKED');
   const runDir = getRunDirectory(rootDir, run.contractId, run.runId);
   return persistImmutable(path.join(runDir, 'final-state.json'), run, 'final run state');
 }
 
+export function persistRunManifest(run, rootDir = process.cwd()) {
+  return withMigrationGate(rootDir, () => persistRunManifestUnlocked(run, rootDir));
+}
+export function persistRunStateRevision(run, rootDir = process.cwd()) {
+  return withMigrationGate(rootDir, () => persistRunStateRevisionUnlocked(run, rootDir));
+}
+export function persistFinalRunState(run, rootDir = process.cwd()) {
+  return withMigrationGate(rootDir, () => persistFinalRunStateUnlocked(run, rootDir));
+}
 export function loadRunManifest(contractId, runId, rootDir = process.cwd()) {
   const filePath = path.join(getRunDirectory(rootDir, contractId, runId), 'manifest.json');
   if (!fs.existsSync(filePath)) return null;
