@@ -1203,3 +1203,53 @@ for (const repairMode of ['missing-terminal-newline', 'torn-trailing-json']) {
       'Rejected repair must not alter the substituted canonical path');
   });
 }
+
+test('T04-H58 unreadable snapshot witness cannot authorize no-journal torn-tail truncation', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  appendMetadataEvent({ rootDir, eventType: 'ACKNOWLEDGED_EVENT', payload: { value: 2 } });
+  const paths = getStateEnginePaths(rootDir);
+  const ledger = fs.readFileSync(paths.events);
+  const finalLineStart = ledger.lastIndexOf(0x0a, ledger.length - 2) + 1;
+  const torn = Buffer.concat([ledger.subarray(0, finalLineStart),
+    ledger.subarray(finalLineStart, finalLineStart + 21)]);
+  fs.writeFileSync(paths.events, torn);
+  assert.equal(fs.existsSync(paths.pending), false);
+  const originalRead = fs.readFileSync;
+  let denied = 0;
+  fs.readFileSync = function denyTailSnapshotWitness(target, ...args) {
+    if (String(target) === paths.snapshot) {
+      denied += 1;
+      const error = new Error('Synthetic snapshot witness access denied');
+      error.code = 'EACCES';
+      throw error;
+    }
+    return originalRead.call(this, target, ...args);
+  };
+  try {
+    assert.throws(() => loadCanonicalEvents(rootDir),
+      /snapshot witness|EACCES|access denied/i,
+      'An unreadable acknowledged witness must block destructive tail repair');
+  } finally {
+    fs.readFileSync = originalRead;
+  }
+  assert.ok(denied > 0, 'Fault injection must intercept the snapshot witness');
+  assert.deepEqual(fs.readFileSync(paths.events), torn,
+    'Rejected tail repair must retain all original torn canonical bytes');
+});
+
+test('T04-H59 incomplete multibyte UTF-8 tail is truncated using raw canonical bytes', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const baseline = fs.readFileSync(paths.events);
+  const torn = Buffer.concat([baseline, Buffer.from('{"payload":"'),
+    Buffer.from([0xe2, 0x82])]);
+  fs.writeFileSync(paths.events, torn);
+  assert.equal(fs.existsSync(paths.pending), false);
+  const recovered = loadCanonicalEvents(rootDir);
+  assert.equal(recovered.length, 1);
+  assert.deepEqual(fs.readFileSync(paths.events), baseline,
+    'A torn UTF-8 suffix must be removed without rewriting valid history');
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
