@@ -96,6 +96,10 @@ test('T04-A18 acceptance gate binds validation receipts to authentic full CI wor
 
 test('T04-A19 later review revocation or stale reapproval cannot be hidden by an earlier receipt', async () => {
   const { assertCurrentRoleApproval } = await import('./v013-t04-review-provenance.mjs');
+  const gate = fs.readFileSync(path.join(root, 'scripts/v013-t04-acceptance-gate.mjs'), 'utf8');
+  assert.match(gate, /assertCurrentRoleApproval\\(review, allSubmittedReviews, reviewedCommit\\)/,
+    'production acceptance must validate the latest effective GitHub review, not only the receipt ID');
+
   const sha = 'a'.repeat(40);
   const other = 'b'.repeat(40);
   const approval = { id: 101, state: 'APPROVED', commit_id: sha,
