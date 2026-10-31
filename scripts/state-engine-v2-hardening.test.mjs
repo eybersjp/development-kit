@@ -1551,3 +1551,34 @@ test('T04-H65 older but consistent derived witnesses may be refreshed by a later
   assert.equal(JSON.parse(fs.readFileSync(paths.index, 'utf8')).sourceSequence, 3);
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+test('T04-H65 a failed snapshot witness read cannot authorize a metadata append', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H65_FIRST', payload: { order: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const originalLedger = fs.readFileSync(paths.events);
+  const originalIndex = fs.readFileSync(paths.index);
+  const originalRead = fs.readFileSync;
+  let denied = false;
+  fs.readFileSync = function rejectSnapshotWitnessRead(target, ...args) {
+    if (String(target) === paths.snapshot) {
+      denied = true;
+      const error = new Error('Injected snapshot witness EIO');
+      error.code = 'EIO';
+      throw error;
+    }
+    return originalRead.call(this, target, ...args);
+  };
+  try {
+    assert.throws(
+      () => appendMetadataEvent({ rootDir, eventType: 'H65_MUST_NOT_COMMIT', payload: { order: 2 } }),
+      /snapshot|witness|EIO|inspect/i,
+    );
+  } finally {
+    fs.readFileSync = originalRead;
+  }
+  assert.equal(denied, true, 'Writer must actually inspect the acknowledged snapshot witness');
+  assert.deepEqual(fs.readFileSync(paths.events), originalLedger);
+  assert.deepEqual(fs.readFileSync(paths.index), originalIndex);
+  assert.equal(fs.existsSync(paths.pending), false);
+});
