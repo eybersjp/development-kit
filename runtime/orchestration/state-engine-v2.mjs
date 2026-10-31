@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 export const STATE_ENGINE_SCHEMA_VERSION = '2.0.0';
 export const STATE_EVENT_SCHEMA_VERSION = '1.0.0';
@@ -925,10 +926,17 @@ function normalizePathSegments(value) {
 function cloneSerializable(value, label) {
   try {
     const cloned = structuredClone(value);
-    JSON.stringify(cloned);
+    const encoded = JSON.stringify(cloned);
+    // JSON.stringify silently discards Map/Set contents and undefined object
+    // fields, and rewrites Date/non-finite numbers. A successful stringify
+    // alone cannot establish that an acknowledged event is replayable without
+    // semantic data loss. Reject before publishing any canonical bytes.
+    if (typeof encoded !== 'string' || !isDeepStrictEqual(cloned, JSON.parse(encoded))) {
+      throw new StateEngineError(`${label} must be lossless JSON-serializable data`);
+    }
     return cloned;
   } catch {
-    throw new StateEngineError(`${label} must be JSON-serializable`);
+    throw new StateEngineError(`${label} must be lossless JSON-serializable data`);
   }
 }
 
