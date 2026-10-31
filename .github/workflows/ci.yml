@@ -170,9 +170,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/v013-t04-acceptance-gate.mjs
       - name: Preserve canonical T04 verdict evidence
-        if: always()
+        if: ${{ success() }}
         uses: actions/upload-artifact@v4
         with:
-          name: dkf-v013-t04-acceptance-evidence
+          name: dkf-v013-t04-acceptance-evidence-${{ github.event.pull_request.head.sha }}
           path: .development-kit/acceptance/DKF130-T04.json
-          if-no-files-found: ignore
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 90
