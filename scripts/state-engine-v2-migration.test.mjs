@@ -28,6 +28,7 @@ import {
 import {
   loadCurrentRunState,
 } from '../runtime/orchestration/orchestration-run.mjs';
+import { withMigrationGate } from '../runtime/orchestration/state-migration-gate.mjs';
 
 function tempProject(t, prefix = 'dk-state-migration-') {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -1245,4 +1246,28 @@ test('T04-H68 orphaned migration gate fails closed without reclaiming a journal 
   assert.equal(getCurrentState(rootDir).stateRevision, 1);
   assert.equal(fs.existsSync(getLegacyBackupPath(rootDir)), false);
   assert.equal(fs.existsSync(path.join(legacy.stateDir, 'revision-000001.json')), true);
+});
+
+test('T04-H68 separate process cannot acknowledge legacy state while migration gate is owned', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h68-cross-process-');
+  const legacy = writeLegacyAutopilot(rootDir, 1);
+  const state = workflowState(2, legacy.workflowId);
+  const childScript = [
+    'import { saveStateRevision } from ' +
+      JSON.stringify(new URL('../runtime/autopilot/state-store.mjs', import.meta.url).href) + ';',
+    'const state = JSON.parse(process.argv[2]);',
+    'saveStateRevision(state, process.argv[1]);',
+  ].join('\\n');
+  withMigrationGate(rootDir, () => {
+    const child = requireSpawnSync(process.execPath,
+      ['--input-type=module', '-e', childScript, rootDir, JSON.stringify(state)],
+      { encoding: 'utf8', timeout: 15_000 });
+    assert.notEqual(child.status, 0, 'separate writer must not acknowledge during cutover');
+    assert.match(child.stderr, /MigrationGateError|migration.*gate|orphaned/i);
+    assert.equal(getCurrentState(rootDir).stateRevision, 1);
+    assert.equal(fs.existsSync(path.join(legacy.stateDir, 'revision-000002.json')), false);
+  });
+  // A separate-process denial must not poison the gate after safe release.
+  saveStateRevision(state, rootDir);
+  assert.equal(getCurrentState(rootDir).stateRevision, 2);
 });
