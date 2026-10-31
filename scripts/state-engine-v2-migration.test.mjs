@@ -1317,3 +1317,65 @@ test('T04-H69 automatic pointer recovery cannot bypass held migration gate', (t)
   assert.equal(getCurrentState(rootDir).stateRevision, 1,
     'after safe gate release, normal recovery may repair the legacy pointer');
 });
+
+
+test('T04-H70 transient pointer write failure cannot silently roll legacy recovery back', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h70-pointer-write-');
+  const legacy = writeLegacyAutopilot(rootDir, 2);
+  const pointerPath = path.join(legacy.stateDir, 'current.json');
+  const broken = '{"corrupted":true}\n';
+  fs.writeFileSync(pointerPath, broken);
+  const originalWrite = fs.writeFileSync;
+  let injected = 0;
+  fs.writeFileSync = function (target, content, ...args) {
+    if (typeof target === 'string' && path.resolve(target) === path.resolve(pointerPath)
+        && injected++ === 0) {
+      const error = new Error('injected ENOSPC writing recovery pointer');
+      error.code = 'ENOSPC';
+      throw error;
+    }
+    return originalWrite.call(this, target, content, ...args);
+  };
+  try {
+    assert.throws(() => recoverLatestValidState(rootDir), /ENOSPC|injected/i,
+      'a failed pointer publication must propagate, not retry with an older revision');
+  } finally {
+    fs.writeFileSync = originalWrite;
+  }
+  assert.equal(injected, 1);
+  assert.equal(fs.readFileSync(pointerPath, 'utf8'), broken,
+    'a failed pointer repair must leave the original witness unchanged');
+  assert.equal(fs.existsSync(path.join(legacy.stateDir, 'revision-000002.json')), true);
+  assert.equal(getCurrentState(rootDir).stateRevision, 2,
+    'after I/O is restored the latest acknowledged revision remains recoverable');
+});
+
+test('T04-H70 transient newest revision read failure cannot select older revision', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h70-revision-read-');
+  const legacy = writeLegacyAutopilot(rootDir, 2);
+  const pointerPath = path.join(legacy.stateDir, 'current.json');
+  const broken = '{"corrupted":true}\n';
+  fs.writeFileSync(pointerPath, broken);
+  const newest = path.join(legacy.stateDir, 'revision-000002.json');
+  const originalRead = fs.readFileSync;
+  let injected = 0;
+  fs.readFileSync = function (target, ...args) {
+    if (typeof target === 'string' && path.resolve(target) === path.resolve(newest)
+        && injected++ === 0) {
+      const error = new Error('injected EIO reading newest acknowledged revision');
+      error.code = 'EIO';
+      throw error;
+    }
+    return originalRead.call(this, target, ...args);
+  };
+  try {
+    assert.throws(() => recoverLatestValidState(rootDir), /EIO|injected/i,
+      'transient I/O failure must not be mistaken for an invalid revision');
+  } finally {
+    fs.readFileSync = originalRead;
+  }
+  assert.equal(injected, 1);
+  assert.equal(fs.readFileSync(pointerPath, 'utf8'), broken,
+    'a failed read must not publish an older pointer');
+  assert.equal(getCurrentState(rootDir).stateRevision, 2);
+});
