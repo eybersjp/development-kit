@@ -1,0 +1,2103 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
+
+export const STATE_ENGINE_SCHEMA_VERSION = '2.0.0';
+export const STATE_EVENT_SCHEMA_VERSION = '1.0.0';
+export const STATE_SNAPSHOT_SCHEMA_VERSION = '2.0.0';
+export const STATE_INDEX_SCHEMA_VERSION = '1.0.0';
+
+export const STATE_ENGINE_ROOT = '.development-kit/state';
+export const STATE_EVENTS_FILE = 'events.jsonl';
+export const STATE_SNAPSHOT_FILE = 'snapshot.json';
+export const STATE_INDEX_FILE = 'index.db';
+export const STATE_SCHEMA_FILE = 'schema.json';
+
+const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/;
+const EVENT_TYPE_PATTERN = /^[A-Z][A-Z0-9_]{1,95}$/;
+const ENTITY_TYPE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const MAX_ENTITY_ID_LENGTH = 512;
+// Bounded blocking sleeps avoid starving a contended local state writer.
+const STATE_LOCK_SLEEP = new Int32Array(new SharedArrayBuffer(4));
+function waitStateLock(ms = 25) { Atomics.wait(STATE_LOCK_SLEEP, 0, 0, ms); }
+
+export class StateEngineError extends Error {
+  constructor(message, details = null) {
+    super(message);
+    this.name = 'StateEngineError';
+    this.details = details;
+  }
+}
+
+function plainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stable(value) {
+  if (Array.isArray(value)) return value.map(stable);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stable(value[key])]));
+}
+
+function stableJson(value) {
+  return JSON.stringify(stable(value));
+}
+
+function stablePretty(value) {
+  return `${JSON.stringify(stable(value), null, 2)}\n`;
+}
+
+function sha256(value) {
+  return `sha256:${crypto.createHash('sha256').update(value).digest('hex')}`;
+}
+
+function requireText(value, label) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new StateEngineError(`${label} must be a non-empty string`);
+  }
+  return value.trim();
+}
+
+function optionalText(value, label) {
+  if (value === undefined || value === null) return null;
+  return requireText(value, label);
+}
+
+function entityType(value) {
+  const normalized = requireText(value, 'entityType');
+  if (!ENTITY_TYPE_PATTERN.test(normalized)) {
+    throw new StateEngineError('entityType contains unsupported characters');
+  }
+  return normalized;
+}
+
+function entityId(value) {
+  const normalized = requireText(value, 'entityId');
+  if (normalized.length > MAX_ENTITY_ID_LENGTH || /[\r\n\0]/.test(normalized)) {
+    throw new StateEngineError('entityId is invalid');
+  }
+  return normalized;
+}
+
+function eventType(value) {
+  const normalized = requireText(value, 'eventType');
+  if (!EVENT_TYPE_PATTERN.test(normalized)) {
+    throw new StateEngineError('eventType is invalid');
+  }
+  return normalized;
+}
+
+function timestamp(value, label = 'timestamp') {
+  if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) {
+    throw new StateEngineError(`${label} must be a valid timestamp`);
+  }
+  return value;
+}
+
+function stateRevision(value, { allowNull = false } = {}) {
+  if (allowNull && (value === undefined || value === null)) return null;
+  if (!Number.isInteger(value) || value < 1) {
+    throw new StateEngineError('stateRevision must be a positive integer');
+  }
+  return value;
+}
+
+function statePaths(rootDir = process.cwd()) {
+  const root = path.resolve(rootDir);
+  const stateRoot = path.resolve(root, STATE_ENGINE_ROOT);
+  const relative = path.relative(root, stateRoot);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new StateEngineError('State Engine path escapes project root');
+  }
+  const paths = Object.freeze({
+    root,
+    stateRoot,
+    events: path.join(stateRoot, STATE_EVENTS_FILE),
+    snapshot: path.join(stateRoot, STATE_SNAPSHOT_FILE),
+    index: path.join(stateRoot, STATE_INDEX_FILE),
+    schema: path.join(stateRoot, STATE_SCHEMA_FILE),
+    lock: path.join(stateRoot, 'state.lock'),
+    pending: path.join(stateRoot, 'pending-commit.json'),
+  });
+  if (fs.existsSync(stateRoot)) {
+    assertStateRootRealpathSafe(paths);
+    assertStateFilesNotLinks(paths);
+  }
+  return paths;
+}
+
+function assertStateRootRealpathSafe(paths) {
+  const rootReal = fs.realpathSync(paths.root);
+  const stateReal = fs.realpathSync(paths.stateRoot);
+  const relative = path.relative(rootReal, stateReal);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new StateEngineError('State Engine root resolves outside project root');
+  }
+  return stateReal;
+}
+
+function assertStateFilesNotLinks(paths) {
+  for (const field of ['events', 'snapshot', 'index', 'schema', 'pending', 'lock']) {
+    try {
+      const stat = fs.lstatSync(paths[field]);
+      if (stat.isSymbolicLink() || !stat.isFile()) {
+        throw new StateEngineError('State Engine internal file is not a regular file: ' + field);
+      }
+      if (stat.nlink > 1) {
+        // The common path must not pay for extra filesystem probes on every
+        // state read/write. Reconcile only an actual multiply-linked bootstrap
+        // schema/snapshot/index; all other hard links remain forbidden.
+        if (['schema', 'snapshot', 'index'].includes(field)) {
+          recoverInterruptedBootstrapPublication(paths);
+        }
+        if (fs.lstatSync(paths[field]).nlink > 1) {
+          throw new StateEngineError('State Engine internal file has multiple hard links: ' + field);
+        }
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+}
+
+/**
+ * Recover only the exact private staging hard link left by a terminated
+ * first-layout initializer between linkSync() and unlinkSync(). No other
+ * multiply-linked canonical file is eligible. A live/unknown owner, unknown
+ * content, non-regular path, or different inode remains a hard failure.
+ * This does not relax the trusted/exclusive local-runtime threat boundary.
+ */
+function recoverInterruptedBootstrapPublication(paths) {
+  for (const field of ['schema', 'snapshot', 'index']) {
+    const canonical = paths[field];
+    let stat;
+    try { stat = fs.lstatSync(canonical, { bigint: true }); }
+    catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw error;
+    }
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 2n) continue;
+
+    const prefix = path.basename(canonical) + '.tmp-';
+    const matches = [];
+    for (const name of fs.readdirSync(paths.stateRoot)) {
+      if (!name.startsWith(prefix)) continue;
+      const suffix = name.slice(prefix.length);
+      const ownerMatch = /^([1-9][0-9]*)-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(suffix);
+      if (!ownerMatch) continue;
+      const candidate = path.join(paths.stateRoot, name);
+      const candidateStat = fs.lstatSync(candidate, { bigint: true });
+      if (candidateStat.isFile() && !candidateStat.isSymbolicLink()
+        && candidateStat.dev === stat.dev && candidateStat.ino === stat.ino
+        && candidateStat.nlink === 2n) {
+        matches.push({ name, candidate, pid: Number(ownerMatch[1]) });
+      }
+    }
+    if (matches.length !== 1 || !Number.isSafeInteger(matches[0].pid)) {
+      throw new StateEngineError('Ambiguous initial State Engine hard links; operator recovery required');
+    }
+    const { name, candidate, pid } = matches[0];
+    // A still-running initializer may be about to remove its own staging
+    // link. Never unlink it on that process's behalf.
+    let ownerDead = false;
+    try { process.kill(pid, 0); }
+    catch (error) {
+      if (error.code === 'ESRCH') ownerDead = true;
+      else throw new StateEngineError('Cannot establish bootstrap staging owner termination');
+    }
+    if (!ownerDead) {
+      throw new StateEngineError('Initial State Engine publication is still owned by a live process');
+    }
+
+    const expected = field === 'schema' ? stablePretty(schemaDocument())
+      : field === 'snapshot' ? stablePretty(emptySnapshot())
+      : stablePretty(buildStateIndex(emptySnapshot()));
+    if (fs.readFileSync(canonical, 'utf8') !== expected
+      || fs.readFileSync(candidate, 'utf8') !== expected) {
+      throw new StateEngineError('Initial State Engine staging content is not an exact bootstrap image');
+    }
+
+    const dirFd = fs.openSync(paths.stateRoot, 'r');
+    try {
+      const pinned = fs.fstatSync(dirFd, { bigint: true });
+      const observed = fs.lstatSync(paths.stateRoot, { bigint: true });
+      const current = fs.lstatSync(canonical, { bigint: true });
+      const staging = fs.lstatSync(candidate, { bigint: true });
+      if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink()
+        || pinned.dev !== observed.dev || pinned.ino !== observed.ino
+        || !current.isFile() || current.isSymbolicLink()
+        || current.dev !== stat.dev || current.ino !== stat.ino || current.nlink !== 2n
+        || !staging.isFile() || staging.isSymbolicLink()
+        || staging.dev !== stat.dev || staging.ino !== stat.ino || staging.nlink !== 2n) {
+        throw new StateEngineError('Initial State Engine staging identity changed before recovery');
+      }
+      const unlinkTarget = process.platform === 'linux'
+        ? path.join('/proc/self/fd/' + dirFd, name) : candidate;
+      fs.unlinkSync(unlinkTarget);
+      flushStateDirectory(paths.stateRoot, dirFd);
+    } finally {
+      fs.closeSync(dirFd);
+    }
+  }
+}
+
+/**
+ * Persist directory namespace updates before journal acknowledgement.
+ * POSIX uses the pinned directory FD; Windows must open a write-capable
+ * directory FD for fsync/FlushFileBuffers. Unavailable barriers fail closed.
+ */
+function flushStateDirectory(directory, pinnedDirFd = null) {
+  if (process.platform !== 'win32' && pinnedDirFd !== null) {
+    fs.fsyncSync(pinnedDirFd);
+    return;
+  }
+  let fd;
+  try {
+    fd = fs.openSync(directory, process.platform === 'win32' ? 'r+' : 'r');
+    const stat = fs.fstatSync(fd);
+    if (!stat.isDirectory()) {
+      throw new StateEngineError('State Engine directory flush target is not a directory');
+    }
+    if (pinnedDirFd !== null) {
+      const pinned = fs.fstatSync(pinnedDirFd);
+      if (!pinned.isDirectory() || pinned.dev !== stat.dev || pinned.ino !== stat.ino) {
+        throw new StateEngineError('State Engine directory changed before durability barrier');
+      }
+    }
+    fs.fsyncSync(fd);
+  } catch (error) {
+    throw new StateEngineError('State Engine directory durability barrier failed; refusing acknowledgement', {
+      code: 'STATE_DIRECTORY_FLUSH_FAILED',
+      directory,
+      cause: error.code || error.message,
+    });
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+function fsyncParentDirectory(directory) {
+  flushStateDirectory(directory);
+}
+
+function pinnedUnlinkAndSync(filePath, pinnedDirFd = null) {
+  const directory = path.dirname(filePath);
+  const file = path.basename(filePath);
+  const ownsDirFd = !pinnedDirFd;
+  const dirFd = pinnedDirFd ?? fs.openSync(directory, 'r');
+  try {
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(directory);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed before journal cleanup');
+    }
+    const rootDir = path.dirname(path.dirname(directory));
+    assertStateRootRealpathSafe({ root: rootDir, stateRoot: directory });
+    const target = process.platform === 'linux' ? path.join('/proc/self/fd/' + dirFd, file) : filePath;
+    const preStat = fs.lstatSync(target);
+    if (preStat.isSymbolicLink() || !preStat.isFile() || preStat.nlink > 1) {
+      throw new StateEngineError('Target journal file is not a regular unlinked file');
+    }
+    // Trust model (T04, trusted/exclusive local runtime): two directory entries
+    // cannot be checked-and-unlinked atomically against a hostile same-UID
+    // process, so no ledger-binding check is attempted here. Ledger authority is
+    // enforced instead on every load, which rejects any snapshot/index that is
+    // inconsistent with canonical history (see loadStateSnapshot).
+    // Recheck directory immediately before unlink on platforms without descriptor-relative paths
+    const latest = fs.lstatSync(directory);
+    if (!latest.isDirectory() || latest.isSymbolicLink() ||
+      latest.dev !== pinned.dev || latest.ino !== pinned.ino) {
+      throw new StateEngineError('State Engine directory was replaced before journal cleanup');
+    }
+    fs.unlinkSync(target);
+    flushStateDirectory(directory, dirFd);
+  } finally {
+    if (ownsDirFd) fs.closeSync(dirFd);
+  }
+}
+
+function atomicWrite(filePath, content, pinnedDirFd = null) {
+  const directory = path.dirname(filePath);
+  fs.mkdirSync(directory, { recursive: true });
+  // Pin the already-validated State Engine directory before creating a
+  // journal, snapshot or index. Linux exposes descriptor-relative paths via
+  // /proc/self/fd; renames there cannot follow a subsequently swapped
+  // workspace directory symlink into an external target.
+  const ownsDirFd = !pinnedDirFd;
+  const dirFd = pinnedDirFd ?? fs.openSync(directory, 'r');
+  const file = path.basename(filePath);
+  const pinnedDir = process.platform === 'linux' ? '/proc/self/fd/' + dirFd : directory;
+  const tempPath = path.join(pinnedDir, file + '.tmp-' + process.pid + '-' + crypto.randomUUID());
+  const destination = path.join(pinnedDir, file);
+  let published = false;
+  try {
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(directory);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed during durable write preparation');
+    }
+    const rootDir = path.dirname(path.dirname(directory));
+    assertStateRootRealpathSafe({ root: rootDir, stateRoot: directory });
+    const fd = fs.openSync(tempPath, 'wx', 0o600);
+    try {
+      fs.writeFileSync(fd, content, 'utf8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    // On non-Linux platforms without handle-relative filesystem primitives,
+    // revalidate the directory identity immediately before publication.
+    // Hostile same-UID concurrent processes remain unsupported outside
+    // a trusted offline maintenance environment on those hosts.
+    const latest = fs.lstatSync(directory);
+    if (!latest.isDirectory() || latest.isSymbolicLink() ||
+      latest.dev !== pinned.dev || latest.ino !== pinned.ino) {
+      throw new StateEngineError('State Engine directory was replaced before durable publication');
+    }
+    fs.renameSync(tempPath, destination);
+    published = true;
+    flushStateDirectory(directory, dirFd);
+    return filePath;
+  } finally {
+    if (!published) {
+      try { fs.unlinkSync(tempPath); } catch {}
+    }
+    if (ownsDirFd) fs.closeSync(dirFd);
+  }
+}
+
+// Windows NTFS directory flushes and Defender I/O can extend a valid
+// four-process writer queue beyond 12s under concurrent full CI. Keep a
+// bounded longer wait on Windows; never reclaim a live owner or bypass locks.
+function acquireStateLock(rootDir, timeoutMs = process.platform === 'win32' ? 20_000 : 12_000) {
+  const paths = statePaths(rootDir);
+  fs.mkdirSync(paths.stateRoot, { recursive: true });
+  assertStateRootRealpathSafe(paths);
+  const owner = 'state-lock-' + crypto.randomUUID();
+  const started = Date.now();
+
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const fd = fs.openSync(paths.lock, 'wx');
+      let createdIdentity = null;
+      let initializationFailure = null;
+      try {
+        createdIdentity = fs.fstatSync(fd, { bigint: true });
+        fs.writeFileSync(fd, JSON.stringify({
+          owner,
+          pid: process.pid,
+          hostname: os.hostname(),
+          acquiredAt: new Date().toISOString(),
+        }), 'utf8');
+        fs.fsyncSync(fd);
+      } catch (error) {
+        initializationFailure = error;
+      }
+      try {
+        fs.closeSync(fd);
+      } catch (error) {
+        initializationFailure ??= error;
+      }
+      if (initializationFailure) {
+        // The exclusive lock name already exists, but its owner metadata may
+        // be absent or non-durable. Do not strand an empty/unowned lock after
+        // ENOSPC, EIO or close failure. Remove only the same single-link inode
+        // that this process created, never a replacement installed by another
+        // process. A failed cleanup remains an explicit offline-recovery fault.
+        try {
+          const current = fs.lstatSync(paths.lock, { bigint: true });
+          if (!createdIdentity || !current.isFile() || current.isSymbolicLink() ||
+              current.nlink !== 1n || current.dev !== createdIdentity.dev ||
+              current.ino !== createdIdentity.ino) {
+            throw new StateEngineError('Newly created lock identity changed before failed-initialization cleanup');
+          }
+          fs.unlinkSync(paths.lock);
+          fsyncParentDirectory(paths.stateRoot);
+        } catch (cleanupError) {
+          throw new StateEngineError(
+            'State Engine lock initialization failed and cleanup was not durably verified; offline recovery required',
+            { code: 'STATE_LOCK_INIT_CLEANUP_FAILED',
+              cause: cleanupError.code || cleanupError.message,
+              initializationCause: initializationFailure.code || initializationFailure.message },
+          );
+        }
+        throw initializationFailure;
+      }
+      return { path: paths.lock, owner };
+    } catch (error) {
+      if (error.code !== 'EEXIST') {
+        // Windows can briefly deny create/open while another process closes or
+        // removes this exact lock file. Retry a bounded transient sharing
+        // violation; never interpret it as permission to steal the lock.
+        if (process.platform !== 'win32' || !['EPERM', 'EACCES'].includes(error.code)) {
+          throw new StateEngineError('Unable to acquire State Engine lock: ' + error.message);
+        }
+        waitStateLock(25);
+        continue;
+      }
+      let stat;
+      try {
+        stat = fs.statSync(paths.lock);
+      } catch (readError) {
+        if (readError.code === 'ENOENT') continue;
+        throw new StateEngineError('Cannot inspect existing State Engine lock: ' + readError.message);
+      }
+      if (Date.now() - stat.mtimeMs > 15_000) {
+        let prior;
+        try {
+          prior = JSON.parse(fs.readFileSync(paths.lock, 'utf8'));
+        } catch {
+          // Corrupt or incomplete lock metadata must never authorize lock stealing.
+          prior = null;
+        }
+        // A live local PID owns the lock regardless of its age. Remote and legacy
+        // owners are treated as unknown and cannot be stolen automatically.
+        if (prior && prior.hostname === os.hostname() && Number.isSafeInteger(prior.pid) && prior.pid > 0) {
+          let alive = true;
+          try {
+            process.kill(prior.pid, 0);
+          } catch (probeError) {
+            if (probeError.code === 'ESRCH') alive = false;
+          }
+          if (!alive) {
+            // Pathname compare-then-unlink is unsafe: another reclaimer may
+            // install a fresh live lock between the check and unlink. mkdir
+            // gives each local stale-lock reclaimer exclusive ownership of a
+            // recovery guard, so other reclaimers cannot race its unlink.
+            const reclaimGuard = paths.lock + '.reclaim';
+            let guardOwned = false;
+            let guardMarker = null;
+            try {
+              try {
+                fs.mkdirSync(reclaimGuard, { mode: 0o700 });
+                guardOwned = true;
+                guardMarker = path.join(reclaimGuard, 'owner.json');
+                const guardFd = fs.openSync(guardMarker, 'wx', 0o600);
+                try {
+                  fs.writeFileSync(guardFd, JSON.stringify({
+                    pid: process.pid,
+                    hostname: os.hostname(),
+                    owner,
+                    acquiredAt: new Date().toISOString(),
+                  }));
+                  fs.fsyncSync(guardFd);
+                } finally {
+                  fs.closeSync(guardFd);
+                }
+              } catch (guardError) {
+                if (guardError.code !== 'EEXIST') throw guardError;
+              }
+              if (guardOwned) {
+                let latest;
+                try {
+                  latest = fs.statSync(paths.lock);
+                } catch (raceError) {
+                  if (raceError.code !== 'ENOENT') throw raceError;
+                }
+                if (latest && latest.ino === stat.ino && latest.mtimeMs === stat.mtimeMs && latest.size === stat.size) {
+                  let current;
+                  try {
+                    current = JSON.parse(fs.readFileSync(paths.lock, 'utf8'));
+                  } catch (readError) {
+                    if (readError.code !== 'ENOENT') throw readError;
+                  }
+                  if (current?.owner === prior.owner && current?.pid === prior.pid && current?.hostname === prior.hostname) {
+                    // Verify ownership is still dead inside the reclaim guard.
+                    let confirmedDead = false;
+                    try {
+                      process.kill(current.pid, 0);
+                    } catch (probeError) {
+                      confirmedDead = probeError.code === 'ESRCH';
+                    }
+                    if (confirmedDead) {
+                      try {
+                        fs.unlinkSync(paths.lock);
+                      } catch (removeError) {
+                        if (removeError.code !== 'ENOENT') throw removeError;
+                      }
+                    }
+                  }
+                }
+              }
+            } finally {
+              if (guardOwned) {
+                if (guardMarker && fs.existsSync(guardMarker)) fs.unlinkSync(guardMarker);
+                fs.rmdirSync(reclaimGuard);
+              }
+            }
+            if (guardOwned) continue;
+          }
+        }
+      }
+      // Use bounded, synchronous waiting so Node >=18 and current callers remain compatible.
+      waitStateLock(25);
+    }
+  }
+  throw new StateEngineError('State Engine lock acquisition timed out');
+}
+
+/**
+ * Explicit OFFLINE maintenance operation. Never reclaim an orphaned guard in
+ * the normal commit path: proving the reclaimer is gone requires inspecting
+ * owner metadata and ruling out an active writer. The caller must take the
+ * project out of service before acknowledging recovery.
+ */
+export function recoverAbandonedStateLock({ rootDir = process.cwd(), confirmOffline = false } = {}) {
+  if (confirmOffline !== true) {
+    throw new StateEngineError('Explicit offline confirmation is required for abandoned-lock recovery');
+  }
+  const paths = statePaths(rootDir);
+  const guard = paths.lock + '.reclaim';
+  if (!fs.existsSync(guard)) return Object.freeze({ recovered: false, reason: 'no guard' });
+  const stat = fs.lstatSync(guard);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new StateEngineError('Abandoned lock guard is not a regular directory');
+  }
+  if (Date.now() - stat.mtimeMs < 60_000) {
+    throw new StateEngineError('Refusing to reclaim a recently active State Engine guard');
+  }
+  const marker = path.join(guard, 'owner.json');
+  if (fs.existsSync(marker)) {
+    const owner = JSON.parse(fs.readFileSync(marker, 'utf8'));
+    if (owner.hostname !== os.hostname() || !Number.isSafeInteger(owner.pid) || owner.pid <= 0) {
+      throw new StateEngineError('Cannot establish local guard ownership for offline recovery');
+    }
+    try {
+      process.kill(owner.pid, 0);
+      throw new StateEngineError('Refusing to remove a live State Engine recovery guard');
+    } catch (probe) {
+      if (probe.code !== 'ESRCH') throw probe;
+    }
+  }
+  if (fs.existsSync(paths.lock)) {
+    const lock = JSON.parse(fs.readFileSync(paths.lock, 'utf8'));
+    if (lock.hostname !== os.hostname() || !Number.isSafeInteger(lock.pid) || lock.pid <= 0) {
+      throw new StateEngineError('Offline guard recovery requires a provably local dead state lock');
+    }
+    try {
+      process.kill(lock.pid, 0);
+      throw new StateEngineError('Refusing to recover a guard while state lock owner is alive');
+    } catch (probe) {
+      if (probe.code !== 'ESRCH') throw probe;
+    }
+  }
+  if (fs.existsSync(marker)) fs.unlinkSync(marker);
+  fs.rmdirSync(guard);
+  return Object.freeze({ recovered: true, mode: 'confirmed-offline' });
+}
+
+function releaseStateLock(lock) {
+  if (!lock?.path) return;
+  try {
+    const current = JSON.parse(fs.readFileSync(lock.path, 'utf8'));
+    if (current?.owner !== lock.owner) {
+      throw new StateEngineError('State Engine lock ownership changed before release');
+    }
+    fs.unlinkSync(lock.path);
+  } catch (error) {
+    // A completed canonical append may already be durable. Never report
+    // unqualified success if its lock was not demonstrably released, and never
+    // silently authorize a blind retry that could duplicate committed work.
+    // Missing/replaced/corrupt locks and I/O failures require offline review.
+    throw new StateEngineError(
+      'State Engine lock release could not be verified; canonical commit may already be durable; offline recovery required',
+      { code: 'STATE_LOCK_RELEASE_FAILED', cause: error.code || error.message },
+    );
+  }
+}
+
+function schemaDocument() {
+  return Object.freeze({
+    schemaVersion: STATE_ENGINE_SCHEMA_VERSION,
+    authority: {
+      canonicalHistory: STATE_EVENTS_FILE,
+      materializedSnapshot: STATE_SNAPSHOT_FILE,
+      disposableIndex: STATE_INDEX_FILE,
+    },
+    contracts: {
+      event: STATE_EVENT_SCHEMA_VERSION,
+      snapshot: STATE_SNAPSHOT_SCHEMA_VERSION,
+      index: STATE_INDEX_SCHEMA_VERSION,
+    },
+    invariants: [
+      'events.jsonl is canonical runtime state history',
+      'snapshot.json is derived from events.jsonl',
+      'index.db is disposable and rebuildable',
+      'event sequence is monotonic',
+      'event hashes form a single integrity chain',
+    ],
+  });
+}
+
+/**
+ * Create an initial layout entry without ever replacing a concurrently
+ * published canonical file. Atomic rename of an empty bootstrap ledger is
+ * unsafe: an independent writer may commit between existsSync and rename.
+ * O_EXCL ('wx') makes the first creator win; an existing entry is never
+ * overwritten. Directory identity and durability checks match atomicWrite.
+ */
+function createInitialStateFile(filePath, content) {
+  const directory = path.dirname(filePath);
+  const dirFd = fs.openSync(directory, 'r');
+  let temporary = null;
+  let fd;
+  try {
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(directory);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed before exclusive initialization');
+    }
+    const root = path.dirname(path.dirname(directory));
+    assertStateRootRealpathSafe({ root, stateRoot: directory });
+    const pinnedDirectory = process.platform === 'linux' ? '/proc/self/fd/' + dirFd : directory;
+    const destination = path.join(pinnedDirectory, path.basename(filePath));
+
+    if (content === '') {
+      // An empty ledger is already a complete valid file at exclusive create.
+      // O_EXCL ensures a competing writer's committed ledger is never replaced.
+      try {
+        fd = fs.openSync(destination, 'wx', 0o600);
+      } catch (error) {
+        if (error.code === 'EEXIST') return false;
+        throw error;
+      }
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+      fd = undefined;
+    } else {
+      // Publishing a non-empty schema/snapshot/index with O_EXCL exposes an
+      // incomplete file to concurrent readers and leaves invalid state if the
+      // process dies before fsync. Prepare and fsync privately, then create
+      // the canonical name with an atomic, non-replacing same-directory link.
+      // No rename-overwrite is allowed; on unsupported filesystems fail closed.
+      temporary = path.join(pinnedDirectory,
+        path.basename(filePath) + '.tmp-' + process.pid + '-' + crypto.randomUUID());
+      fd = fs.openSync(temporary, 'wx', 0o600);
+      fs.writeFileSync(fd, content, 'utf8');
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+      fd = undefined;
+      const beforePublish = fs.lstatSync(directory);
+      if (!beforePublish.isDirectory() || beforePublish.isSymbolicLink() ||
+        beforePublish.dev !== pinned.dev || beforePublish.ino !== pinned.ino) {
+        throw new StateEngineError('State Engine directory changed before initial publication');
+      }
+      try {
+        fs.linkSync(temporary, destination);
+      } catch (error) {
+        if (error.code === 'EEXIST') return false;
+        throw error;
+      }
+      // Remove the staging name immediately, before any observer can treat
+      // a temporary second hard link as an enduring canonical-file hazard.
+      fs.unlinkSync(temporary);
+      temporary = null;
+    }
+    const latest = fs.lstatSync(directory);
+    if (!latest.isDirectory() || latest.isSymbolicLink() ||
+      latest.dev !== pinned.dev || latest.ino !== pinned.ino) {
+      throw new StateEngineError('State Engine directory changed during exclusive initialization');
+    }
+    flushStateDirectory(directory, dirFd);
+    return true;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+    if (temporary !== null) {
+      try { fs.unlinkSync(temporary); } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+    }
+    fs.closeSync(dirFd);
+  }
+}
+
+/**
+ * The canonical ledger must never be reinitialized after a committed history
+ * has left a snapshot or index witness. An interrupted first initializer may
+ * have only its schema; published derived state always follows ledger creation.
+ * Loss of the ledger without a pending journal is still a recovery fault.
+ */
+function assertMissingCanonicalLedgerHasNoStateWitness(paths) {
+  if (fs.existsSync(paths.pending)) {
+    throw new StateEngineError(
+      'State Engine events.jsonl is missing while pending-commit.json is present; state integrity compromised',
+    );
+  }
+  if (fs.existsSync(paths.snapshot) || fs.existsSync(paths.index)) {
+    throw new StateEngineError(
+      'State Engine canonical events.jsonl is missing while snapshot/index history witness remains; offline recovery required',
+      { code: 'STATE_CANONICAL_LEDGER_MISSING' },
+    );
+  }
+}
+
+export function ensureStateEngineLayout(rootDir = process.cwd()) {
+  const paths = statePaths(rootDir);
+  fs.mkdirSync(paths.stateRoot, { recursive: true });
+  assertStateRootRealpathSafe(paths);
+
+  const expectedSchema = stablePretty(schemaDocument());
+  if (!fs.existsSync(paths.schema)) createInitialStateFile(paths.schema, expectedSchema);
+  if (fs.readFileSync(paths.schema, 'utf8') !== expectedSchema) {
+    throw new StateEngineError('State Engine schema.json does not match the runtime schema contract');
+  }
+
+  if (!fs.existsSync(paths.events)) {
+    assertMissingCanonicalLedgerHasNoStateWitness(paths);
+    createInitialStateFile(paths.events, '');
+  }
+  if (!fs.existsSync(paths.snapshot)) {
+    createInitialStateFile(paths.snapshot, stablePretty(emptySnapshot()));
+  }
+  if (!fs.existsSync(paths.index)) {
+    createInitialStateFile(paths.index, stablePretty(buildStateIndex(emptySnapshot())));
+  }
+  assertStateFilesNotLinks(paths);
+  return paths;
+}
+
+export function isStateEngineV2Active(rootDir = process.cwd()) {
+  const paths = statePaths(rootDir);
+  if (!fs.existsSync(paths.stateRoot)) return false;
+
+  const schemaExists = fs.existsSync(paths.schema);
+  const eventsExist = fs.existsSync(paths.events);
+  if (!schemaExists && !eventsExist) return false;
+  if (!schemaExists || !eventsExist) {
+    throw new StateEngineError('State Engine V2 layout is incomplete');
+  }
+
+  const expectedSchema = stablePretty(schemaDocument());
+  const actualSchema = fs.readFileSync(paths.schema, 'utf8');
+  if (actualSchema !== expectedSchema) {
+    throw new StateEngineError('State Engine schema.json does not match the runtime schema contract');
+  }
+  return true;
+}
+
+function emptySnapshot() {
+  return {
+    schemaVersion: STATE_SNAPSHOT_SCHEMA_VERSION,
+    engineSchemaVersion: STATE_ENGINE_SCHEMA_VERSION,
+    lastEventSequence: 0,
+    lastEventHash: null,
+    entities: {},
+    migrations: [],
+  };
+}
+
+function eventHashPayload(event) {
+  const { eventHash, ...payload } = event;
+  return payload;
+}
+
+function computeEventId(base) {
+  const digest = crypto.createHash('sha256').update(stableJson(base)).digest('hex').slice(0, 20);
+  return `evt-${String(base.sequence).padStart(10, '0')}-${digest}`;
+}
+
+function computeEventHash(event) {
+  return sha256(stableJson(eventHashPayload(event)));
+}
+
+export function validateStateEvent(event, previous = null) {
+  if (!plainObject(event)) throw new StateEngineError('State event must be an object');
+  if (event.schemaVersion !== STATE_EVENT_SCHEMA_VERSION) {
+    throw new StateEngineError(`Unsupported event schemaVersion: ${event.schemaVersion}`);
+  }
+  if (!Number.isInteger(event.sequence) || event.sequence < 1) throw new StateEngineError('Event sequence must be a positive integer');
+  if (typeof event.eventId !== 'string' || !/^evt-\d{10}-[a-f0-9]{20}$/.test(event.eventId)) {
+    throw new StateEngineError('Event eventId is invalid');
+  }
+  timestamp(event.timestamp, 'event.timestamp');
+  requireText(event.actorClass, 'event.actorClass');
+  eventType(event.eventType);
+
+  if (event.entityType !== null) entityType(event.entityType);
+  if (event.entityId !== null) entityId(event.entityId);
+  for (const field of ['lifecycleId', 'taskId', 'contractId', 'runId']) optionalText(event[field], field);
+  if (!plainObject(event.payload)) throw new StateEngineError('Event payload must be an object');
+
+  if (previous === null) {
+    if (event.sequence !== 1) throw new StateEngineError('First state event sequence must be 1');
+    if (event.previousEventHash !== null) throw new StateEngineError('First state event previousEventHash must be null');
+  } else {
+    if (event.sequence !== previous.sequence + 1) throw new StateEngineError('Event sequence is not contiguous');
+    if (event.previousEventHash !== previous.eventHash) throw new StateEngineError('Event previousEventHash does not match chain');
+  }
+
+  if (typeof event.eventHash !== 'string' || !SHA256_PATTERN.test(event.eventHash)) {
+    throw new StateEngineError('Event eventHash is invalid');
+  }
+  if (event.eventHash !== computeEventHash(event)) {
+    throw new StateEngineError(`Event hash mismatch at sequence ${event.sequence}`);
+  }
+
+  const base = { ...eventHashPayload(event) };
+  delete base.eventId;
+  if (event.eventId !== computeEventId(base)) {
+    throw new StateEngineError(`Event ID mismatch at sequence ${event.sequence}`);
+  }
+
+  return true;
+}
+
+function parseLedger(content) {
+  if (!content) return [];
+  const lines = content.split(/\r?\n/);
+  if (lines.at(-1) === '') lines.pop();
+  const events = [];
+  let previous = null;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!lines[i].trim()) throw new StateEngineError(`Canonical state ledger contains a blank record at line ${i + 1}`);
+    let event;
+    try {
+      event = JSON.parse(lines[i]);
+    } catch (error) {
+      throw new StateEngineError(`Canonical state ledger JSON is invalid at line ${i + 1}: ${error.message}`);
+    }
+    validateStateEvent(event, previous);
+    events.push(event);
+    previous = event;
+  }
+  return events;
+}
+
+function acknowledgedSnapshotWitness(paths) {
+  let raw;
+  try {
+    raw = fs.readFileSync(paths.snapshot, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    // Unreadable materialized evidence may witness an acknowledged later
+    // event. Never treat permission/I/O failure as an absent disposable view
+    // and truncate the canonical ledger without inspecting that witness.
+    throw new StateEngineError(
+      'Cannot inspect materialized snapshot witness before ledger tail repair: ' +
+        (error.code || error.message),
+    );
+  }
+  try {
+    const snapshot = JSON.parse(raw);
+    validateStateSnapshot(snapshot);
+    return snapshot;
+  } catch {
+    // Malformed derived JSON/schema is disposable; filesystem read errors
+    // above are not and must retain the original torn canonical evidence.
+    return null;
+  }
+}
+
+/**
+ * A derived snapshot or index is disposable only when it does not witness a
+ * later or different acknowledged canonical history. Compare against the
+ * ledger prefix BEFORE creating a new pending journal or rewriting derived
+ * files; otherwise a valid truncated prefix could be silently re-acknowledged.
+ * Read failures are not evidence of absence. Malformed derived JSON remains
+ * rebuildable, as it cannot establish a trustworthy history witness.
+ */
+function assertDerivedHistoryWitnesses(paths, canonicalEvents, fields = ['snapshot', 'index']) {
+  if (!Array.isArray(canonicalEvents)) {
+    throw new StateEngineError('Canonical events are required for source-bound derived witness validation');
+  }
+  for (const field of fields) {
+    let bytes;
+    try {
+      bytes = fs.readFileSync(paths[field], 'utf8');
+    } catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw new StateEngineError(
+        'Cannot inspect acknowledged ' + field + ' witness before canonical mutation: ' +
+          (error.code || error.message),
+        { code: 'STATE_DERIVED_WITNESS_READ_FAILED', field, cause: error.code || error.message },
+      );
+    }
+    let witness;
+    try {
+      witness = JSON.parse(bytes);
+      if (field === 'snapshot') validateStateSnapshot(witness);
+      else validateStateIndex(witness);
+    } catch {
+      // Malformed derived JSON/schema is rebuildable; unreadable evidence is not.
+      continue;
+    }
+    const sequence = field === 'snapshot' ? witness.lastEventSequence : witness.sourceSequence;
+    const hash = field === 'snapshot' ? witness.lastEventHash : witness.sourceHash;
+    if (sequence > canonicalEvents.length) {
+      throw new StateEngineError(
+        'Canonical state history appears truncated relative to the materialized ' + field + ' witness',
+        { code: 'STATE_CANONICAL_HISTORY_REGRESSION', field,
+          canonicalSequence: canonicalEvents.length, witnessedSequence: sequence },
+      );
+    }
+    // A witness may be older than the proposed ledger after a legitimate
+    // append, but only when it agrees with the hash at its OWN sequence.
+    // Comparing only the proposed final hash would miss a conflicting event
+    // followed by later valid events (T04-H66).
+    const prefixHash = sequence === 0 ? null : canonicalEvents[sequence - 1].eventHash;
+    if (hash !== prefixHash) {
+      throw new StateEngineError(
+        'Canonical state history hash differs from the materialized ' + field + ' integrity witness',
+        { code: 'STATE_CANONICAL_HISTORY_HASH_CONFLICT', field,
+          witnessedSequence: sequence, witnessedHash: hash, canonicalPrefixHash: prefixHash },
+      );
+    }
+  }
+}
+
+function repairUnwitnessedTrailingLedgerSuffixLocked(rootDir) {
+  const paths = ensureStateEngineLayout(rootDir);
+  if (fs.existsSync(paths.pending)) {
+    // withStateLock() recovers a valid pending commit before invoking this
+    // function. Seeing one here means recovery did not safely resolve it.
+    throw new StateEngineError('Pending commit remains unresolved during trailing-ledger recovery');
+  }
+
+  // Record the canonical inode before reading repair input. A path swapped
+  // after layout preflight must never become the target of truncation/append.
+  const initialEntry = fs.lstatSync(paths.events, { bigint: true });
+  if (!initialEntry.isFile() || initialEntry.isSymbolicLink() || initialEntry.nlink !== 1n) {
+    throw new StateEngineError('Canonical ledger tail repair requires a single-link regular file');
+  }
+  // Preserve the exact on-disk bytes. Decoding an incomplete multibyte
+  // trailing character inserts U+FFFD; re-encoding that string must never be
+  // used as the descriptor witness or to decide that raw bytes changed.
+  const expectedBytes = fs.readFileSync(paths.events);
+  const content = expectedBytes.toString('utf8');
+
+  function verifyCanonicalTailRepairFd(fd) {
+    const opened = fs.fstatSync(fd, { bigint: true });
+    const entry = fs.lstatSync(paths.events, { bigint: true });
+    if (!opened.isFile() || !entry.isFile() || entry.isSymbolicLink() ||
+      opened.nlink !== 1n || entry.nlink !== 1n ||
+      opened.dev !== entry.dev || opened.ino !== entry.ino ||
+      opened.dev !== initialEntry.dev || opened.ino !== initialEntry.ino) {
+      throw new StateEngineError('Canonical ledger tail repair descriptor identity or hard-link integrity failed');
+    }
+    return opened;
+  }
+
+  function openVerifiedCanonicalTailRepairFd() {
+    const flags = fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW ?? 0);
+    const fd = fs.openSync(paths.events, flags);
+    try {
+      const opened = verifyCanonicalTailRepairFd(fd);
+      if (opened.size !== BigInt(expectedBytes.length)) {
+        throw new StateEngineError('Canonical ledger tail repair bytes changed before descriptor open');
+      }
+      const observed = Buffer.alloc(expectedBytes.length);
+      let offset = 0;
+      while (offset < observed.length) {
+        const count = fs.readSync(fd, observed, offset, observed.length - offset, offset);
+        if (count <= 0) {
+          throw new StateEngineError('Canonical ledger tail repair descriptor read was incomplete');
+        }
+        offset += count;
+      }
+      if (!observed.equals(expectedBytes)) {
+        throw new StateEngineError('Canonical ledger tail repair descriptor contents changed before mutation');
+      }
+      return fd;
+    } catch (error) {
+      fs.closeSync(fd);
+      throw error;
+    }
+  }
+  if (!content || content.endsWith('\n')) return parseLedger(content);
+
+  const boundary = content.lastIndexOf('\n');
+  const prefixContent = boundary === -1 ? '' : content.slice(0, boundary + 1);
+  const tail = content.slice(boundary + 1);
+  const prefixEvents = parseLedger(prefixContent);
+  const previous = prefixEvents.at(-1) ?? null;
+
+  // Only a JSON syntax error can authorize torn-suffix truncation. A
+  // successfully parsed event must either validate and complete its newline,
+  // or fail closed on any write, fsync, descriptor or integrity error.
+  // Never classify ENOSPC/EIO during newline completion as malformed JSON:
+  // doing so could truncate an otherwise valid canonical event.
+  let parsedTail;
+  let completeJson = false;
+  try {
+    parsedTail = JSON.parse(tail);
+    completeJson = true;
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+  }
+  if (completeJson) {
+    validateStateEvent(parsedTail, previous);
+    const fd = openVerifiedCanonicalTailRepairFd();
+    try {
+      const stat = fs.fstatSync(fd);
+      if (!stat.isFile()) throw new StateEngineError('Canonical ledger repair target is not a regular file');
+      fs.writeSync(fd, Buffer.from([0x0a]), 0, 1, Buffer.byteLength(content, 'utf8'));
+      fs.fsyncSync(fd);
+      verifyCanonicalTailRepairFd(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    return [...prefixEvents, parsedTail];
+  }
+
+  // The final suffix is not valid JSON. It may be repaired only when no
+  // already-acknowledged snapshot claims a later canonical event. This keeps
+  // a missing Windows pending-journal directory entry from making a torn
+  // unacknowledged append unrecoverable, while preventing rollback of
+  // previously materialized history.
+  const witness = acknowledgedSnapshotWitness(paths);
+  if (witness && witness.lastEventSequence > prefixEvents.length) {
+    throw new StateEngineError(
+      'Refusing to truncate trailing canonical bytes witnessed by the materialized snapshot',
+      {
+        code: 'ACKNOWLEDGED_LEDGER_TAIL_CORRUPT',
+        snapshotSequence: witness.lastEventSequence,
+        recoverablePrefixSequence: prefixEvents.length,
+      },
+    );
+  }
+  if (witness && witness.lastEventSequence === prefixEvents.length) {
+    const prefixHash = prefixEvents.at(-1)?.eventHash ?? null;
+    if (witness.lastEventHash !== prefixHash) {
+      throw new StateEngineError('Materialized snapshot hash disagrees with recoverable canonical prefix');
+    }
+  }
+  if (witness && witness.lastEventSequence < prefixEvents.length) {
+    const witnessedHash = witness.lastEventSequence === 0
+      ? null : prefixEvents[witness.lastEventSequence - 1].eventHash;
+    if (witness.lastEventHash !== witnessedHash) {
+      throw new StateEngineError('Materialized snapshot hash disagrees with its recoverable canonical prefix');
+    }
+  }
+
+  // An index can be the sole surviving acknowledged-history witness when the
+  // snapshot is absent or malformed. It must also block destructive truncation.
+  assertDerivedHistoryWitnesses(paths, prefixEvents, ['index']);
+  const fd = openVerifiedCanonicalTailRepairFd();
+  try {
+    fs.ftruncateSync(fd, Buffer.byteLength(prefixContent, 'utf8'));
+    fs.fsyncSync(fd);
+    verifyCanonicalTailRepairFd(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  return prefixEvents;
+}
+
+export function loadCanonicalEvents(rootDir = process.cwd()) {
+  const paths = statePaths(rootDir);
+  if (!fs.existsSync(paths.events)) {
+    assertMissingCanonicalLedgerHasNoStateWitness(paths);
+    return [];
+  }
+  if (fs.existsSync(paths.pending)) {
+    return withStateLock(rootDir, () => parseLedger(fs.readFileSync(paths.events, 'utf8')));
+  }
+
+  const content = fs.readFileSync(paths.events, 'utf8');
+  if (fs.existsSync(paths.pending)) {
+    return withStateLock(rootDir, () => parseLedger(fs.readFileSync(paths.events, 'utf8')));
+  }
+  if (!content || content.endsWith('\n')) return parseLedger(content);
+
+  // Only a non-terminated final record is eligible for automatic tail
+  // recovery. Mid-ledger corruption and hash-chain failures remain fail-closed.
+  return withStateLock(rootDir, () => repairUnwitnessedTrailingLedgerSuffixLocked(rootDir));
+}
+
+function normalizePathSegments(value) {
+  if (!Array.isArray(value) || value.some((segment) => typeof segment !== 'string')) {
+    throw new StateEngineError('Patch operation path must be a string array');
+  }
+  return value;
+}
+
+function cloneSerializable(value, label) {
+  try {
+    const cloned = structuredClone(value);
+    const encoded = JSON.stringify(cloned);
+    // JSON.stringify silently discards Map/Set contents and undefined object
+    // fields, and rewrites Date/non-finite numbers. A successful stringify
+    // alone cannot establish that an acknowledged event is replayable without
+    // semantic data loss. Reject before publishing any canonical bytes.
+    if (typeof encoded !== 'string' || !isDeepStrictEqual(cloned, JSON.parse(encoded))) {
+      throw new StateEngineError(`${label} must be lossless JSON-serializable data`);
+    }
+    return cloned;
+  } catch {
+    throw new StateEngineError(`${label} must be lossless JSON-serializable data`);
+  }
+}
+
+function diffValues(before, after, pathSegments = []) {
+  if (stableJson(before) === stableJson(after)) return [];
+
+  if (plainObject(before) && plainObject(after)) {
+    const operations = [];
+    const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort();
+    for (const key of keys) {
+      const childPath = [...pathSegments, key];
+      if (!Object.hasOwn(after, key)) {
+        operations.push({ op: 'delete', path: childPath });
+      } else if (!Object.hasOwn(before, key)) {
+        operations.push({ op: 'set', path: childPath, value: cloneSerializable(after[key], 'Patch value') });
+      } else {
+        operations.push(...diffValues(before[key], after[key], childPath));
+      }
+    }
+    return operations;
+  }
+
+  return [{ op: 'set', path: pathSegments, value: cloneSerializable(after, 'Patch value') }];
+}
+
+function defineOwnPatchValue(target, key, value) {
+  // Literal JSON keys such as "__proto__" must remain own data properties.
+  // Assignment can invoke inherited setters and mutate a process prototype.
+  Object.defineProperty(target, key, {
+    value, enumerable: true, writable: true, configurable: true,
+  });
+}
+
+function setAtPath(target, segments, value) {
+  if (segments.length === 0) return cloneSerializable(value, 'Patch root value');
+  let cursor = target;
+  for (let i = 0; i < segments.length - 1; i += 1) {
+    const key = segments[i];
+    if (!Object.hasOwn(cursor, key) || !plainObject(cursor[key])) {
+      defineOwnPatchValue(cursor, key, {});
+    }
+    cursor = cursor[key];
+  }
+  defineOwnPatchValue(cursor, segments.at(-1), cloneSerializable(value, 'Patch value'));
+  return target;
+}
+
+function deleteAtPath(target, segments) {
+  if (segments.length === 0) throw new StateEngineError('Cannot delete the entity-state root');
+  let cursor = target;
+  for (let i = 0; i < segments.length - 1; i += 1) {
+    const key = segments[i];
+    if (!Object.hasOwn(cursor, key) || !plainObject(cursor[key])) return target;
+    cursor = cursor[key];
+  }
+  if (Object.hasOwn(cursor, segments.at(-1))) delete cursor[segments.at(-1)];
+  return target;
+}
+
+function applyOperations(previousState, operations) {
+  if (!Array.isArray(operations)) throw new StateEngineError('State event operations must be an array');
+  let next = cloneSerializable(previousState, 'Previous state');
+  for (const operation of operations) {
+    if (!plainObject(operation)) throw new StateEngineError('Patch operation must be an object');
+    const segments = normalizePathSegments(operation.path);
+    if (operation.op === 'set') {
+      next = setAtPath(next, segments, operation.value);
+    } else if (operation.op === 'delete') {
+      next = deleteAtPath(next, segments);
+    } else {
+      throw new StateEngineError(`Unsupported patch operation: ${operation.op}`);
+    }
+  }
+  return next;
+}
+
+function ownValue(object, key) {
+  return object !== null && object !== undefined && Object.hasOwn(object, key)
+    ? object[key] : undefined;
+}
+
+function ensureEntityBucket(snapshot, type) {
+  if (!Object.hasOwn(snapshot.entities, type)) defineOwnPatchValue(snapshot.entities, type, {});
+  return snapshot.entities[type];
+}
+
+export function rebuildSnapshotFromEvents(events) {
+  if (!Array.isArray(events)) throw new StateEngineError('events must be an array');
+  const snapshot = emptySnapshot();
+  let previous = null;
+
+  for (const event of events) {
+    validateStateEvent(event, previous);
+
+    if (event.eventType === 'ENTITY_STATE_INITIALIZED') {
+      if (event.entityType === null || event.entityId === null) throw new StateEngineError('State initialization event requires entity identity');
+      const bucket = ensureEntityBucket(snapshot, event.entityType);
+      if (Object.hasOwn(bucket, event.entityId)) throw new StateEngineError(`Entity is initialized more than once: ${event.entityType}/${event.entityId}`);
+      const state = cloneSerializable(event.payload.state, 'Initialized state');
+      const revision = stateRevision(event.payload.stateRevision);
+      defineOwnPatchValue(bucket, event.entityId, {
+        stateRevision: revision,
+        state,
+        lastEventSequence: event.sequence,
+        lastEventHash: event.eventHash,
+        refs: {
+          lifecycleId: event.lifecycleId,
+          taskId: event.taskId,
+          contractId: event.contractId,
+          runId: event.runId,
+        },
+      });
+    } else if (event.eventType === 'ENTITY_STATE_UPDATED') {
+      if (event.entityType === null || event.entityId === null) throw new StateEngineError('State update event requires entity identity');
+      const bucket = ensureEntityBucket(snapshot, event.entityType);
+      const current = ownValue(bucket, event.entityId);
+      if (!current) throw new StateEngineError(`State update references unknown entity: ${event.entityType}/${event.entityId}`);
+      const revision = stateRevision(event.payload.stateRevision);
+      if (revision < current.stateRevision) {
+        throw new StateEngineError(`Entity stateRevision regressed for ${event.entityType}/${event.entityId}`);
+      }
+      current.state = applyOperations(current.state, event.payload.operations);
+      current.stateRevision = revision;
+      current.lastEventSequence = event.sequence;
+      current.lastEventHash = event.eventHash;
+      current.refs = {
+        lifecycleId: event.lifecycleId ?? current.refs.lifecycleId,
+        taskId: event.taskId ?? current.refs.taskId,
+        contractId: event.contractId ?? current.refs.contractId,
+        runId: event.runId ?? current.refs.runId,
+      };
+    } else if (event.eventType === 'MIGRATION_COMPLETED') {
+      const migrationId = requireText(event.payload.migrationId, 'migrationId');
+      const sourceFingerprint = requireText(event.payload.sourceFingerprint, 'sourceFingerprint');
+      if (!SHA256_PATTERN.test(sourceFingerprint)) throw new StateEngineError('Migration sourceFingerprint is invalid');
+      if (!snapshot.migrations.some((migration) => migration.migrationId === migrationId)) {
+        snapshot.migrations.push({
+          migrationId,
+          sourceFingerprint,
+          completedAt: event.timestamp,
+          entityCount: Number(event.payload.entityCount ?? 0),
+          semanticEquivalence: event.payload.semanticEquivalence === true,
+        });
+      }
+    }
+
+    snapshot.lastEventSequence = event.sequence;
+    snapshot.lastEventHash = event.eventHash;
+    previous = event;
+  }
+
+  snapshot.migrations.sort((a, b) => a.migrationId.localeCompare(b.migrationId));
+  return snapshot;
+}
+
+export function validateStateSnapshot(snapshot) {
+  if (!plainObject(snapshot)) throw new StateEngineError('State snapshot must be an object');
+  if (snapshot.schemaVersion !== STATE_SNAPSHOT_SCHEMA_VERSION) throw new StateEngineError('Unsupported snapshot schemaVersion');
+  if (snapshot.engineSchemaVersion !== STATE_ENGINE_SCHEMA_VERSION) throw new StateEngineError('Snapshot engine schema mismatch');
+  if (!Number.isInteger(snapshot.lastEventSequence) || snapshot.lastEventSequence < 0) throw new StateEngineError('Snapshot lastEventSequence is invalid');
+  if (snapshot.lastEventHash !== null && !SHA256_PATTERN.test(snapshot.lastEventHash)) throw new StateEngineError('Snapshot lastEventHash is invalid');
+  if (!plainObject(snapshot.entities)) throw new StateEngineError('Snapshot entities must be an object');
+  if (!Array.isArray(snapshot.migrations)) throw new StateEngineError('Snapshot migrations must be an array');
+
+  for (const [type, bucket] of Object.entries(snapshot.entities)) {
+    entityType(type);
+    if (!plainObject(bucket)) throw new StateEngineError(`Snapshot entity bucket is invalid: ${type}`);
+    for (const [id, record] of Object.entries(bucket)) {
+      entityId(id);
+      if (!plainObject(record)) throw new StateEngineError('Snapshot entity record must be an object');
+      stateRevision(record.stateRevision);
+      if (!Number.isInteger(record.lastEventSequence) || record.lastEventSequence < 1) throw new StateEngineError('Entity lastEventSequence is invalid');
+      if (!SHA256_PATTERN.test(record.lastEventHash)) throw new StateEngineError('Entity lastEventHash is invalid');
+      cloneSerializable(record.state, 'Entity state');
+    }
+  }
+  return true;
+}
+
+function indexArrayPush(map, key, value) {
+  if (!key) return;
+  if (!Object.hasOwn(map, key)) defineOwnPatchValue(map, key, []);
+  if (!map[key].includes(value)) map[key].push(value);
+}
+
+export function buildStateIndex(snapshot) {
+  validateStateSnapshot(snapshot);
+  const records = [];
+  const byContract = {};
+  const byTask = {};
+  const byRun = {};
+  const byLifecycle = {};
+
+  for (const [type, bucket] of Object.entries(snapshot.entities).sort(([a], [b]) => a.localeCompare(b))) {
+    for (const [id, record] of Object.entries(bucket).sort(([a], [b]) => a.localeCompare(b))) {
+      // Encode the tuple rather than concatenating: both identity fields may contain '::'.
+      // This disposable index must never let a filter match another entity's record.
+      const key = JSON.stringify([type, id]);
+      records.push({
+        key,
+        entityType: type,
+        entityId: id,
+        stateRevision: record.stateRevision,
+        lastEventSequence: record.lastEventSequence,
+        lastEventHash: record.lastEventHash,
+      });
+      indexArrayPush(byContract, record.refs?.contractId, key);
+      indexArrayPush(byTask, record.refs?.taskId, key);
+      indexArrayPush(byRun, record.refs?.runId, key);
+      indexArrayPush(byLifecycle, record.refs?.lifecycleId, key);
+    }
+  }
+
+  for (const map of [byContract, byTask, byRun, byLifecycle]) {
+    for (const values of Object.values(map)) values.sort();
+  }
+
+  return {
+    schemaVersion: STATE_INDEX_SCHEMA_VERSION,
+    sourceSequence: snapshot.lastEventSequence,
+    sourceHash: snapshot.lastEventHash,
+    recordCount: records.length,
+    records,
+    byContract,
+    byTask,
+    byRun,
+    byLifecycle,
+  };
+}
+
+export function validateStateIndex(index, snapshot = null) {
+  if (!plainObject(index)) throw new StateEngineError('State index must be an object');
+  if (index.schemaVersion !== STATE_INDEX_SCHEMA_VERSION) throw new StateEngineError('Unsupported index schemaVersion');
+  if (!Number.isInteger(index.sourceSequence) || index.sourceSequence < 0) throw new StateEngineError('Index sourceSequence is invalid');
+  if (index.sourceHash !== null && !SHA256_PATTERN.test(index.sourceHash)) throw new StateEngineError('Index sourceHash is invalid');
+  if (!Array.isArray(index.records)) throw new StateEngineError('Index records must be an array');
+  if (index.recordCount !== index.records.length) throw new StateEngineError('Index recordCount mismatch');
+  for (const field of ['byContract', 'byTask', 'byRun', 'byLifecycle']) {
+    if (!plainObject(index[field])) throw new StateEngineError(`Index ${field} must be an object`);
+  }
+  if (snapshot) {
+    validateStateSnapshot(snapshot);
+    if (index.sourceSequence !== snapshot.lastEventSequence || index.sourceHash !== snapshot.lastEventHash) {
+      throw new StateEngineError('State index is stale relative to snapshot');
+    }
+  }
+  return true;
+}
+
+function persistDerived(snapshot, rootDir, pinnedDirFd = null) {
+  validateStateSnapshot(snapshot);
+  const paths = pinnedDirFd ? statePaths(rootDir) : ensureStateEngineLayout(rootDir);
+  const index = buildStateIndex(snapshot);
+  atomicWrite(paths.snapshot, stablePretty(snapshot), pinnedDirFd);
+  atomicWrite(paths.index, stablePretty(index), pinnedDirFd);
+  return { snapshot, index };
+}
+
+function repairDerivedLocked(rootDir) {
+  // Snapshot repair replays the *current* ledger under the writer lock, never a
+  // stale cached history from before another writer committed a later event.
+  const paths = ensureStateEngineLayout(rootDir);
+  const canonicalEvents = parseLedger(fs.readFileSync(paths.events, 'utf8'));
+  const canonical = rebuildSnapshotFromEvents(canonicalEvents);
+  assertDerivedHistoryWitnesses(paths, canonicalEvents);
+  persistDerived(canonical, rootDir);
+  return canonical;
+}
+
+export function rebuildStateSnapshot(rootDir = process.cwd()) {
+  return withStateLock(rootDir, () => repairDerivedLocked(rootDir));
+}
+
+export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = true } = {}) {
+  const paths = statePaths(rootDir);
+  if (!fs.existsSync(paths.events)) {
+    assertMissingCanonicalLedgerHasNoStateWitness(paths);
+    return null;
+  }
+  const canonical = rebuildSnapshotFromEvents(loadCanonicalEvents(rootDir));
+
+  if (!fs.existsSync(paths.snapshot)) {
+    if (!rebuildIfNeeded) return null;
+    return withStateLock(rootDir, () => repairDerivedLocked(rootDir));
+  }
+
+  let current;
+  try {
+    current = JSON.parse(fs.readFileSync(paths.snapshot, 'utf8'));
+    validateStateSnapshot(current);
+  } catch (error) {
+    if (!rebuildIfNeeded) throw error;
+    return withStateLock(rootDir, () => repairDerivedLocked(rootDir));
+  }
+
+  if (current.lastEventSequence > canonical.lastEventSequence) {
+    // A legitimate writer can advance the snapshot between a reader's ledger
+    // and snapshot reads. Check the latest canonical history before declaring
+    // truncation, without silencing a genuine witnessed history regression.
+    if (rebuildIfNeeded) {
+      const refreshed = rebuildSnapshotFromEvents(loadCanonicalEvents(rootDir));
+      if (refreshed.lastEventSequence > current.lastEventSequence
+        || (refreshed.lastEventSequence === current.lastEventSequence
+          && refreshed.lastEventHash === current.lastEventHash)) {
+        return refreshed;
+      }
+    }
+    throw new StateEngineError(
+      'Canonical state history appears truncated relative to the materialized snapshot',
+      {
+        snapshotSequence: current.lastEventSequence,
+        canonicalSequence: canonical.lastEventSequence,
+        snapshotHash: current.lastEventHash,
+        canonicalHash: canonical.lastEventHash,
+      },
+    );
+  }
+  if (current.lastEventSequence === canonical.lastEventSequence
+    && current.lastEventHash !== canonical.lastEventHash) {
+    throw new StateEngineError(
+      'Canonical state history hash differs from the materialized snapshot integrity witness',
+      {
+        sequence: current.lastEventSequence,
+        snapshotHash: current.lastEventHash,
+        canonicalHash: canonical.lastEventHash,
+      },
+    );
+  }
+  if (stableJson(current) !== stableJson(canonical)) {
+    if (!rebuildIfNeeded) throw new StateEngineError('Materialized snapshot does not match canonical history');
+    return withStateLock(rootDir, () => repairDerivedLocked(rootDir));
+  }
+  return current;
+}
+
+export function rebuildStateIndex(rootDir = process.cwd()) {
+  return withStateLock(rootDir, () => {
+    const paths = ensureStateEngineLayout(rootDir);
+    // A reader-triggered rebuild is still a filesystem mutation. Preserve an
+    // existing index's acknowledged-history witness before replacing it.
+    const canonicalEvents = loadCanonicalEvents(rootDir);
+    assertDerivedHistoryWitnesses(paths, canonicalEvents);
+    const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
+    const index = buildStateIndex(snapshot);
+    atomicWrite(paths.index, stablePretty(index));
+    return index;
+  });
+}
+
+export function loadStateIndex(rootDir = process.cwd(), { rebuildIfNeeded = true } = {}) {
+  const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
+  const paths = statePaths(rootDir);
+  if (!fs.existsSync(paths.index)) {
+    return rebuildIfNeeded ? rebuildStateIndex(rootDir) : null;
+  }
+  try {
+    const index = JSON.parse(fs.readFileSync(paths.index, 'utf8'));
+    validateStateIndex(index, snapshot);
+    // A matching sequence/hash only proves source freshness, not that the
+    // disposable reference maps were built with the current collision-free
+    // identity encoding. Reject stale or corrupted maps before any query.
+    if (stableJson(index) !== stableJson(buildStateIndex(snapshot))) {
+      throw new StateEngineError('State index is not semantically equivalent to canonical snapshot');
+    }
+    return index;
+  } catch (error) {
+    if (!rebuildIfNeeded) throw error;
+    return rebuildStateIndex(rootDir);
+  }
+}
+
+function buildEvent({
+  sequence,
+  previousEventHash,
+  timestamp: at,
+  actorClass,
+  type,
+  id: entityIdentifier = null,
+  entity: entityKind = null,
+  refs = {},
+  payload,
+}) {
+  const base = {
+    schemaVersion: STATE_EVENT_SCHEMA_VERSION,
+    sequence,
+    timestamp: timestamp(at, 'event timestamp'),
+    actorClass: requireText(actorClass, 'actorClass'),
+    eventType: eventType(type),
+    entityType: entityKind === null ? null : entityType(entityKind),
+    entityId: entityIdentifier === null ? null : entityId(entityIdentifier),
+    lifecycleId: optionalText(refs.lifecycleId, 'lifecycleId'),
+    taskId: optionalText(refs.taskId, 'taskId'),
+    contractId: optionalText(refs.contractId, 'contractId'),
+    runId: optionalText(refs.runId, 'runId'),
+    payload: cloneSerializable(payload, 'Event payload'),
+    previousEventHash: previousEventHash ?? null,
+  };
+  const eventId = computeEventId(base);
+  const event = {
+    ...base,
+    eventId,
+  };
+  event.eventHash = computeEventHash(event);
+  return event;
+}
+
+function appendDurably(filePath, appendedText, expectedIdentity = null, pinnedDirFd = null, heldLedgerFd = null) {
+  const directory = path.dirname(filePath);
+  const file = path.basename(filePath);
+  const ownsDirFd = !pinnedDirFd;
+  const dirFd = pinnedDirFd ?? fs.openSync(directory, 'r');
+  try {
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(directory);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed before durable append');
+    }
+    const rootDir = path.dirname(path.dirname(directory));
+    assertStateRootRealpathSafe({ root: rootDir, stateRoot: directory });
+    const target = process.platform === 'linux' ? path.join('/proc/self/fd/' + dirFd, file) : filePath;
+    // O_NOFOLLOW rejects a final-component symlink on supported POSIX hosts.
+    // On Windows, verify the opened inode and current directory entry before
+    // writing because path-only preflight cannot prevent a replacement race.
+    const flags = fs.constants.O_WRONLY | fs.constants.O_APPEND | (fs.constants.O_NOFOLLOW ?? 0);
+    const fd = fs.openSync(target, flags);
+    try {
+      const stat = fs.fstatSync(fd);
+      const entry = fs.lstatSync(target);
+      if (!stat.isFile() || stat.nlink !== 1 || entry.isSymbolicLink() ||
+        !entry.isFile() || entry.nlink !== 1 ||
+        entry.dev !== stat.dev || entry.ino !== stat.ino) {
+        throw new StateEngineError('Canonical event file symlink/inode mismatch or multiple hard links');
+      }
+      if (heldLedgerFd !== null) {
+        const heldStat = fs.fstatSync(heldLedgerFd);
+        if (heldStat.dev !== stat.dev || heldStat.ino !== stat.ino) {
+          throw new StateEngineError('Canonical ledger inode changed while holding preparation descriptor');
+        }
+      }
+      if (expectedIdentity && (stat.dev !== expectedIdentity.dev ||
+        stat.ino !== expectedIdentity.ino || stat.size !== expectedIdentity.size)) {
+        throw new StateEngineError('Canonical event inode changed between event preparation and append');
+      }
+      // Recheck directory immediately before write on platforms without descriptor-relative paths
+      const latest = fs.lstatSync(directory);
+      if (!latest.isDirectory() || latest.isSymbolicLink() ||
+        latest.dev !== pinned.dev || latest.ino !== pinned.ino) {
+        throw new StateEngineError('State Engine directory was replaced before durable append');
+      }
+      const bytes = Buffer.from(appendedText, 'utf8');
+      let written = 0;
+      while (written < bytes.length) {
+        const amount = fs.writeSync(fd, bytes, written, bytes.length - written);
+        if (amount <= 0) throw new StateEngineError('Canonical event append made no forward progress');
+        written += amount;
+      }
+      fs.fsyncSync(fd);
+      // Re-verify the directory entry after fsync to guarantee the canonical
+      // path still references this exact inode and was not unlinked or swapped
+      // during write (PRRC_kwDOTd-YNM79WYGR).
+      const finalEntry = fs.lstatSync(target);
+      const finalStat = fs.fstatSync(fd);
+      if (!finalEntry.isFile() || finalEntry.isSymbolicLink() || finalEntry.nlink !== 1 ||
+        finalEntry.dev !== finalStat.dev || finalEntry.ino !== finalStat.ino) {
+        throw new StateEngineError('Canonical ledger directory entry was displaced during durable append');
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+    flushStateDirectory(directory, dirFd);
+  } finally {
+    if (ownsDirFd) fs.closeSync(dirFd);
+  }
+}
+
+function recoverPendingCommitLocked(rootDir) {
+  const paths = ensureStateEngineLayout(rootDir);
+  const dirFd = fs.openSync(paths.stateRoot, 'r');
+  try {
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(paths.stateRoot);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed before recovery preparation');
+    }
+    const pendingTarget = process.platform === 'linux'
+      ? path.join('/proc/self/fd/' + dirFd, path.basename(paths.pending))
+      : paths.pending;
+    const eventsTarget = process.platform === 'linux'
+      ? path.join('/proc/self/fd/' + dirFd, path.basename(paths.events))
+      : paths.events;
+    const snapshotTarget = process.platform === 'linux'
+      ? path.join('/proc/self/fd/' + dirFd, path.basename(paths.snapshot))
+      : paths.snapshot;
+
+    if (!fs.existsSync(pendingTarget)) return;
+    if (!fs.existsSync(eventsTarget)) {
+      throw new StateEngineError('Cannot recover pending commit: canonical ledger events.jsonl is missing');
+    }
+    let pending;
+    try {
+      pending = JSON.parse(fs.readFileSync(pendingTarget, 'utf8'));
+    } catch (error) {
+      throw new StateEngineError('Pending State Engine commit is invalid: ' + error.message);
+    }
+    if (
+      pending.schemaVersion !== '1.0.0'
+      || !Number.isSafeInteger(pending.previousByteLength)
+      || pending.previousByteLength < 0
+      || !SHA256_PATTERN.test(pending.previousHash)
+      || typeof pending.suffix !== 'string'
+      || !pending.suffix.endsWith('\n')
+    ) {
+      throw new StateEngineError('Pending State Engine commit metadata is invalid');
+    }
+    // Bind every recovery operation to the same verified canonical descriptor.
+    // Pathname truncation can otherwise modify a hardlinked external file when
+    // an attacker replaces events.jsonl after the prefix has been inspected.
+    const flags = fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW ?? 0);
+    const fd = fs.openSync(eventsTarget, flags);
+    let canonical;
+    let canonicalStat;
+    try {
+      const opened = fs.fstatSync(fd);
+      canonicalStat = opened;
+      const entry = fs.lstatSync(eventsTarget);
+      if (!opened.isFile() || !entry.isFile() || entry.isSymbolicLink() ||
+        opened.nlink !== 1 || entry.nlink !== 1 ||
+        opened.dev !== entry.dev || opened.ino !== entry.ino) {
+        throw new StateEngineError('Recovery canonical ledger inode/symlink/hardlink integrity failed');
+      }
+      const bytes = Buffer.alloc(opened.size);
+      let read = 0;
+      while (read < bytes.length) {
+        const amount = fs.readSync(fd, bytes, read, bytes.length - read, read);
+        if (amount <= 0) throw new StateEngineError('Canonical ledger changed while recovering pending commit');
+        read += amount;
+      }
+      if (bytes.length < pending.previousByteLength) {
+        throw new StateEngineError('Canonical state history was truncated during a pending commit');
+      }
+      if (sha256(bytes.subarray(0, pending.previousByteLength)) !== pending.previousHash) {
+        throw new StateEngineError('Canonical state prefix differs from pending commit integrity witness');
+      }
+      const existingSuffix = bytes.subarray(pending.previousByteLength);
+      const expectedSuffix = Buffer.from(pending.suffix, 'utf8');
+      if (!expectedSuffix.subarray(0, existingSuffix.length).equals(existingSuffix)) {
+        throw new StateEngineError('Canonical state suffix conflicts with pending commit; refusing recovery');
+      }
+      const proposedEvents = parseLedger(
+        Buffer.concat([bytes.subarray(0, pending.previousByteLength), expectedSuffix]).toString('utf8'),
+      );
+      canonical = rebuildSnapshotFromEvents(proposedEvents);
+      // Validate the entire proposed ledger and the materialized snapshot witness
+      // before any truncate/append/fsync can mutate canonical crash evidence.
+      let witness = null;
+      let witnessBytes;
+      try {
+        witnessBytes = fs.readFileSync(snapshotTarget, 'utf8');
+      } catch (error) {
+        // A missing disposable snapshot may be rebuilt from canonical events.
+        // Permission, sharing and I/O failures are different: ignoring them
+        // would allow canonical ledger mutation without inspecting an existing
+        // witness that may prove the proposed pending suffix is stale.
+        if (error.code !== 'ENOENT') {
+          throw new StateEngineError(
+            'Cannot inspect materialized snapshot witness before pending recovery: ' +
+              (error.code || error.message),
+          );
+        }
+      }
+      if (witnessBytes !== undefined) {
+        try {
+          witness = JSON.parse(witnessBytes);
+          validateStateSnapshot(witness);
+        } catch {
+          // Malformed derived state is disposable, unlike unreadable evidence.
+          witness = null;
+        }
+      }
+      if (witness && witness.lastEventSequence > canonical.lastEventSequence) {
+        throw new StateEngineError('Cannot recover a pending commit over a later snapshot integrity witness');
+      }
+      if (witness && witness.lastEventSequence === canonical.lastEventSequence
+        && witness.lastEventHash !== canonical.lastEventHash) {
+        throw new StateEngineError('Pending recovery conflicts with snapshot integrity witness');
+      }
+      // A surviving index may witness later committed history even when the
+      // snapshot is missing or corrupt. Verify it before any ledger mutation.
+      assertDerivedHistoryWitnesses(paths, proposedEvents);
+      if (existingSuffix.length < expectedSuffix.length) {
+        // Truncate and repair through this FD, never a separately resolved path.
+        fs.ftruncateSync(fd, pending.previousByteLength);
+        let written = 0;
+        while (written < expectedSuffix.length) {
+          const amount = fs.writeSync(fd, expectedSuffix, written,
+            expectedSuffix.length - written, pending.previousByteLength + written);
+          if (amount <= 0) throw new StateEngineError('Pending recovery append made no forward progress');
+          written += amount;
+        }
+      }
+      // Recovery can observe a fully written suffix that was never fsynced by
+      // the interrupted writer. Flush the canonical ledger unconditionally
+      // before publishing derived views or acknowledging the pending journal.
+      fs.fsyncSync(fd);
+      // Re-verify the directory entry after fsync to ensure the canonical path
+      // still names the repaired inode before publishing derived views (PRRC_kwDOTd-YNM79WYGR).
+      const finalEntry = fs.lstatSync(eventsTarget);
+      const finalStat = fs.fstatSync(fd);
+      if (!finalEntry.isFile() || finalEntry.isSymbolicLink() || finalEntry.nlink !== 1 ||
+        finalEntry.dev !== finalStat.dev || finalEntry.ino !== finalStat.ino) {
+        throw new StateEngineError('Canonical ledger directory entry was displaced during pending recovery');
+      }
+      persistDerived(canonical, rootDir, dirFd);
+      pinnedUnlinkAndSync(paths.pending, dirFd);
+    } finally {
+      fs.closeSync(fd);
+    }
+  } finally {
+    fs.closeSync(dirFd);
+  }
+}
+
+const ACTIVE_STATE_LOCKS = new Set();
+function withStateLock(rootDir, task) {
+  const key = path.resolve(rootDir);
+  if (ACTIVE_STATE_LOCKS.has(key)) return task();
+  const lock = acquireStateLock(rootDir);
+  ACTIVE_STATE_LOCKS.add(key);
+  let primaryError = null;
+  try {
+    recoverPendingCommitLocked(rootDir);
+    return task();
+  } catch (error) {
+    primaryError = error;
+    throw error;
+  } finally {
+    ACTIVE_STATE_LOCKS.delete(key);
+    try {
+      releaseStateLock(lock);
+    } catch (releaseError) {
+      if (primaryError) {
+        // A failed transaction must retain its original filesystem/security
+        // cause. Record a secondary release failure without replacing the
+        // primary error or silently claiming the lock was cleaned up.
+        if (primaryError && typeof primaryError === 'object') {
+          primaryError.lockReleaseError = releaseError;
+        }
+      } else {
+        throw releaseError;
+      }
+    }
+  }
+}
+
+function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
+  if (!Array.isArray(newEvents) || newEvents.length === 0) {
+    const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
+    return { events: [], snapshot, index: loadStateIndex(rootDir, { rebuildIfNeeded: true }) };
+  }
+
+  const paths = ensureStateEngineLayout(rootDir);
+  const dirFd = fs.openSync(paths.stateRoot, 'r');
+  try {
+    const pinned = fs.fstatSync(dirFd);
+    const observed = fs.lstatSync(paths.stateRoot);
+    if (!pinned.isDirectory() || !observed.isDirectory() || observed.isSymbolicLink() ||
+      pinned.dev !== observed.dev || pinned.ino !== observed.ino) {
+      throw new StateEngineError('State Engine directory changed before durable write preparation');
+    }
+    const rootDirParent = path.dirname(path.dirname(paths.stateRoot));
+    assertStateRootRealpathSafe({ root: rootDirParent, stateRoot: paths.stateRoot });
+
+    const ledgerPath = process.platform === 'linux'
+      ? path.join('/proc/self/fd/' + dirFd, path.basename(paths.events))
+      : paths.events;
+
+    // Open ledger with descriptor-bound flags and read through this descriptor
+    // so preparation and identity witness come from the exact same descriptor.
+    // Retain this descriptor open across atomicWrite and appendDurably so the inode
+    // cannot be unlinked and recycled while the commit is in flight (PRRT_kwDOTd-YNM6ri6bH).
+    const readFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0);
+    const readFd = fs.openSync(ledgerPath, readFlags);
+    let existingContent;
+    let expectedIdentity;
+    try {
+      const openedStat = fs.fstatSync(readFd);
+      const entryStat = fs.lstatSync(ledgerPath);
+      if (!openedStat.isFile() || openedStat.nlink !== 1 || entryStat.isSymbolicLink() ||
+        !entryStat.isFile() || entryStat.nlink !== 1 ||
+        openedStat.dev !== entryStat.dev || openedStat.ino !== entryStat.ino) {
+        throw new StateEngineError('Canonical event file symlink/inode mismatch or multiple hard links');
+      }
+      expectedIdentity = { dev: openedStat.dev, ino: openedStat.ino, size: openedStat.size };
+      const bytes = Buffer.alloc(openedStat.size);
+      let read = 0;
+      while (read < bytes.length) {
+        const amount = fs.readSync(readFd, bytes, read, bytes.length - read, read);
+        if (amount <= 0 && read < bytes.length) {
+          throw new StateEngineError('Canonical ledger changed while reading during preparation');
+        }
+        if (amount <= 0) break;
+        read += amount;
+      }
+      existingContent = bytes.toString('utf8');
+
+      const existing = parseLedger(existingContent);
+      // Inspect both acknowledged derived witnesses against the original
+      // canonical prefix, not the proposed post-append sequence: a new event
+      // must never conceal a valid truncation of previously accepted history.
+      assertDerivedHistoryWitnesses(paths, existing);
+      let previous = existing.at(-1) ?? null;
+      for (const event of newEvents) {
+        validateStateEvent(event, previous);
+        previous = event;
+      }
+      const allEvents = [...existing, ...newEvents];
+      // Validate and reconstruct before beginning a durable state mutation.
+      const nextSnapshot = rebuildSnapshotFromEvents(allEvents);
+      // A valid last event may lack the optional terminating newline. Preserve
+      // record separation when appending, including in the crash-recovery journal.
+      const separator = existingContent.length > 0 && !existingContent.endsWith('\n') ? '\n' : '';
+      const suffix = separator + newEvents.map((event) => JSON.stringify(stable(event))).join('\n') + '\n';
+      const pending = {
+        schemaVersion: '1.0.0',
+        previousByteLength: Buffer.byteLength(existingContent, 'utf8'),
+        previousHash: sha256(Buffer.from(existingContent, 'utf8')),
+        suffix,
+      };
+
+      atomicWrite(paths.pending, stablePretty(pending), dirFd);
+      // Physical append avoids O(history) rewrites; the pending journal permits
+      // deterministic repair after a torn write or interrupted snapshot persist.
+      appendDurably(paths.events, suffix, expectedIdentity, dirFd, readFd);
+      const { index } = persistDerived(nextSnapshot, rootDir, dirFd);
+      pinnedUnlinkAndSync(paths.pending, dirFd);
+      return { events: newEvents, snapshot: nextSnapshot, index };
+    } finally {
+      fs.closeSync(readFd);
+    }
+  } finally {
+    fs.closeSync(dirFd);
+  }
+}
+
+function nextEventContext(rootDir) {
+  const events = loadCanonicalEvents(rootDir);
+  const previous = events.at(-1) ?? null;
+  return {
+    sequence: previous ? previous.sequence + 1 : 1,
+    previousEventHash: previous?.eventHash ?? null,
+    previous,
+  };
+}
+
+export function appendEntityState({
+  rootDir = process.cwd(),
+  entityType: type,
+  entityId: id,
+  state,
+  refs = {},
+  actorClass = 'runtime',
+  timestamp: at = new Date().toISOString(),
+} = {}) {
+  const normalizedType = entityType(type);
+  const normalizedId = entityId(id);
+  const nextState = cloneSerializable(state, 'Entity state');
+  const revision = stateRevision(nextState.stateRevision);
+
+  return withStateLock(rootDir, () => {
+    const currentSnapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
+    const current = ownValue(ownValue(currentSnapshot.entities, normalizedType), normalizedId) ?? null;
+
+    if (current && revision < current.stateRevision) {
+      throw new StateEngineError('Refusing stateRevision regression for ' + normalizedType + '/' + normalizedId);
+    }
+    if (current && stableJson(current.state) === stableJson(nextState)) {
+      return Object.freeze({ changed: false, event: null, snapshot: currentSnapshot });
+    }
+
+    const context = nextEventContext(rootDir);
+    const payload = current
+      ? { stateRevision: revision, operations: diffValues(current.state, nextState) }
+      : { stateRevision: revision, state: nextState };
+    const event = buildEvent({
+      sequence: context.sequence,
+      previousEventHash: context.previousEventHash,
+      timestamp: at,
+      actorClass,
+      type: current ? 'ENTITY_STATE_UPDATED' : 'ENTITY_STATE_INITIALIZED',
+      id: normalizedId,
+      entity: normalizedType,
+      refs,
+      payload,
+    });
+    const committed = commitPreparedEventsLocked([event], rootDir);
+    return Object.freeze({ changed: true, event, snapshot: committed.snapshot });
+  });
+}
+
+export function appendMetadataEvent({
+  rootDir = process.cwd(),
+  eventType: type,
+  payload,
+  refs = {},
+  actorClass = 'runtime',
+  timestamp: at = new Date().toISOString(),
+} = {}) {
+  return withStateLock(rootDir, () => {
+    const context = nextEventContext(rootDir);
+    const event = buildEvent({
+      sequence: context.sequence,
+      previousEventHash: context.previousEventHash,
+      timestamp: at,
+      actorClass,
+      type,
+      id: null,
+      entity: null,
+      refs,
+      payload,
+    });
+    const committed = commitPreparedEventsLocked([event], rootDir);
+    return Object.freeze({ event, snapshot: committed.snapshot });
+  });
+}
+
+export function loadEntityState(type, id, rootDir = process.cwd()) {
+  const normalizedType = entityType(type);
+  const normalizedId = entityId(id);
+  const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true });
+  const record = ownValue(ownValue(snapshot?.entities, normalizedType), normalizedId);
+  return record ? structuredClone(record.state) : null;
+}
+
+export function listEntityRecords(type, rootDir = process.cwd()) {
+  const normalizedType = entityType(type);
+  const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true });
+  const bucket = ownValue(snapshot?.entities, normalizedType) ?? {};
+  return Object.entries(bucket)
+    .map(([id, record]) => ({
+      entityId: id,
+      stateRevision: record.stateRevision,
+      lastEventSequence: record.lastEventSequence,
+      refs: structuredClone(record.refs),
+    }))
+    .sort((a, b) => a.entityId.localeCompare(b.entityId));
+}
+
+export function loadLatestEntityState(type, rootDir = process.cwd()) {
+  const normalizedType = entityType(type);
+  const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true });
+  const bucket = ownValue(snapshot?.entities, normalizedType) ?? {};
+  const records = Object.entries(bucket)
+    .map(([id, record]) => ({ id, record }))
+    .sort((a, b) => b.record.lastEventSequence - a.record.lastEventSequence || a.id.localeCompare(b.id));
+  if (records.length === 0) return null;
+  return structuredClone(records[0].record.state);
+}
+
+export function hasCompletedStateMigration(rootDir = process.cwd(), sourceFingerprint = null) {
+  const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true });
+  const migrations = snapshot?.migrations ?? [];
+  if (sourceFingerprint === null || sourceFingerprint === undefined) {
+    return migrations.some((migration) => migration.semanticEquivalence === true);
+  }
+  return migrations.some((migration) => (
+    migration.semanticEquivalence === true
+    && migration.sourceFingerprint === sourceFingerprint
+  ));
+}
+
+export function queryStateIndex({
+  rootDir = process.cwd(),
+  contractId = null,
+  taskId = null,
+  runId = null,
+  lifecycleId = null,
+} = {}) {
+  const index = loadStateIndex(rootDir, { rebuildIfNeeded: true });
+  const filters = [
+    ['byContract', contractId],
+    ['byTask', taskId],
+    ['byRun', runId],
+    ['byLifecycle', lifecycleId],
+  ].filter(([, value]) => value !== null && value !== undefined);
+
+  if (filters.length === 0) return structuredClone(index.records);
+
+  let keys = null;
+  for (const [field, value] of filters) {
+    const current = new Set(ownValue(index[field], String(value)) ?? []);
+    keys = keys === null ? current : new Set([...keys].filter((key) => current.has(key)));
+  }
+  return index.records.filter((record) => keys.has(record.key)).map((record) => structuredClone(record));
+}
+
+export function verifyStateEngineIntegrity(rootDir = process.cwd()) {
+  const events = loadCanonicalEvents(rootDir);
+  const canonical = rebuildSnapshotFromEvents(events);
+  const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: false });
+  const index = loadStateIndex(rootDir, { rebuildIfNeeded: false });
+
+  if (snapshot === null) throw new StateEngineError('State snapshot is missing');
+  if (stableJson(snapshot) !== stableJson(canonical)) {
+    throw new StateEngineError('State snapshot is not semantically equivalent to canonical history');
+  }
+  validateStateIndex(index, snapshot);
+  const rebuiltIndex = buildStateIndex(snapshot);
+  if (stableJson(index) !== stableJson(rebuiltIndex)) {
+    throw new StateEngineError('State index is not semantically equivalent to rebuilt index');
+  }
+
+  return Object.freeze({
+    valid: true,
+    eventCount: events.length,
+    entityCount: Object.values(snapshot.entities).reduce((sum, bucket) => sum + Object.keys(bucket).length, 0),
+    lastEventSequence: snapshot.lastEventSequence,
+    lastEventHash: snapshot.lastEventHash,
+  });
+}
+
+export function cleanupOrphanedStateTemps(rootDir = process.cwd()) {
+  const paths = statePaths(rootDir);
+  if (!fs.existsSync(paths.stateRoot)) return [];
+  const removed = [];
+  for (const name of fs.readdirSync(paths.stateRoot)) {
+    // Only internal publication stages may be garbage-collected. In
+    // particular, never delete a live writer's temporary file: a concurrent
+    // atomic rename would then fail after its bytes were already fsynced.
+    if (!/^(?:events\.jsonl|snapshot\.json|index\.db|schema\.json|pending-commit\.json)\.tmp-/.test(name)) continue;
+    const owner = /\.tmp-([1-9][0-9]*)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.exec(name);
+    if (owner) {
+      const pid = Number(owner[1]);
+      if (!Number.isSafeInteger(pid)) continue;
+      try {
+        process.kill(pid, 0);
+        continue; // Owner exists: do not interfere with its publication.
+      } catch (error) {
+        if (error.code !== 'ESRCH') continue; // Unknown/denied = live.
+      }
+    }
+    const candidate = path.join(paths.stateRoot, name);
+    let stat;
+    try { stat = fs.lstatSync(candidate); }
+    catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw error;
+    }
+    // Hardlinked bootstrap witnesses require their own validated recovery.
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) continue;
+    fs.unlinkSync(candidate);
+    removed.push(candidate);
+  }
+  return removed;
+}
+
+export function getStateEnginePaths(rootDir = process.cwd()) {
+  return statePaths(rootDir);
+}
+
+export function countStateEngineFiles(rootDir = process.cwd()) {
+  const paths = statePaths(rootDir);
+  if (!fs.existsSync(paths.stateRoot)) return 0;
+  return fs.readdirSync(paths.stateRoot, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name !== 'state.lock' && entry.name !== 'pending-commit.json' && !entry.name.includes('.tmp-'))
+    .length;
+}
+
+export { stableJson as canonicalStateJson, sha256 as stateSha256 };
