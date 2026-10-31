@@ -1483,3 +1483,25 @@ test('T04-H72 symlinked legacy Autopilot pointer cannot be omitted from backup',
   assert.throws(() => migrateLegacyStateToV2({ rootDir }), /symbolic link|symlink/i);
   assert.equal(fs.existsSync(path.join(rootDir, '.development-kit', 'state')), false);
 });
+
+
+test('T04-H72 junctioned legacy state root cannot publish a fingerprint for external inputs', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h72-state-junction-');
+  const legacy = writeLegacyAutopilot(rootDir, 1);
+  const external = path.join(rootDir, 'external-legacy-state');
+  fs.renameSync(legacy.stateDir, external);
+  try {
+    fs.symlinkSync(external, legacy.stateDir, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+      t.skip('Host does not permit directory junction/symlink creation');
+      return;
+    }
+    throw error;
+  }
+  assert.throws(() => inspectLegacyState(rootDir), /symbolic link|symlink/i);
+  assert.throws(() => migrateLegacyStateToV2({ rootDir }), /symbolic link|symlink/i);
+  assert.equal(fs.existsSync(path.join(rootDir, '.development-kit', 'state')), false);
+  assert.equal(fs.existsSync(path.join(external, 'revision-000001.json')), true,
+    'rejected migration must retain original revision bytes');
+});
