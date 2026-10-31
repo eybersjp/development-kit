@@ -686,7 +686,7 @@ test('T04-H68 read-only index verification preserves a valid pending journal and
   });
   const completeLedger = fs.readFileSync(paths.events);
   const pendingSuffix = completeLedger.subarray(acknowledgedPrefix.length).toString('utf8');
-  assert.ok(pendingSuffix.endsWith('\\n'));
+  assert.ok(pendingSuffix.endsWith('\n'));
   fs.writeFileSync(paths.events, acknowledgedPrefix);
   fs.writeFileSync(paths.index, originalIndex);
   fs.unlinkSync(paths.snapshot);
@@ -696,7 +696,7 @@ test('T04-H68 read-only index verification preserves a valid pending journal and
     previousHash: 'sha256:' + crypto.createHash('sha256').update(acknowledgedPrefix).digest('hex'),
     suffix: pendingSuffix,
   };
-  fs.writeFileSync(paths.pending, JSON.stringify(pending) + '\\n');
+  fs.writeFileSync(paths.pending, JSON.stringify(pending) + '\n');
   const journalBefore = fs.readFileSync(paths.pending);
 
   assert.throws(
