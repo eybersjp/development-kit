@@ -917,7 +917,7 @@ function repairUnwitnessedTrailingLedgerSuffixLocked(rootDir) {
     try {
       const stat = fs.fstatSync(fd);
       if (!stat.isFile()) throw new StateEngineError('Canonical ledger repair target is not a regular file');
-      fs.writeSync(fd, Buffer.from('\\n'), 0, 1, Buffer.byteLength(content, 'utf8'));
+      fs.writeSync(fd, Buffer.from([0x0a]), 0, 1, Buffer.byteLength(content, 'utf8'));
       fs.fsyncSync(fd);
       verifyCanonicalTailRepairFd(fd);
     } finally {
