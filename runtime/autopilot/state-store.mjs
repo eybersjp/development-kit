@@ -143,7 +143,7 @@ export function saveStateRevision(state, rootDir = process.cwd()) {
   return withMigrationGate(rootDir, () => saveStateRevisionUnlocked(state, rootDir));
 }
 
-function recoverLatestLegacyState(rootDir) {
+function recoverLatestLegacyStateUnlocked(rootDir) {
   const stateDir = getStateDir(rootDir);
   if (!fs.existsSync(stateDir)) return null;
 
@@ -153,38 +153,60 @@ function recoverLatestLegacyState(rootDir) {
     .reverse();
 
   for (const file of files) {
+    // Only malformed revision content is eligible for fallback. An I/O error
+    // while reading the newest revision is not evidence that it is invalid:
+    // silently choosing an older one would roll back acknowledged history.
+    const filePath = path.join(stateDir, file);
+    const content = fs.readFileSync(filePath, 'utf8');
+    let state;
     try {
-      const filePath = path.join(stateDir, file);
-      const state = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      state = JSON.parse(content);
       validateWorkflowState(state);
-
-      const pointerContent = JSON.stringify({
-        currentRevision: state.stateRevision,
-        currentRevisionFile: file,
-        workflowId: state.workflowId,
-        updatedAt: new Date().toISOString(),
-        recoveredAt: new Date().toISOString(),
-      }, null, 2);
-
-      fs.writeFileSync(path.join(stateDir, 'current.json'), pointerContent, 'utf8');
-      return state;
     } catch {
-      // Try previous revision.
+      // Corrupt revision content may be skipped in favor of an older valid one.
+      continue;
     }
+
+    const pointerContent = JSON.stringify({
+      currentRevision: state.stateRevision,
+      currentRevisionFile: file,
+      workflowId: state.workflowId,
+      updatedAt: new Date().toISOString(),
+      recoveredAt: new Date().toISOString(),
+    }, null, 2);
+
+    // Publication errors must propagate; never retry with an older revision
+    // after the latest valid revision has already been selected.
+    fs.writeFileSync(path.join(stateDir, 'current.json'), pointerContent, 'utf8');
+    return state;
   }
 
   return null;
 }
 
-export function recoverLatestValidState(rootDir = process.cwd()) {
-  if (shouldUseV2(rootDir) && isStateEngineV2Active(rootDir)) {
-    const current = migratedWorkflowState(rootDir);
-    if (current) {
-      rebuildStateSnapshot(rootDir);
-      const rebuilt = loadLatestEntityState('autopilot-workflow', rootDir);
-      validateWorkflowState(rebuilt);
-      return rebuilt;
+// Pointer repair is a legacy write. Reacquire the migration gate and recheck
+// authority *inside* it so a stale reader cannot repair legacy after cutover.
+function recoverLatestLegacyState(rootDir) {
+  return withMigrationGate(rootDir, () => {
+    if (shouldUseV2(rootDir) && isStateEngineV2Active(rootDir)) {
+      const current = migratedWorkflowState(rootDir);
+      if (current) return current;
     }
-  }
-  return recoverLatestLegacyState(rootDir);
+    return recoverLatestLegacyStateUnlocked(rootDir);
+  });
+}
+
+export function recoverLatestValidState(rootDir = process.cwd()) {
+  return withMigrationGate(rootDir, () => {
+    if (shouldUseV2(rootDir) && isStateEngineV2Active(rootDir)) {
+      const current = migratedWorkflowState(rootDir);
+      if (current) {
+        rebuildStateSnapshot(rootDir);
+        const rebuilt = loadLatestEntityState('autopilot-workflow', rootDir);
+        validateWorkflowState(rebuilt);
+        return rebuilt;
+      }
+    }
+    return recoverLatestLegacyStateUnlocked(rootDir);
+  });
 }
