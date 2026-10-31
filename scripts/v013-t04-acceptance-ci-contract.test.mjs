@@ -143,3 +143,10 @@ test('T04-A21 ACCEPTED verdict must be uploaded durably, only after a successful
     'The canonical verdict lives in a hidden .development-kit directory and must be included');
   assert.doesNotMatch(upload, /if-no-files-found: ignore/);
 });
+
+
+test('T04-A22 a security-control witness cannot cite an unrelated green workflow', () => {
+  const gate = fs.readFileSync(path.join(root, 'scripts/v013-t04-acceptance-gate.mjs'), 'utf8');
+  assert.match(gate, /validationRuns\.has\(witness\.workflowRunId\)/,
+    'Each security-control witness must cite one of the authenticated, exact-SHA, full Ubuntu+Windows validation runs, not any unrelated green workflow');
+});
