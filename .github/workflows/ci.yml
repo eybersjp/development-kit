@@ -21,6 +21,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -99,7 +102,12 @@ jobs:
         run: npm run execution-capsule:test
 
       - name: Validate v0.12 reduced-release scope
+        if: ${{ hashFiles('runtime/orchestration/state-engine-v2.mjs') == '' }}
         run: npm run release-scope:v012
+
+      - name: Validate v0.13 State Engine V2 increment
+        if: ${{ hashFiles('runtime/orchestration/state-engine-v2.mjs') != '' }}
+        run: npm run v013-state-engine-v2:test
 
       - name: Validate v0.12 non-T04 feature increments
         run: |
@@ -120,7 +128,51 @@ jobs:
         run: npm pack --dry-run
 
       - name: Verify installed v0.12 consumer package
+        if: ${{ hashFiles('runtime/orchestration/state-engine-v2.mjs') == '' }}
         run: npm run consumer-smoke:v012
 
       - name: Validate exact release command
+        if: ${{ hashFiles('runtime/orchestration/state-engine-v2.mjs') == '' }}
         run: npm run release:validate
+
+      - name: Validate v0.13 full compatibility regression
+        if: ${{ hashFiles('runtime/orchestration/state-engine-v2.mjs') != '' }}
+        run: npm run v013:regression
+
+      - name: Verify v0.13 risk-3 acceptance job contract (negative control)
+        run: node --test scripts/v013-t04-acceptance-ci-contract.test.mjs
+
+  t04_acceptance:
+    name: T04 independently reviewed risk-3 acceptance
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/v0.13-state-engine-v2' }}
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      actions: read
+    steps:
+      - name: Check out exact reviewed integration source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Establish exact-source v0.13 Development Contract
+        run: node scripts/v013-state-engine-v2-contract.mjs
+      - name: Verify immutable external T04 acceptance evidence
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/v013-t04-acceptance-gate.mjs
+      - name: Preserve canonical T04 verdict evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dkf-v013-t04-acceptance-evidence
+          path: .development-kit/acceptance/DKF130-T04.json
+          if-no-files-found: ignore
