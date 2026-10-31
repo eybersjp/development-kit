@@ -1313,11 +1313,29 @@ function repairDerivedLocked(rootDir) {
   const canonical = rebuildSnapshotFromEvents(parseLedger(fs.readFileSync(paths.events, 'utf8')));
   if (fs.existsSync(paths.snapshot)) {
     let witness = null;
+    let witnessBytes;
     try {
-      witness = JSON.parse(fs.readFileSync(paths.snapshot, 'utf8'));
-      validateStateSnapshot(witness);
-    } catch {
-      witness = null;
+      witnessBytes = fs.readFileSync(paths.snapshot, 'utf8');
+    } catch (error) {
+      // An absent or malformed derived snapshot is rebuildable, but an
+      // unreadable acknowledged snapshot may witness later canonical history.
+      // Never erase that evidence after EACCES, EIO or sharing failures.
+      if (error.code !== 'ENOENT') {
+        throw new StateEngineError(
+          'Cannot inspect acknowledged snapshot witness before derived repair: ' +
+            (error.code || error.message),
+          { code: 'SNAPSHOT_WITNESS_READ_FAILED', cause: error.code || error.message },
+        );
+      }
+    }
+    if (witnessBytes !== undefined) {
+      try {
+        witness = JSON.parse(witnessBytes);
+        validateStateSnapshot(witness);
+      } catch {
+        // Malformed disposable derived data can be rebuilt from canonical.
+        witness = null;
+      }
     }
     if (witness && witness.lastEventSequence > canonical.lastEventSequence) {
       throw new StateEngineError('Canonical state history appears truncated relative to the materialized snapshot');
