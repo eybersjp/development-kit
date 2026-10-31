@@ -383,7 +383,10 @@ function acquireStateLock(rootDir, timeoutMs = process.platform === 'win32' ? 20
   while (Date.now() - started < timeoutMs) {
     try {
       const fd = fs.openSync(paths.lock, 'wx');
+      let createdIdentity = null;
+      let initializationFailure = null;
       try {
+        createdIdentity = fs.fstatSync(fd, { bigint: true });
         fs.writeFileSync(fd, JSON.stringify({
           owner,
           pid: process.pid,
@@ -391,8 +394,38 @@ function acquireStateLock(rootDir, timeoutMs = process.platform === 'win32' ? 20
           acquiredAt: new Date().toISOString(),
         }), 'utf8');
         fs.fsyncSync(fd);
-      } finally {
+      } catch (error) {
+        initializationFailure = error;
+      }
+      try {
         fs.closeSync(fd);
+      } catch (error) {
+        initializationFailure ??= error;
+      }
+      if (initializationFailure) {
+        // The exclusive lock name already exists, but its owner metadata may
+        // be absent or non-durable. Do not strand an empty/unowned lock after
+        // ENOSPC, EIO or close failure. Remove only the same single-link inode
+        // that this process created, never a replacement installed by another
+        // process. A failed cleanup remains an explicit offline-recovery fault.
+        try {
+          const current = fs.lstatSync(paths.lock, { bigint: true });
+          if (!createdIdentity || !current.isFile() || current.isSymbolicLink() ||
+              current.nlink !== 1n || current.dev !== createdIdentity.dev ||
+              current.ino !== createdIdentity.ino) {
+            throw new StateEngineError('Newly created lock identity changed before failed-initialization cleanup');
+          }
+          fs.unlinkSync(paths.lock);
+          fsyncParentDirectory(paths.stateRoot);
+        } catch (cleanupError) {
+          throw new StateEngineError(
+            'State Engine lock initialization failed and cleanup was not durably verified; offline recovery required',
+            { code: 'STATE_LOCK_INIT_CLEANUP_FAILED',
+              cause: cleanupError.code || cleanupError.message,
+              initializationCause: initializationFailure.code || initializationFailure.message },
+          );
+        }
+        throw initializationFailure;
       }
       return { path: paths.lock, owner };
     } catch (error) {
