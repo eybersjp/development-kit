@@ -163,6 +163,9 @@ assert.equal(physicalReview.state, 'APPROVED');
 assert.ok(physicalReview.user?.login && physicalReview.user.login !== pr.user.login,
   'Physical NTFS power-loss reviewer must be independent of the source author');
 assert.equal(physicalReview.commit_id, reviewedCommit);
+// A previously approved physical test may later be revoked or superseded.
+// Apply the same authenticated latest-decisive-review guard as the three roles.
+assertCurrentRoleApproval(physicalReview, allSubmittedReviews, reviewedCommit);
 assert.ok((physicalReview.body || '').includes('DKF130-T04 NTFS-PHYSICAL-POWER-LOSS ' + reviewedCommit),
   'Independent physical test review must explicitly bind source and evidence');
 const artifactRun = Number(physical.artifactUrl.match(/\/actions\/runs\/([0-9]+)/)?.[1]);
