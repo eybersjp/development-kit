@@ -1379,3 +1379,61 @@ test('T04-H70 transient newest revision read failure cannot select older revisio
     'a failed read must not publish an older pointer');
   assert.equal(getCurrentState(rootDir).stateRevision, 2);
 });
+
+
+// H71 negative controls: a transient I/O failure is not malformed JSON.
+test('T04-H71 legacy current pointer EIO fails closed without rewriting acknowledged pointer', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h71-pointer-eio-');
+  const legacy = writeLegacyAutopilot(rootDir, 2);
+  const pointerPath = path.join(legacy.stateDir, 'current.json');
+  const originalPointer = fs.readFileSync(pointerPath);
+  const originalRead = fs.readFileSync;
+  let injected = 0;
+  fs.readFileSync = function (target, ...args) {
+    if (typeof target === 'string' && path.resolve(target) === path.resolve(pointerPath)
+        && injected++ === 0) {
+      const error = new Error('injected EIO reading acknowledged legacy pointer');
+      error.code = 'EIO';
+      throw error;
+    }
+    return originalRead.call(this, target, ...args);
+  };
+  try {
+    assert.throws(() => getCurrentState(rootDir), /EIO|injected/i,
+      'pointer read I/O error is not evidence of corrupt JSON and must not trigger repair');
+  } finally {
+    fs.readFileSync = originalRead;
+  }
+  assert.equal(injected, 1);
+  assert.deepEqual(fs.readFileSync(pointerPath), originalPointer,
+    'an uncertain pointer read must preserve the original acknowledged pointer');
+  assert.equal(getCurrentState(rootDir).stateRevision, 2);
+});
+
+test('T04-H71 legacy current revision EIO fails closed without rewriting pointer', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h71-revision-eio-');
+  const legacy = writeLegacyAutopilot(rootDir, 2);
+  const pointerPath = path.join(legacy.stateDir, 'current.json');
+  const latestPath = path.join(legacy.stateDir, 'revision-000002.json');
+  const originalPointer = fs.readFileSync(pointerPath);
+  const originalRead = fs.readFileSync;
+  let injected = 0;
+  fs.readFileSync = function (target, ...args) {
+    if (typeof target === 'string' && path.resolve(target) === path.resolve(latestPath)
+        && injected++ === 0) {
+      const error = new Error('injected EIO reading current acknowledged revision');
+      error.code = 'EIO';
+      throw error;
+    }
+    return originalRead.call(this, target, ...args);
+  };
+  try {
+    assert.throws(() => getCurrentState(rootDir), /EIO|injected/i,
+      'revision read I/O error must propagate rather than invoking pointer repair');
+  } finally {
+    fs.readFileSync = originalRead;
+  }
+  assert.equal(injected, 1);
+  assert.deepEqual(fs.readFileSync(pointerPath), originalPointer);
+  assert.equal(getCurrentState(rootDir).stateRevision, 2);
+});
