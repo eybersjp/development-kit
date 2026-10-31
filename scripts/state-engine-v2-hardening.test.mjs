@@ -1490,3 +1490,157 @@ test('T04-H64 a missing canonical ledger cannot be silently recreated over ackno
   fs.writeFileSync(paths.events, canonicalWitness);
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+test('T04-H65 valid canonical prefix truncation cannot overwrite acknowledged snapshot history', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H65_FIRST', payload: { order: 1 } });
+  appendMetadataEvent({ rootDir, eventType: 'H65_ACKNOWLEDGED', payload: { order: 2 } });
+  const paths = getStateEnginePaths(rootDir);
+  const fullLedger = fs.readFileSync(paths.events, 'utf8');
+  const snapshotWitness = fs.readFileSync(paths.snapshot);
+  const indexWitness = fs.readFileSync(paths.index);
+  const prefix = fullLedger.slice(0, fullLedger.indexOf('\n') + 1);
+  fs.writeFileSync(paths.events, prefix, 'utf8');
+  assert.equal(fs.existsSync(paths.pending), false);
+  assert.throws(
+    () => appendMetadataEvent({ rootDir, eventType: 'H65_MUST_NOT_REPLACE', payload: { order: 999 } }),
+    /canonical|witness|history|truncat|integrity/i,
+    'A new valid event must not replace an already acknowledged event with the same sequence',
+  );
+  assert.equal(fs.readFileSync(paths.events, 'utf8'), prefix);
+  assert.deepEqual(fs.readFileSync(paths.snapshot), snapshotWitness);
+  assert.deepEqual(fs.readFileSync(paths.index), indexWitness);
+  assert.equal(fs.existsSync(paths.pending), false);
+});
+
+test('T04-H65 an index-only witness blocks derived repair and a new entity write over truncated history', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H65_FIRST', payload: { order: 1 } });
+  appendMetadataEvent({ rootDir, eventType: 'H65_ACKNOWLEDGED', payload: { order: 2 } });
+  const paths = getStateEnginePaths(rootDir);
+  const fullLedger = fs.readFileSync(paths.events, 'utf8');
+  const indexWitness = fs.readFileSync(paths.index);
+  const prefix = fullLedger.slice(0, fullLedger.indexOf('\n') + 1);
+  fs.writeFileSync(paths.events, prefix, 'utf8');
+  fs.unlinkSync(paths.snapshot);
+  assert.throws(
+    () => appendEntityState({
+      rootDir, entityType: 'h65-state', entityId: 'test', state: { stateRevision: 1, value: 'must-not-write' },
+    }),
+    /canonical|witness|history|truncat|integrity/i,
+    'A retained index is an acknowledged history witness even when the snapshot is missing',
+  );
+  assert.equal(fs.readFileSync(paths.events, 'utf8'), prefix);
+  assert.deepEqual(fs.readFileSync(paths.index), indexWitness);
+  // Layout bootstrap may recreate a disposable empty snapshot before it
+  // inspects the retained index; it must not publish the truncated history.
+  if (fs.existsSync(paths.snapshot)) {
+    assert.equal(JSON.parse(fs.readFileSync(paths.snapshot, 'utf8')).lastEventSequence, 0);
+  }
+  assert.equal(fs.existsSync(paths.pending), false);
+});
+
+test('T04-H65 older but consistent derived witnesses may be refreshed by a later valid append', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H65_FIRST', payload: { order: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const oldSnapshot = fs.readFileSync(paths.snapshot);
+  const oldIndex = fs.readFileSync(paths.index);
+  appendMetadataEvent({ rootDir, eventType: 'H65_SECOND', payload: { order: 2 } });
+  fs.writeFileSync(paths.snapshot, oldSnapshot);
+  fs.writeFileSync(paths.index, oldIndex);
+  appendMetadataEvent({ rootDir, eventType: 'H65_THIRD', payload: { order: 3 } });
+  assert.equal(loadCanonicalEvents(rootDir).length, 3);
+  assert.equal(JSON.parse(fs.readFileSync(paths.snapshot, 'utf8')).lastEventSequence, 3);
+  assert.equal(JSON.parse(fs.readFileSync(paths.index, 'utf8')).sourceSequence, 3);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
+
+test('T04-H65 a failed snapshot witness read cannot authorize a metadata append', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H65_FIRST', payload: { order: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const originalLedger = fs.readFileSync(paths.events);
+  const originalIndex = fs.readFileSync(paths.index);
+  const originalRead = fs.readFileSync;
+  let denied = false;
+  fs.readFileSync = function rejectSnapshotWitnessRead(target, ...args) {
+    if (String(target) === paths.snapshot) {
+      denied = true;
+      const error = new Error('Injected snapshot witness EIO');
+      error.code = 'EIO';
+      throw error;
+    }
+    return originalRead.call(this, target, ...args);
+  };
+  try {
+    assert.throws(
+      () => appendMetadataEvent({ rootDir, eventType: 'H65_MUST_NOT_COMMIT', payload: { order: 2 } }),
+      /snapshot|witness|EIO|inspect/i,
+    );
+  } finally {
+    fs.readFileSync = originalRead;
+  }
+  assert.equal(denied, true, 'Writer must actually inspect the acknowledged snapshot witness');
+  assert.deepEqual(fs.readFileSync(paths.events), originalLedger);
+  assert.deepEqual(fs.readFileSync(paths.index), originalIndex);
+  assert.equal(fs.existsSync(paths.pending), false);
+});
+
+test('T04-H65 index-only acknowledged history prevents destructive torn-tail recovery', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H65_FIRST', payload: { order: 1 } });
+  appendMetadataEvent({ rootDir, eventType: 'H65_ACKNOWLEDGED', payload: { order: 2 } });
+  const paths = getStateEnginePaths(rootDir);
+  const ledger = fs.readFileSync(paths.events, 'utf8');
+  const indexWitness = fs.readFileSync(paths.index);
+  const first = ledger.slice(0, ledger.indexOf('\n') + 1);
+  const torn = first + '{"schemaVersion":"1.0.0","sequence":2,';
+  fs.writeFileSync(paths.events, torn, 'utf8');
+  fs.unlinkSync(paths.snapshot);
+  assert.throws(
+    () => loadCanonicalEvents(rootDir),
+    /index|witness|canonical|truncat|history/i,
+    'The surviving index must prevent discarding bytes potentially belonging to an acknowledged event',
+  );
+  assert.equal(fs.readFileSync(paths.events, 'utf8'), torn);
+  assert.deepEqual(fs.readFileSync(paths.index), indexWitness);
+  assert.equal(fs.existsSync(paths.pending), false);
+});
+
+test('T04-H65 index-only witness rejects a conflicting valid pending-recovery suffix', (t) => {
+  const rootDir = tempProject(t);
+  const alternativeRoot = tempProject(t);
+  const at = '2026-10-31T00:00:00.000Z';
+  for (const root of [rootDir, alternativeRoot]) {
+    appendMetadataEvent({ rootDir: root, eventType: 'H65_FIRST', payload: { order: 1 }, timestamp: at });
+  }
+  appendMetadataEvent({ rootDir, eventType: 'H65_ACKNOWLEDGED', payload: { order: 2 }, timestamp: at });
+  appendMetadataEvent({
+    rootDir: alternativeRoot, eventType: 'H65_CONFLICTING', payload: { order: 999 }, timestamp: at,
+  });
+  const paths = getStateEnginePaths(rootDir);
+  const fullLedger = fs.readFileSync(paths.events, 'utf8');
+  const alternativeLedger = fs.readFileSync(getStateEnginePaths(alternativeRoot).events, 'utf8');
+  const prefix = fullLedger.slice(0, fullLedger.indexOf('\n') + 1);
+  assert.ok(alternativeLedger.startsWith(prefix), 'Both histories must share the exact valid canonical prefix');
+  const suffix = alternativeLedger.slice(prefix.length);
+  const indexWitness = fs.readFileSync(paths.index);
+  fs.writeFileSync(paths.events, prefix, 'utf8');
+  fs.unlinkSync(paths.snapshot);
+  const pending = JSON.stringify({
+    schemaVersion: '1.0.0',
+    previousByteLength: Buffer.byteLength(prefix),
+    previousHash: 'sha256:' + createHash('sha256').update(prefix).digest('hex'),
+    suffix,
+  });
+  fs.writeFileSync(paths.pending, pending, 'utf8');
+  assert.throws(
+    () => loadCanonicalEvents(rootDir),
+    /index|witness|canonical|history|conflict|hash/i,
+    'A hash-valid but different event must not supersede acknowledged index history',
+  );
+  assert.equal(fs.readFileSync(paths.events, 'utf8'), prefix);
+  assert.deepEqual(fs.readFileSync(paths.index), indexWitness);
+  assert.equal(fs.readFileSync(paths.pending, 'utf8'), pending);
+});

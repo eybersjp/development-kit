@@ -894,6 +894,54 @@ function acknowledgedSnapshotWitness(paths) {
   }
 }
 
+/**
+ * A derived snapshot or index is disposable only when it does not witness a
+ * later or different acknowledged canonical history. Compare against the
+ * ledger prefix BEFORE creating a new pending journal or rewriting derived
+ * files; otherwise a valid truncated prefix could be silently re-acknowledged.
+ * Read failures are not evidence of absence. Malformed derived JSON remains
+ * rebuildable, as it cannot establish a trustworthy history witness.
+ */
+function assertDerivedHistoryWitnesses(paths, canonicalSequence, canonicalHash, fields = ['snapshot', 'index']) {
+  for (const field of fields) {
+    let bytes;
+    try {
+      bytes = fs.readFileSync(paths[field], 'utf8');
+    } catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw new StateEngineError(
+        'Cannot inspect acknowledged ' + field + ' witness before canonical mutation: ' +
+          (error.code || error.message),
+        { code: 'STATE_DERIVED_WITNESS_READ_FAILED', field, cause: error.code || error.message },
+      );
+    }
+    let witness;
+    try {
+      witness = JSON.parse(bytes);
+      if (field === 'snapshot') validateStateSnapshot(witness);
+      else validateStateIndex(witness);
+    } catch {
+      // Corrupt derived JSON/schema cannot authorize a history regression.
+      // It is rebuildable from the validated canonical ledger.
+      continue;
+    }
+    const sequence = field === 'snapshot' ? witness.lastEventSequence : witness.sourceSequence;
+    const hash = field === 'snapshot' ? witness.lastEventHash : witness.sourceHash;
+    if (sequence > canonicalSequence) {
+      throw new StateEngineError(
+        'Canonical state history appears truncated relative to the materialized ' + field + ' witness',
+        { code: 'STATE_CANONICAL_HISTORY_REGRESSION', field, canonicalSequence, witnessedSequence: sequence },
+      );
+    }
+    if (sequence === canonicalSequence && hash !== canonicalHash) {
+      throw new StateEngineError(
+        'Canonical state history hash differs from the materialized ' + field + ' integrity witness',
+        { code: 'STATE_CANONICAL_HISTORY_HASH_CONFLICT', field, canonicalSequence, witnessedHash: hash },
+      );
+    }
+  }
+}
+
 function repairUnwitnessedTrailingLedgerSuffixLocked(rootDir) {
   const paths = ensureStateEngineLayout(rootDir);
   if (fs.existsSync(paths.pending)) {
@@ -1011,6 +1059,11 @@ function repairUnwitnessedTrailingLedgerSuffixLocked(rootDir) {
     }
   }
 
+  // An index can be the sole surviving acknowledged-history witness when the
+  // snapshot is absent or malformed. It must also block destructive truncation.
+  assertDerivedHistoryWitnesses(
+    paths, prefixEvents.length, prefixEvents.at(-1)?.eventHash ?? null, ['index'],
+  );
   const fd = openVerifiedCanonicalTailRepairFd();
   try {
     fs.ftruncateSync(fd, Buffer.byteLength(prefixContent, 'utf8'));
@@ -1327,40 +1380,7 @@ function repairDerivedLocked(rootDir) {
   // stale cached history from before another writer committed a later event.
   const paths = ensureStateEngineLayout(rootDir);
   const canonical = rebuildSnapshotFromEvents(parseLedger(fs.readFileSync(paths.events, 'utf8')));
-  if (fs.existsSync(paths.snapshot)) {
-    let witness = null;
-    let witnessBytes;
-    try {
-      witnessBytes = fs.readFileSync(paths.snapshot, 'utf8');
-    } catch (error) {
-      // An absent or malformed derived snapshot is rebuildable, but an
-      // unreadable acknowledged snapshot may witness later canonical history.
-      // Never erase that evidence after EACCES, EIO or sharing failures.
-      if (error.code !== 'ENOENT') {
-        throw new StateEngineError(
-          'Cannot inspect acknowledged snapshot witness before derived repair: ' +
-            (error.code || error.message),
-          { code: 'SNAPSHOT_WITNESS_READ_FAILED', cause: error.code || error.message },
-        );
-      }
-    }
-    if (witnessBytes !== undefined) {
-      try {
-        witness = JSON.parse(witnessBytes);
-        validateStateSnapshot(witness);
-      } catch {
-        // Malformed disposable derived data can be rebuilt from canonical.
-        witness = null;
-      }
-    }
-    if (witness && witness.lastEventSequence > canonical.lastEventSequence) {
-      throw new StateEngineError('Canonical state history appears truncated relative to the materialized snapshot');
-    }
-    if (witness && witness.lastEventSequence === canonical.lastEventSequence
-      && witness.lastEventHash !== canonical.lastEventHash) {
-      throw new StateEngineError('Canonical state history hash differs from the materialized snapshot integrity witness');
-    }
-  }
+  assertDerivedHistoryWitnesses(paths, canonical.lastEventSequence, canonical.lastEventHash);
   persistDerived(canonical, rootDir);
   return canonical;
 }
@@ -1679,6 +1699,11 @@ function recoverPendingCommitLocked(rootDir) {
         && witness.lastEventHash !== canonical.lastEventHash) {
         throw new StateEngineError('Pending recovery conflicts with snapshot integrity witness');
       }
+      // A surviving index may witness later committed history even when the
+      // snapshot is missing or corrupt. Verify it before any ledger mutation.
+      assertDerivedHistoryWitnesses(
+        paths, canonical.lastEventSequence, canonical.lastEventHash, ['index'],
+      );
       if (existingSuffix.length < expectedSuffix.length) {
         // Truncate and repair through this FD, never a separately resolved path.
         fs.ftruncateSync(fd, pending.previousByteLength);
@@ -1796,6 +1821,12 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
       existingContent = bytes.toString('utf8');
 
       const existing = parseLedger(existingContent);
+      // Inspect both acknowledged derived witnesses against the original
+      // canonical prefix, not the proposed post-append sequence: a new event
+      // must never conceal a valid truncation of previously accepted history.
+      assertDerivedHistoryWitnesses(
+        paths, existing.length, existing.at(-1)?.eventHash ?? null,
+      );
       let previous = existing.at(-1) ?? null;
       for (const event of newEvents) {
         validateStateEvent(event, previous);
