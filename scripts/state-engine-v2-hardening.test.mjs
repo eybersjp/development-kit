@@ -1253,3 +1253,37 @@ test('T04-H59 incomplete multibyte UTF-8 tail is truncated using raw canonical b
     'A torn UTF-8 suffix must be removed without rewriting valid history');
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+test('T04-H60 valid unterminated ledger event survives ENOSPC during newline repair', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H60_VALID_EVENT', payload: { value: 60 } });
+  const paths = getStateEnginePaths(rootDir);
+  const validWithoutNewline = fs.readFileSync(paths.events).subarray(0, -1);
+  fs.writeFileSync(paths.events, validWithoutNewline);
+  // No acknowledged derived witness: a failed newline write must not be
+  // misclassified as malformed JSON and authorize destructive truncation.
+  fs.unlinkSync(paths.snapshot);
+  const canonical = fs.statSync(paths.events);
+  const originalWrite = fs.writeSync;
+  let injected = 0;
+  fs.writeSync = function denyLedgerNewline(fd, buffer, ...args) {
+    const stat = fs.fstatSync(fd);
+    if (stat.isFile() && stat.dev === canonical.dev && stat.ino === canonical.ino &&
+        Buffer.isBuffer(buffer) && buffer.length === 1 && buffer[0] === 10) {
+      injected += 1;
+      const error = new Error('Synthetic ENOSPC during valid event newline completion');
+      error.code = 'ENOSPC';
+      throw error;
+    }
+    return originalWrite.call(this, fd, buffer, ...args);
+  };
+  try {
+    assert.throws(() => loadCanonicalEvents(rootDir), /ENOSPC|newline completion/i,
+      'A failed valid-event repair write must fail closed, never truncate history');
+  } finally {
+    fs.writeSync = originalWrite;
+  }
+  assert.equal(injected, 1, 'Fault injection must reach the actual canonical repair write');
+  assert.deepEqual(fs.readFileSync(paths.events), validWithoutNewline,
+    'A failed newline repair must preserve the complete valid event bytes');
+});
