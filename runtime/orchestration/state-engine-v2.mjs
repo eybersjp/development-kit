@@ -828,7 +828,53 @@ function repairUnwitnessedTrailingLedgerSuffixLocked(rootDir) {
     throw new StateEngineError('Pending commit remains unresolved during trailing-ledger recovery');
   }
 
+  // Record the canonical inode before reading repair input. A path swapped
+  // after layout preflight must never become the target of truncation/append.
+  const initialEntry = fs.lstatSync(paths.events, { bigint: true });
+  if (!initialEntry.isFile() || initialEntry.isSymbolicLink() || initialEntry.nlink !== 1n) {
+    throw new StateEngineError('Canonical ledger tail repair requires a single-link regular file');
+  }
   const content = fs.readFileSync(paths.events, 'utf8');
+  const expectedBytes = Buffer.from(content, 'utf8');
+
+  function verifyCanonicalTailRepairFd(fd) {
+    const opened = fs.fstatSync(fd, { bigint: true });
+    const entry = fs.lstatSync(paths.events, { bigint: true });
+    if (!opened.isFile() || !entry.isFile() || entry.isSymbolicLink() ||
+      opened.nlink !== 1n || entry.nlink !== 1n ||
+      opened.dev !== entry.dev || opened.ino !== entry.ino ||
+      opened.dev !== initialEntry.dev || opened.ino !== initialEntry.ino) {
+      throw new StateEngineError('Canonical ledger tail repair descriptor identity or hard-link integrity failed');
+    }
+    return opened;
+  }
+
+  function openVerifiedCanonicalTailRepairFd() {
+    const flags = fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW ?? 0);
+    const fd = fs.openSync(paths.events, flags);
+    try {
+      const opened = verifyCanonicalTailRepairFd(fd);
+      if (opened.size !== BigInt(expectedBytes.length)) {
+        throw new StateEngineError('Canonical ledger tail repair bytes changed before descriptor open');
+      }
+      const observed = Buffer.alloc(expectedBytes.length);
+      let offset = 0;
+      while (offset < observed.length) {
+        const count = fs.readSync(fd, observed, offset, observed.length - offset, offset);
+        if (count <= 0) {
+          throw new StateEngineError('Canonical ledger tail repair descriptor read was incomplete');
+        }
+        offset += count;
+      }
+      if (!observed.equals(expectedBytes)) {
+        throw new StateEngineError('Canonical ledger tail repair descriptor contents changed before mutation');
+      }
+      return fd;
+    } catch (error) {
+      fs.closeSync(fd);
+      throw error;
+    }
+  }
   if (!content || content.endsWith('\n')) return parseLedger(content);
 
   const boundary = content.lastIndexOf('\n');
@@ -842,12 +888,13 @@ function repairUnwitnessedTrailingLedgerSuffixLocked(rootDir) {
   try {
     const event = JSON.parse(tail);
     validateStateEvent(event, previous);
-    const fd = fs.openSync(paths.events, 'r+');
+    const fd = openVerifiedCanonicalTailRepairFd();
     try {
       const stat = fs.fstatSync(fd);
       if (!stat.isFile()) throw new StateEngineError('Canonical ledger repair target is not a regular file');
       fs.writeSync(fd, Buffer.from('\n'), 0, 1, Buffer.byteLength(content, 'utf8'));
       fs.fsyncSync(fd);
+    verifyCanonicalTailRepairFd(fd);
     } finally {
       fs.closeSync(fd);
     }
@@ -883,10 +930,11 @@ function repairUnwitnessedTrailingLedgerSuffixLocked(rootDir) {
     }
   }
 
-  const fd = fs.openSync(paths.events, 'r+');
+  const fd = openVerifiedCanonicalTailRepairFd();
   try {
     fs.ftruncateSync(fd, Buffer.byteLength(prefixContent, 'utf8'));
     fs.fsyncSync(fd);
+    verifyCanonicalTailRepairFd(fd);
   } finally {
     fs.closeSync(fd);
   }
