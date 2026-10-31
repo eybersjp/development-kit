@@ -898,28 +898,32 @@ function repairUnwitnessedTrailingLedgerSuffixLocked(rootDir) {
   const prefixEvents = parseLedger(prefixContent);
   const previous = prefixEvents.at(-1) ?? null;
 
-  // A fully valid final event that merely lost its record terminator is
-  // recoverable without discarding canonical information.
+  // Only a JSON syntax error can authorize torn-suffix truncation. A
+  // successfully parsed event must either validate and complete its newline,
+  // or fail closed on any write, fsync, descriptor or integrity error.
+  // Never classify ENOSPC/EIO during newline completion as malformed JSON:
+  // doing so could truncate an otherwise valid canonical event.
+  let parsedTail;
+  let completeJson = false;
   try {
-    const event = JSON.parse(tail);
-    validateStateEvent(event, previous);
+    parsedTail = JSON.parse(tail);
+    completeJson = true;
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+  }
+  if (completeJson) {
+    validateStateEvent(parsedTail, previous);
     const fd = openVerifiedCanonicalTailRepairFd();
     try {
       const stat = fs.fstatSync(fd);
       if (!stat.isFile()) throw new StateEngineError('Canonical ledger repair target is not a regular file');
-      fs.writeSync(fd, Buffer.from('\n'), 0, 1, Buffer.byteLength(content, 'utf8'));
+      fs.writeSync(fd, Buffer.from('\\n'), 0, 1, Buffer.byteLength(content, 'utf8'));
       fs.fsyncSync(fd);
-    verifyCanonicalTailRepairFd(fd);
+      verifyCanonicalTailRepairFd(fd);
     } finally {
       fs.closeSync(fd);
     }
-    return [...prefixEvents, event];
-  } catch (error) {
-    if (error instanceof StateEngineError && !String(error.message).includes('JSON')) {
-      // A parseable event with an invalid sequence/hash is ambiguous
-      // corruption, not a torn byte suffix. Never truncate it automatically.
-      throw error;
-    }
+    return [...prefixEvents, parsedTail];
   }
 
   // The final suffix is not valid JSON. It may be repaired only when no
