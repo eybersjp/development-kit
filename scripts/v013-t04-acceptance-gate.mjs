@@ -175,6 +175,10 @@ for (const id of validationRuns) {
   const run = await api('actions/runs/' + id);
   assert.equal(run.head_sha, reviewedCommit, 'Validation run is not exact-source');
   assert.equal(run.event, 'pull_request');
+  assert.equal(run.path, '.github/workflows/ci.yml',
+    'Only the authoritative full CI workflow can count as risk-3 validation evidence');
+  assert.equal(run.repository?.full_name, REPO,
+    'Cross-repository or unrelated workflow evidence is not admissible');
   assert.equal(run.status, 'completed');
   // Diagnostic/production acceptance jobs may fail while validation succeeds:
   // verify both full platform jobs individually, not overall run conclusion.
@@ -188,6 +192,22 @@ for (const id of validationRuns) {
     const matches = jobs.filter(job => job.name === 'validate (' + os + ')');
     assert.equal(matches.length, 1, 'Missing unique full validation for ' + os);
     assert.equal(matches[0].conclusion, 'success', 'Full validation failed on ' + os);
+    // A separate workflow may reuse the validate job name without executing
+    // the v0.13 compatibility, source-security or acceptance negative controls.
+    // Require authenticated successful step-level witnesses on BOTH platforms.
+    for (const required of [
+      'Validate v0.13 State Engine V2 increment',
+      'Validate v0.13 full compatibility regression',
+      'Verify v0.13 risk-3 acceptance job contract (negative control)',
+    ]) {
+      const matchingSteps = (matches[0].steps || []).filter(step => step.name === required);
+      assert.equal(matchingSteps.length, 1,
+        'Missing unique mandatory full-validation step on ' + os + ': ' + required);
+      for (const step of matchingSteps) {
+        assert.ok(step.conclusion === 'success',
+          'Mandatory full-validation step did not pass on ' + os + ': ' + required);
+      }
+    }
   }
 }
 // The canonical Development Contract acceptance engine, not a bespoke green
