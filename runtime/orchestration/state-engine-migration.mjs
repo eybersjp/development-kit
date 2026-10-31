@@ -235,7 +235,12 @@ function autopilotHistory(rootDir) {
     .filter((name) => /^revision-\d{6}\.json$/.test(name))
     .sort();
 
-  if (revisionFiles.length === 0) return null;
+  if (revisionFiles.length === 0) {
+    if (fs.existsSync(path.join(stateDir, 'current.json'))) {
+      throw new StateMigrationError('Legacy Autopilot current pointer exists without revision history');
+    }
+    return null;
+  }
   const currentPath = path.join(stateDir, 'current.json');
   if (!fs.existsSync(currentPath)) throw new StateMigrationError('Legacy Autopilot current.json is missing');
 
@@ -309,7 +314,16 @@ function orchestrationHistories(rootDir) {
     for (const runEntry of runDirs) {
       const runDir = path.join(contractDir, runEntry.name);
       const manifestPath = path.join(runDir, 'manifest.json');
-      if (!fs.existsSync(manifestPath)) continue;
+      if (!fs.existsSync(manifestPath)) {
+        const revisionDir = path.join(runDir, 'state-revisions');
+        const orphanRevisions = fs.existsSync(revisionDir)
+          && fs.readdirSync(revisionDir).some((name) => /^\d{8}\.json$/.test(name));
+        if (orphanRevisions || fs.existsSync(path.join(runDir, 'current-state.json'))
+          || fs.existsSync(path.join(runDir, 'final-state.json'))) {
+          throw new StateMigrationError('Legacy orchestration manifest is missing for existing run history');
+        }
+        continue;
+      }
       const manifest = readJson(manifestPath, 'Legacy orchestration manifest');
       try { validateOrchestrationRun(manifest); } catch (error) {
         throw new StateMigrationError(`Legacy orchestration manifest is invalid: ${error.message}`);
