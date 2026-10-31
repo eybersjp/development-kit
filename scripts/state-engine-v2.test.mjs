@@ -617,3 +617,26 @@ test('T04-P2 JSON object keys including empty, control and Unicode strings survi
     assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
   }
 });
+
+test('T04-SEC-JSON-01 rejects non-lossless JSON state before canonical commit', (t) => {
+  const invalid = [
+    ['Map', new Map([['secret', 'must-not-disappear']])],
+    ['Set', new Set(['must-not-disappear'])],
+    ['Date', new Date('2026-10-31T00:00:00.000Z')],
+    ['undefined', undefined],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+  ];
+  for (const [label, value] of invalid) {
+    const rootDir = tempProject(t, 'dk-v13-json-lossless-');
+    assert.throws(() => appendEntityState({
+      rootDir, entityType: 'generic-state', entityId: 'json-regression',
+      state: { stateRevision: 1, metadata: { value } },
+      actorClass: 'json-regression',
+    }), /JSON-serializable|JSON-compatible|lossless/i,
+    'Reject ' + label + ' instead of acknowledging a lossy event');
+    const paths = getStateEnginePaths(rootDir);
+    assert.equal(fs.existsSync(paths.events), false,
+      label + ' must not be acknowledged or committed to the canonical ledger');
+  }
+});
