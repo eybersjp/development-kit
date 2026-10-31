@@ -193,3 +193,18 @@ test('T04-A24 immutable reviewer identity prevents account-rename revocation byp
   assert.throws(() => assertCurrentRoleApproval(prior, [prior, stale], sha),
     /superseded|stale|effective/i);
 });
+
+
+test('T04-A25 full platform-validation witnesses cannot require the overall run to pass the independent acceptance job', () => {
+  // The first full runs on a reviewed source legitimately fail the separate
+  // independent-acceptance job while both full OS validation jobs pass.
+  // Requiring overall run.conclusion=success here creates an acceptance
+  // deadlock: security controls cannot cite those otherwise valid runs.
+  const gate = fs.readFileSync(path.join(root, 'scripts/v013-t04-acceptance-gate.mjs'), 'utf8');
+  assert.match(gate, /validationRuns\\.has\\(witness\\.workflowRunId\\)/,
+    'A control must still cite an authenticated, exact-source full-validation run');
+  assert.match(gate, /assert\\.equal\\(witnessRun\\.head_sha, reviewedCommit\\)/,
+    'A control cannot cite a different source');
+  assert.doesNotMatch(gate, /witnessRun\\.conclusion\\s*,\\s*'success'/,
+    'The overall CI run can fail solely because the separate independent acceptance gate correctly fails closed; validate both OS jobs and mandatory steps instead');
+});
