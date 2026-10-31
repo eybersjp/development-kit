@@ -171,3 +171,25 @@ test('T04-A23 physical NTFS power-loss approval must remain effective after late
   assert.throws(() => assertCurrentRoleApproval(approval, [approval, staleReapproval], sha),
     /superseded|stale|effective/i);
 });
+
+test('T04-A24 immutable reviewer identity prevents account-rename revocation bypass', async () => {
+  const { assertCurrentRoleApproval } = await import('./v013-t04-review-provenance.mjs');
+  const gate = fs.readFileSync(path.join(root, 'scripts/v013-t04-acceptance-gate.mjs'), 'utf8');
+  assert.match(gate, /review\.user\.id/);
+  assert.match(gate, /pr\.user\.id/);
+  assert.match(gate, /physicalReview\.user\.id/);
+  const sha = 'a'.repeat(40);
+  const prior = { id: 2401, state: 'APPROVED', commit_id: sha,
+    user: { id: 90321, login: 'reviewer-before-rename' },
+    submitted_at: '2026-10-31T08:00:00Z' };
+  const revoked = { ...prior, id: 2402, state: 'CHANGES_REQUESTED',
+    user: { id: 90321, login: 'reviewer-after-rename' },
+    submitted_at: '2026-10-31T09:00:00Z' };
+  const stale = { ...prior, id: 2403, commit_id: 'b'.repeat(40),
+    user: { id: 90321, login: 'reviewer-after-rename' },
+    submitted_at: '2026-10-31T10:00:00Z' };
+  assert.throws(() => assertCurrentRoleApproval(prior, [prior, revoked], sha),
+    /superseded|revoked|effective/i);
+  assert.throws(() => assertCurrentRoleApproval(prior, [prior, stale], sha),
+    /superseded|stale|effective/i);
+});
