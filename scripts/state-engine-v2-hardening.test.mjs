@@ -1374,3 +1374,35 @@ test('T04-H61 lock metadata write failure must not leave an unowned lock', (t) =
   assert.equal(loadCanonicalEvents(rootDir).length, 2);
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+
+test('T04-H62 failed state-lock release must not silently acknowledge a durable append', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H62_BASELINE', payload: { step: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const originalUnlink = fs.unlinkSync;
+  let injected = false;
+  fs.unlinkSync = function failLockRelease(target, ...args) {
+    if (!injected && path.resolve(String(target)) === path.resolve(paths.lock)) {
+      injected = true;
+      const error = new Error('injected state-lock release unlink EIO');
+      error.code = 'EIO';
+      throw error;
+    }
+    return originalUnlink.call(this, target, ...args);
+  };
+  try {
+    assert.throws(
+      () => appendMetadataEvent({ rootDir, eventType: 'H62_COMMITTED', payload: { step: 2 } }),
+      /lock release|offline recovery|EIO/i,
+      'A failed release of the owned lock must never return an unqualified success',
+    );
+  } finally {
+    fs.unlinkSync = originalUnlink;
+  }
+  assert.equal(injected, true, 'Fault must hit the actual state-lock release');
+  assert.equal(fs.existsSync(paths.lock), true, 'Failed lock release must preserve its owner witness');
+  assert.equal(loadCanonicalEvents(rootDir).length, 2,
+    'A durable canonical append must not be rolled back or duplicated after release failure');
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
