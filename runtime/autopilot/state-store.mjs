@@ -153,24 +153,32 @@ function recoverLatestLegacyStateUnlocked(rootDir) {
     .reverse();
 
   for (const file of files) {
+    // Only malformed revision content is eligible for fallback. An I/O error
+    // while reading the newest revision is not evidence that it is invalid:
+    // silently choosing an older one would roll back acknowledged history.
+    const filePath = path.join(stateDir, file);
+    const content = fs.readFileSync(filePath, 'utf8');
+    let state;
     try {
-      const filePath = path.join(stateDir, file);
-      const state = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      state = JSON.parse(content);
       validateWorkflowState(state);
-
-      const pointerContent = JSON.stringify({
-        currentRevision: state.stateRevision,
-        currentRevisionFile: file,
-        workflowId: state.workflowId,
-        updatedAt: new Date().toISOString(),
-        recoveredAt: new Date().toISOString(),
-      }, null, 2);
-
-      fs.writeFileSync(path.join(stateDir, 'current.json'), pointerContent, 'utf8');
-      return state;
     } catch {
-      // Try previous revision.
+      // Corrupt revision content may be skipped in favor of an older valid one.
+      continue;
     }
+
+    const pointerContent = JSON.stringify({
+      currentRevision: state.stateRevision,
+      currentRevisionFile: file,
+      workflowId: state.workflowId,
+      updatedAt: new Date().toISOString(),
+      recoveredAt: new Date().toISOString(),
+    }, null, 2);
+
+    // Publication errors must propagate; never retry with an older revision
+    // after the latest valid revision has already been selected.
+    fs.writeFileSync(path.join(stateDir, 'current.json'), pointerContent, 'utf8');
+    return state;
   }
 
   return null;
