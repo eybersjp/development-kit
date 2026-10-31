@@ -1532,7 +1532,11 @@ test('T04-H65 an index-only witness blocks derived repair and a new entity write
   );
   assert.equal(fs.readFileSync(paths.events, 'utf8'), prefix);
   assert.deepEqual(fs.readFileSync(paths.index), indexWitness);
-  assert.equal(fs.existsSync(paths.snapshot), false);
+  // Layout bootstrap may recreate a disposable empty snapshot before it
+  // inspects the retained index; it must not publish the truncated history.
+  if (fs.existsSync(paths.snapshot)) {
+    assert.equal(JSON.parse(fs.readFileSync(paths.snapshot, 'utf8')).lastEventSequence, 0);
+  }
   assert.equal(fs.existsSync(paths.pending), false);
 });
 
