@@ -718,3 +718,30 @@ test('T04-H68 read-only index verification preserves a valid pending journal and
   assert.equal(fs.existsSync(paths.pending), false);
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+test('T04-H68 read-only index verification never truncates an unacknowledged torn tail', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h68-readonly-tail-');
+  appendEntityState({
+    rootDir, entityType: 'generic-state', entityId: 'h68-tail',
+    state: { stateRevision: 1, value: 'acknowledged' }, actorClass: 'regression',
+  });
+  const paths = getStateEnginePaths(rootDir);
+  fs.appendFileSync(paths.events, '{"partial":');
+  const ledgerBefore = fs.readFileSync(paths.events);
+  const snapshotBefore = fs.readFileSync(paths.snapshot);
+  const indexBefore = fs.readFileSync(paths.index);
+
+  assert.throws(
+    () => loadStateIndex(rootDir, { rebuildIfNeeded: false }),
+    /tail|repair|read.only|recovery/i,
+    'read-only verification must refuse canonical tail repair',
+  );
+  assert.deepEqual(fs.readFileSync(paths.events), ledgerBefore,
+    'read-only verification must preserve the torn tail for recovery');
+  assert.deepEqual(fs.readFileSync(paths.snapshot), snapshotBefore);
+  assert.deepEqual(fs.readFileSync(paths.index), indexBefore);
+
+  const repaired = loadStateIndex(rootDir, { rebuildIfNeeded: true });
+  assert.equal(repaired.sourceSequence, 1);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
