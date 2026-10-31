@@ -1330,3 +1330,47 @@ test('T04-H61 failed lock metadata fsync must not strand an orphaned lock', (t) 
   assert.equal(loadCanonicalEvents(rootDir).length, 2);
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+
+test('T04-H61 lock metadata write failure must not leave an unowned lock', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H61_WRITE_BASELINE', payload: { step: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const before = fs.readFileSync(paths.events);
+  const originalWriteFile = fs.writeFileSync;
+  let injected = false;
+  fs.writeFileSync = function denyLockMetadataWrite(target, ...args) {
+    if (!injected && typeof target === 'number') {
+      const opened = fs.fstatSync(target, { bigint: true });
+      let lockEntry = null;
+      try {
+        lockEntry = fs.lstatSync(paths.lock, { bigint: true });
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+      if (lockEntry && opened.isFile() &&
+          opened.dev === lockEntry.dev && opened.ino === lockEntry.ino) {
+        injected = true;
+        const error = new Error('injected lock-file write failure');
+        error.code = 'EIO';
+        throw error;
+      }
+    }
+    return originalWriteFile.call(this, target, ...args);
+  };
+  try {
+    assert.throws(
+      () => appendMetadataEvent({ rootDir, eventType: 'H61_WRITE_REJECTED', payload: { step: 2 } }),
+      /lock|EIO|write/i,
+    );
+  } finally {
+    fs.writeFileSync = originalWriteFile;
+  }
+  assert.equal(injected, true, 'Must inject after exclusive lock-file creation');
+  assert.equal(fs.existsSync(paths.lock), false,
+    'Failed lock metadata write must not strand an unowned lock');
+  assert.deepEqual(fs.readFileSync(paths.events), before);
+  appendMetadataEvent({ rootDir, eventType: 'H61_WRITE_RETRY', payload: { step: 3 } });
+  assert.equal(loadCanonicalEvents(rootDir).length, 2);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
