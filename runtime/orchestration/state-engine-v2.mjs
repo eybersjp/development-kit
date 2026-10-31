@@ -593,10 +593,21 @@ export function recoverAbandonedStateLock({ rootDir = process.cwd(), confirmOffl
 function releaseStateLock(lock) {
   if (!lock?.path) return;
   try {
-    if (!fs.existsSync(lock.path)) return;
     const current = JSON.parse(fs.readFileSync(lock.path, 'utf8'));
-    if (current.owner === lock.owner) fs.unlinkSync(lock.path);
-  } catch {}
+    if (current?.owner !== lock.owner) {
+      throw new StateEngineError('State Engine lock ownership changed before release');
+    }
+    fs.unlinkSync(lock.path);
+  } catch (error) {
+    // A completed canonical append may already be durable. Never report
+    // unqualified success if its lock was not demonstrably released, and never
+    // silently authorize a blind retry that could duplicate committed work.
+    // Missing/replaced/corrupt locks and I/O failures require offline review.
+    throw new StateEngineError(
+      'State Engine lock release could not be verified; canonical commit may already be durable; offline recovery required',
+      { code: 'STATE_LOCK_RELEASE_FAILED', cause: error.code || error.message },
+    );
+  }
 }
 
 function schemaDocument() {
