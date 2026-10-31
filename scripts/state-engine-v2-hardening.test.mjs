@@ -1607,3 +1607,40 @@ test('T04-H65 index-only acknowledged history prevents destructive torn-tail rec
   assert.deepEqual(fs.readFileSync(paths.index), indexWitness);
   assert.equal(fs.existsSync(paths.pending), false);
 });
+
+test('T04-H65 index-only witness rejects a conflicting valid pending-recovery suffix', (t) => {
+  const rootDir = tempProject(t);
+  const alternativeRoot = tempProject(t);
+  const at = '2026-10-31T00:00:00.000Z';
+  for (const root of [rootDir, alternativeRoot]) {
+    appendMetadataEvent({ rootDir: root, eventType: 'H65_FIRST', payload: { order: 1 }, timestamp: at });
+  }
+  appendMetadataEvent({ rootDir, eventType: 'H65_ACKNOWLEDGED', payload: { order: 2 }, timestamp: at });
+  appendMetadataEvent({
+    rootDir: alternativeRoot, eventType: 'H65_CONFLICTING', payload: { order: 999 }, timestamp: at,
+  });
+  const paths = getStateEnginePaths(rootDir);
+  const fullLedger = fs.readFileSync(paths.events, 'utf8');
+  const alternativeLedger = fs.readFileSync(getStateEnginePaths(alternativeRoot).events, 'utf8');
+  const prefix = fullLedger.slice(0, fullLedger.indexOf('\n') + 1);
+  assert.ok(alternativeLedger.startsWith(prefix), 'Both histories must share the exact valid canonical prefix');
+  const suffix = alternativeLedger.slice(prefix.length);
+  const indexWitness = fs.readFileSync(paths.index);
+  fs.writeFileSync(paths.events, prefix, 'utf8');
+  fs.unlinkSync(paths.snapshot);
+  const pending = JSON.stringify({
+    schemaVersion: '1.0.0',
+    previousByteLength: Buffer.byteLength(prefix),
+    previousHash: 'sha256:' + createHash('sha256').update(prefix).digest('hex'),
+    suffix,
+  });
+  fs.writeFileSync(paths.pending, pending, 'utf8');
+  assert.throws(
+    () => loadCanonicalEvents(rootDir),
+    /index|witness|canonical|history|conflict|hash/i,
+    'A hash-valid but different event must not supersede acknowledged index history',
+  );
+  assert.equal(fs.readFileSync(paths.events, 'utf8'), prefix);
+  assert.deepEqual(fs.readFileSync(paths.index), indexWitness);
+  assert.equal(fs.readFileSync(paths.pending, 'utf8'), pending);
+});
