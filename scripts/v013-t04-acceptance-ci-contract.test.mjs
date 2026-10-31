@@ -122,3 +122,24 @@ test('T04-A19 later review revocation or stale reapproval cannot be hidden by an
     submitted_at: '2026-10-30T13:00:00Z',
   }], sha), /superseded|revoked|effective/i);
 });
+
+
+test('T04-A21 ACCEPTED verdict must be uploaded durably, only after a successful gate', () => {
+  const job = workflow.split(/^  t04_acceptance:\s*$/m)[1]?.split(/^  [a-z][\w-]*:\s*$/m)[0] ?? '';
+  const upload = job.split(/      - name: Preserve canonical T04 verdict evidence\s*\n/)[1]
+    ?.split(/      - name: /)[0] ?? '';
+  assert.ok(upload, 'T04 acceptance must persist its verdict outside the ephemeral runner');
+  assert.match(upload, /if: \$\{\{ success\(\) \}\}/,
+    'A failed acceptance gate must never upload a purported ACCEPTED verdict');
+  assert.match(upload, /uses: actions\/upload-artifact@v4/,
+    'Canonical ACCEPTED record must be retained as a GitHub Actions artifact');
+  assert.match(upload, /name: dkf-v013-t04-acceptance-evidence-\$\{\{ github\.event\.pull_request\.head\.sha \}\}/,
+    'Verdict artifact must identify its exact immutable reviewed source');
+  assert.match(upload, /path: \.development-kit\/acceptance\/DKF130-T04\.json/,
+    'Upload only the canonical deterministic Development Contract verdict');
+  assert.match(upload, /if-no-files-found: error/,
+    'Missing canonical verdict must fail the acceptance job, never silently pass');
+  assert.match(upload, /include-hidden-files: true/,
+    'The canonical verdict lives in a hidden .development-kit directory and must be included');
+  assert.doesNotMatch(upload, /if-no-files-found: ignore/);
+});
