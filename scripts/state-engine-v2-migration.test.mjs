@@ -1191,39 +1191,58 @@ test('W73-28 Unicode uppercase-folded restore aliases fail closed before publica
 });
 
 
-test('T04-H68 migration cannot acknowledge stale legacy history after concurrent legacy commit', (t) => {
+test('T04-H68 migration serializes a competing Autopilot writer across cutover', (t) => {
   const rootDir = tempProject(t, 'dk-v13-h68-legacy-cutover-');
   const legacy = writeLegacyAutopilot(rootDir, 1);
   const backupPath = getLegacyBackupPath(rootDir);
   const originalRename = fs.renameSync;
   let injected = false;
-  let migrationError = null;
   try {
     fs.renameSync = function (from, to) {
       const result = originalRename.call(fs, from, to);
       if (!injected && path.resolve(to) === path.resolve(backupPath)) {
         injected = true;
-        // Interleave a successful legacy writer after inspection and backup
-        // publication, before the migration's completion event. A migration
-        // must serialize this writer or reject the changed legacy authority.
-        saveStateRevision(workflowState(2, legacy.workflowId), rootDir);
+        // A writer racing migration must not acknowledge an unbacked legacy
+        // revision. The migration owns the gate before inspection; a nested
+        // competing writer fails closed, then may retry after cutover.
+        assert.throws(
+          () => saveStateRevision(workflowState(2, legacy.workflowId), rootDir),
+          /migration|cutover|gate|orphaned/i,
+        );
       }
       return result;
     };
-    try {
-      migrateLegacyStateToV2({ rootDir, completedAt: '2026-10-31T19:00:00.000Z' });
-    } catch (error) {
-      migrationError = error;
-    }
+    const migrated = migrateLegacyStateToV2({
+      rootDir, completedAt: '2026-10-31T19:00:00.000Z',
+    });
+    assert.equal(migrated.semanticEquivalence, true);
   } finally {
     fs.renameSync = originalRename;
   }
 
-  assert.equal(injected, true, 'the interleaved legacy revision must be acknowledged');
-  assert.ok(migrationError, 'migration must fail closed rather than publish stale completion');
-  assert.equal(getCurrentState(rootDir).stateRevision, 2,
-    'legacy revision 2 must remain the current authority after failed cutover');
-  assert.equal(loadCanonicalEvents(rootDir).some((event) =>
-    event.eventType === 'MIGRATION_COMPLETED'), false,
-  'no migration-completed event may acknowledge an obsolete inspection');
+  assert.equal(injected, true);
+  assert.equal(fs.existsSync(path.join(legacy.stateDir, 'revision-000002.json')), false,
+    'a competing writer cannot publish an unbacked legacy revision');
+  assert.equal(getCurrentState(rootDir).stateRevision, 1);
+  assert.equal(loadCanonicalEvents(rootDir).filter((event) =>
+    event.eventType === 'MIGRATION_COMPLETED').length, 1);
+
+  // The rejected writer can retry after cutover and must append to V2.
+  saveStateRevision(workflowState(2, legacy.workflowId), rootDir);
+  assert.equal(getCurrentState(rootDir).stateRevision, 2);
+  assert.equal(loadEntityState('autopilot-workflow', legacy.workflowId, rootDir).stateRevision, 2);
+  assert.equal(fs.existsSync(path.join(legacy.stateDir, 'revision-000002.json')), false);
+});
+
+test('T04-H68 orphaned migration gate fails closed without reclaiming a journal or original tree', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h68-orphan-');
+  const legacy = writeLegacyAutopilot(rootDir, 1);
+  const gatePath = path.join(rootDir, '.development-kit', '.state-migration.lock');
+  const witness = '{"owner":"unknown"}\\n';
+  fs.writeFileSync(gatePath, witness, { flag: 'wx' });
+  assert.throws(() => migrateLegacyStateToV2({ rootDir }), /migration|gate|orphaned/i);
+  assert.equal(fs.readFileSync(gatePath, 'utf8'), witness);
+  assert.equal(getCurrentState(rootDir).stateRevision, 1);
+  assert.equal(fs.existsSync(getLegacyBackupPath(rootDir)), false);
+  assert.equal(fs.existsSync(path.join(legacy.stateDir, 'revision-000001.json')), true);
 });
