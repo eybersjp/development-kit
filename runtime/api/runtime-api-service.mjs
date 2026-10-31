@@ -22,6 +22,7 @@ import { resolveMemoryIdentity } from '../intelligence/memory-identity.mjs';
 import { resolveEffectiveSettings } from '../intelligence/settings.mjs';
 import { LocalMemoryProvider } from '../intelligence/local-memory-provider.mjs';
 import { getCurrentState } from '../autopilot/state-store.mjs';
+import { isStateEngineV2Active, hasCompletedStateMigration, loadLatestEntityState } from '../orchestration/state-engine-v2.mjs';
 import { validateWorkflowState } from '../autopilot/validators.mjs';
 import { loadWorkspaceTargetRegistry } from '../orchestration/workspace-targets.mjs';
 import { loadCostRecords } from '../orchestration/cost-observatory.mjs';
@@ -273,37 +274,84 @@ export class RuntimeApiService {
     }
 
     if (method === 'GET' && pathname === '/v1/scale-context') {
-      // Read-only projection over v0.11's supported state authority. T04's
-      // canonical event ledger is deliberately NOT included in v0.12.
+      // Select the project's actual persistence authority. Released v0.12.1
+      // projects retain the legacy pointer projection; fresh/migrated v0.13
+      // projects must never read a stale pointer or fabricate one for the UI.
       const directory = path.join(this.rootDir, '.development-kit', 'autopilot', 'state');
       const pointerPath = path.join(directory, 'current.json');
       let stateHealth = 'unavailable';
       let state = { active: false, currentStage: null, revision: null };
       let activeContractId = null;
-      if (fs.existsSync(pointerPath)) {
+      let v2Active = false;
+      let v2Invalid = false;
+      try {
+        v2Active = isStateEngineV2Active(this.rootDir);
+      } catch {
+        v2Invalid = true;
+      }
+      // V2 layout existence alone does not migrate an existing legacy workflow.
+      // Selecting legacy authority must use the non-mutating pointer projection
+      // below: getCurrentState() can repair current.json as a side effect.
+      let v2WorkflowAuthority = v2Active;
+      if (v2Active) {
         try {
-          const pointer = JSON.parse(fs.readFileSync(pointerPath, 'utf8'));
-          if (!Number.isSafeInteger(pointer.currentRevision) ||
-              !/^revision-\d{6}\.json$/.test(pointer.currentRevisionFile) ||
-              Number(pointer.currentRevisionFile.slice(9, 15)) !== pointer.currentRevision) {
-            throw new Error('Invalid revision pointer');
+          const hasLegacyRevisions = fs.existsSync(directory) &&
+            fs.readdirSync(directory).some((name) => /^revision-\d{6}\.json$/.test(name));
+          if (hasLegacyRevisions) {
+            v2WorkflowAuthority = hasCompletedStateMigration(this.rootDir) &&
+              loadLatestEntityState('autopilot-workflow', this.rootDir) !== null;
           }
-          const revisionPath = path.join(directory, pointer.currentRevisionFile);
-          if (!fs.existsSync(revisionPath)) {
-            stateHealth = 'recovery-required';
-          } else {
-            const revision = JSON.parse(fs.readFileSync(revisionPath, 'utf8'));
+        } catch {
+          // An unreadable V2 migration witness cannot authorize fallback.
+          v2Active = false;
+          v2Invalid = true;
+          v2WorkflowAuthority = false;
+        }
+      }
+      if (v2WorkflowAuthority) {
+        try {
+          const revision = getCurrentState(this.rootDir);
+          if (revision) {
             validateWorkflowState(revision);
-            if (revision.stateRevision !== pointer.currentRevision) {
-              throw new Error('Pointer revision mismatch');
-            }
             stateHealth = 'unverified';
-            state = { active: true, currentStage: revision.currentStage, revision: revision.stateRevision };
+            state = { active: true, currentStage: revision.currentStage,
+              revision: revision.stateRevision };
             activeContractId = typeof revision.orchestration?.activeContractId === 'string'
               ? revision.orchestration.activeContractId : null;
           }
         } catch {
           stateHealth = 'degraded';
+        }
+      } else if (v2Invalid) {
+        // Never silently fall back to a frozen legacy pointer when canonical
+        // V2 metadata is present but invalid or cannot be trusted.
+        stateHealth = 'degraded';
+      } else {
+        if (fs.existsSync(pointerPath)) {
+          try {
+            const pointer = JSON.parse(fs.readFileSync(pointerPath, 'utf8'));
+            if (!Number.isSafeInteger(pointer.currentRevision) ||
+                !/^revision-\d{6}\.json$/.test(pointer.currentRevisionFile) ||
+                Number(pointer.currentRevisionFile.slice(9, 15)) !== pointer.currentRevision) {
+              throw new Error('Invalid revision pointer');
+            }
+            const revisionPath = path.join(directory, pointer.currentRevisionFile);
+            if (!fs.existsSync(revisionPath)) {
+              stateHealth = 'recovery-required';
+            } else {
+              const revision = JSON.parse(fs.readFileSync(revisionPath, 'utf8'));
+              validateWorkflowState(revision);
+              if (revision.stateRevision !== pointer.currentRevision) {
+                throw new Error('Pointer revision mismatch');
+              }
+              stateHealth = 'unverified';
+              state = { active: true, currentStage: revision.currentStage, revision: revision.stateRevision };
+              activeContractId = typeof revision.orchestration?.activeContractId === 'string'
+                ? revision.orchestration.activeContractId : null;
+            }
+          } catch {
+            stateHealth = 'degraded';
+          }
         }
       }
       const modules = {
@@ -319,9 +367,11 @@ export class RuntimeApiService {
         id, { installed: fs.existsSync(new URL('../orchestration/' + filename, import.meta.url)),
           accepted: null, acceptanceStatus: 'not-independently-established' },
       ]));
-      capabilities.stateEngineV2 = {
-        installed: false, accepted: false, acceptanceStatus: 'deferred-to-v0.13.0',
-      };
+      capabilities.stateEngineV2 = v2Active
+        ? { installed: true, accepted: null, acceptanceStatus: 'not-independently-established' }
+        : v2Invalid
+          ? { installed: false, accepted: null, acceptanceStatus: 'degraded' }
+          : { installed: false, accepted: false, acceptanceStatus: 'deferred-to-v0.13.0' };
       // Operational state is observed strictly from the existing stable
       // project stores. Never confuse an installed module with an active,
       // verified, or accepted capability, and never mutate data on GET.
@@ -384,7 +434,8 @@ export class RuntimeApiService {
       };
       return this._json(res, 200, {
         schemaVersion: '1.0.0',
-        canonicalStateStore: 'autopilot-versioned-snapshots',
+        canonicalStateStore: v2Active || v2Invalid
+          ? 'state-engine-v2-event-ledger' : 'autopilot-versioned-snapshots',
         stateHealth,
         state,
         capabilities,
