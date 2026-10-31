@@ -1846,8 +1846,8 @@ export function cleanupOrphanedStateTemps(rootDir = process.cwd()) {
     // Only internal publication stages may be garbage-collected. In
     // particular, never delete a live writer's temporary file: a concurrent
     // atomic rename would then fail after its bytes were already fsynced.
-    if (!/^(?:events\\.jsonl|snapshot\\.json|index\\.db|schema\\.json|pending-commit\\.json)\\.tmp-/.test(name)) continue;
-    const owner = /\\.tmp-([1-9][0-9]*)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.exec(name);
+    if (!/^(?:events\.jsonl|snapshot\.json|index\.db|schema\.json|pending-commit\.json)\.tmp-/.test(name)) continue;
+    const owner = /\.tmp-([1-9][0-9]*)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.exec(name);
     if (owner) {
       const pid = Number(owner[1]);
       if (!Number.isSafeInteger(pid)) continue;
