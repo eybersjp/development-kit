@@ -143,7 +143,7 @@ export function saveStateRevision(state, rootDir = process.cwd()) {
   return withMigrationGate(rootDir, () => saveStateRevisionUnlocked(state, rootDir));
 }
 
-function recoverLatestLegacyState(rootDir) {
+function recoverLatestLegacyStateUnlocked(rootDir) {
   const stateDir = getStateDir(rootDir);
   if (!fs.existsSync(stateDir)) return null;
 
@@ -176,15 +176,29 @@ function recoverLatestLegacyState(rootDir) {
   return null;
 }
 
-export function recoverLatestValidState(rootDir = process.cwd()) {
-  if (shouldUseV2(rootDir) && isStateEngineV2Active(rootDir)) {
-    const current = migratedWorkflowState(rootDir);
-    if (current) {
-      rebuildStateSnapshot(rootDir);
-      const rebuilt = loadLatestEntityState('autopilot-workflow', rootDir);
-      validateWorkflowState(rebuilt);
-      return rebuilt;
+// Pointer repair is a legacy write. Reacquire the migration gate and recheck
+// authority *inside* it so a stale reader cannot repair legacy after cutover.
+function recoverLatestLegacyState(rootDir) {
+  return withMigrationGate(rootDir, () => {
+    if (shouldUseV2(rootDir) && isStateEngineV2Active(rootDir)) {
+      const current = migratedWorkflowState(rootDir);
+      if (current) return current;
     }
-  }
-  return recoverLatestLegacyState(rootDir);
+    return recoverLatestLegacyStateUnlocked(rootDir);
+  });
+}
+
+export function recoverLatestValidState(rootDir = process.cwd()) {
+  return withMigrationGate(rootDir, () => {
+    if (shouldUseV2(rootDir) && isStateEngineV2Active(rootDir)) {
+      const current = migratedWorkflowState(rootDir);
+      if (current) {
+        rebuildStateSnapshot(rootDir);
+        const rebuilt = loadLatestEntityState('autopilot-workflow', rootDir);
+        validateWorkflowState(rebuilt);
+        return rebuilt;
+      }
+    }
+    return recoverLatestLegacyStateUnlocked(rootDir);
+  });
 }
