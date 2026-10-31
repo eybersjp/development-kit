@@ -2042,8 +2042,9 @@ export function queryStateIndex({
 }
 
 export function verifyStateEngineIntegrity(rootDir = process.cwd()) {
-  // Integrity verification must not consume crash evidence or perform repair.
-  const events = loadCanonicalEvents(rootDir, { recoverIfNeeded: false });
+  // Preserve the established H17 integrity-check contract: this explicit
+  // recovery entry point may complete a pending commit before verification.
+  const events = loadCanonicalEvents(rootDir);
   const canonical = rebuildSnapshotFromEvents(events);
   const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: false });
   const index = loadStateIndex(rootDir, { rebuildIfNeeded: false });
