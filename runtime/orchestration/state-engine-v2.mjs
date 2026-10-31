@@ -1089,21 +1089,30 @@ function repairUnwitnessedTrailingLedgerSuffixLocked(rootDir) {
   return prefixEvents;
 }
 
-export function loadCanonicalEvents(rootDir = process.cwd()) {
+export function loadCanonicalEvents(rootDir = process.cwd(), { recoverIfNeeded = true } = {}) {
   const paths = statePaths(rootDir);
   if (!fs.existsSync(paths.events)) {
     assertMissingCanonicalLedgerHasNoStateWitness(paths);
     return [];
   }
   if (fs.existsSync(paths.pending)) {
+    if (!recoverIfNeeded) {
+      throw new StateEngineError('Pending State Engine commit requires recovery; read-only lookup cannot retire recovery evidence');
+    }
     return withStateLock(rootDir, () => parseLedger(fs.readFileSync(paths.events, 'utf8')));
   }
 
   const content = fs.readFileSync(paths.events, 'utf8');
   if (fs.existsSync(paths.pending)) {
+    if (!recoverIfNeeded) {
+      throw new StateEngineError('Pending State Engine commit requires recovery; read-only lookup cannot retire recovery evidence');
+    }
     return withStateLock(rootDir, () => parseLedger(fs.readFileSync(paths.events, 'utf8')));
   }
   if (!content || content.endsWith('\n')) return parseLedger(content);
+  if (!recoverIfNeeded) {
+    throw new StateEngineError('Canonical ledger has an unterminated tail requiring recovery; read-only lookup cannot repair it');
+  }
 
   // Only a non-terminated final record is eligible for automatic tail
   // recovery. Mid-ledger corruption and hash-chain failures remain fail-closed.
@@ -1410,7 +1419,7 @@ export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = t
     assertMissingCanonicalLedgerHasNoStateWitness(paths);
     return null;
   }
-  const canonical = rebuildSnapshotFromEvents(loadCanonicalEvents(rootDir));
+  const canonical = rebuildSnapshotFromEvents(loadCanonicalEvents(rootDir, { recoverIfNeeded: rebuildIfNeeded }));
 
   if (!fs.existsSync(paths.snapshot)) {
     if (!rebuildIfNeeded) return null;
@@ -2033,7 +2042,8 @@ export function queryStateIndex({
 }
 
 export function verifyStateEngineIntegrity(rootDir = process.cwd()) {
-  const events = loadCanonicalEvents(rootDir);
+  // Integrity verification must not consume crash evidence or perform repair.
+  const events = loadCanonicalEvents(rootDir, { recoverIfNeeded: false });
   const canonical = rebuildSnapshotFromEvents(events);
   const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: false });
   const index = loadStateIndex(rootDir, { rebuildIfNeeded: false });
