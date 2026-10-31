@@ -1490,3 +1490,64 @@ test('T04-H64 a missing canonical ledger cannot be silently recreated over ackno
   fs.writeFileSync(paths.events, canonicalWitness);
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+test('T04-H65 valid canonical prefix truncation cannot overwrite acknowledged snapshot history', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H65_FIRST', payload: { order: 1 } });
+  appendMetadataEvent({ rootDir, eventType: 'H65_ACKNOWLEDGED', payload: { order: 2 } });
+  const paths = getStateEnginePaths(rootDir);
+  const fullLedger = fs.readFileSync(paths.events, 'utf8');
+  const snapshotWitness = fs.readFileSync(paths.snapshot);
+  const indexWitness = fs.readFileSync(paths.index);
+  const prefix = fullLedger.slice(0, fullLedger.indexOf('\n') + 1);
+  fs.writeFileSync(paths.events, prefix, 'utf8');
+  assert.equal(fs.existsSync(paths.pending), false);
+  assert.throws(
+    () => appendMetadataEvent({ rootDir, eventType: 'H65_MUST_NOT_REPLACE', payload: { order: 999 } }),
+    /canonical|witness|history|truncat|integrity/i,
+    'A new valid event must not replace an already acknowledged event with the same sequence',
+  );
+  assert.equal(fs.readFileSync(paths.events, 'utf8'), prefix);
+  assert.deepEqual(fs.readFileSync(paths.snapshot), snapshotWitness);
+  assert.deepEqual(fs.readFileSync(paths.index), indexWitness);
+  assert.equal(fs.existsSync(paths.pending), false);
+});
+
+test('T04-H65 an index-only witness blocks derived repair and a new entity write over truncated history', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H65_FIRST', payload: { order: 1 } });
+  appendMetadataEvent({ rootDir, eventType: 'H65_ACKNOWLEDGED', payload: { order: 2 } });
+  const paths = getStateEnginePaths(rootDir);
+  const fullLedger = fs.readFileSync(paths.events, 'utf8');
+  const indexWitness = fs.readFileSync(paths.index);
+  const prefix = fullLedger.slice(0, fullLedger.indexOf('\n') + 1);
+  fs.writeFileSync(paths.events, prefix, 'utf8');
+  fs.unlinkSync(paths.snapshot);
+  assert.throws(
+    () => appendEntityState({
+      rootDir, entityType: 'h65-state', entityId: 'test', state: { stateRevision: 1, value: 'must-not-write' },
+    }),
+    /canonical|witness|history|truncat|integrity/i,
+    'A retained index is an acknowledged history witness even when the snapshot is missing',
+  );
+  assert.equal(fs.readFileSync(paths.events, 'utf8'), prefix);
+  assert.deepEqual(fs.readFileSync(paths.index), indexWitness);
+  assert.equal(fs.existsSync(paths.snapshot), false);
+  assert.equal(fs.existsSync(paths.pending), false);
+});
+
+test('T04-H65 older but consistent derived witnesses may be refreshed by a later valid append', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H65_FIRST', payload: { order: 1 } });
+  const paths = getStateEnginePaths(rootDir);
+  const oldSnapshot = fs.readFileSync(paths.snapshot);
+  const oldIndex = fs.readFileSync(paths.index);
+  appendMetadataEvent({ rootDir, eventType: 'H65_SECOND', payload: { order: 2 } });
+  fs.writeFileSync(paths.snapshot, oldSnapshot);
+  fs.writeFileSync(paths.index, oldIndex);
+  appendMetadataEvent({ rootDir, eventType: 'H65_THIRD', payload: { order: 3 } });
+  assert.equal(loadCanonicalEvents(rootDir).length, 3);
+  assert.equal(JSON.parse(fs.readFileSync(paths.snapshot, 'utf8')).lastEventSequence, 3);
+  assert.equal(JSON.parse(fs.readFileSync(paths.index, 'utf8')).sourceSequence, 3);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
