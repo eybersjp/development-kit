@@ -139,5 +139,7 @@ test('T04-A21 ACCEPTED verdict must be uploaded durably, only after a successful
     'Upload only the canonical deterministic Development Contract verdict');
   assert.match(upload, /if-no-files-found: error/,
     'Missing canonical verdict must fail the acceptance job, never silently pass');
+  assert.match(upload, /include-hidden-files: true/,
+    'The canonical verdict lives in a hidden .development-kit directory and must be included');
   assert.doesNotMatch(upload, /if-no-files-found: ignore/);
 });
