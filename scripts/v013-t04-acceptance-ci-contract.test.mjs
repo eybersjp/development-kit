@@ -150,3 +150,24 @@ test('T04-A22 a security-control witness cannot cite an unrelated green workflow
   assert.match(gate, /validationRuns\.has\(witness\.workflowRunId\)/,
     'Each security-control witness must cite one of the authenticated, exact-SHA, full Ubuntu+Windows validation runs, not any unrelated green workflow');
 });
+
+
+test('T04-A23 physical NTFS power-loss approval must remain effective after later reviews', async () => {
+  const gate = fs.readFileSync(path.join(root, 'scripts/v013-t04-acceptance-gate.mjs'), 'utf8');
+  assert.match(gate, /assertCurrentRoleApproval\(physicalReview, allSubmittedReviews, reviewedCommit\)/,
+    'Physical NTFS approval must be checked against the complete authenticated review timeline; an earlier APPROVED receipt can be revoked');
+
+  const { assertCurrentRoleApproval } = await import('./v013-t04-review-provenance.mjs');
+  const sha = 'a'.repeat(40);
+  const approval = { id: 901, state: 'APPROVED', commit_id: sha,
+    user: { login: 'independent-ntfs-reviewer' }, submitted_at: '2026-10-31T08:00:00Z' };
+  const revoked = { ...approval, id: 902, state: 'CHANGES_REQUESTED',
+    submitted_at: '2026-10-31T08:30:00Z' };
+  const staleReapproval = { ...approval, id: 903, commit_id: 'b'.repeat(40),
+    submitted_at: '2026-10-31T09:00:00Z' };
+  assert.doesNotThrow(() => assertCurrentRoleApproval(approval, [approval], sha));
+  assert.throws(() => assertCurrentRoleApproval(approval, [approval, revoked], sha),
+    /superseded|revoked|effective/i);
+  assert.throws(() => assertCurrentRoleApproval(approval, [approval, staleReapproval], sha),
+    /superseded|stale|effective/i);
+});
