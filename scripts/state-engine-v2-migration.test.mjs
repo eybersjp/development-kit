@@ -1381,6 +1381,7 @@ test('T04-H70 transient newest revision read failure cannot select older revisio
 });
 
 
+// H71 negative controls: a transient I/O failure is not malformed JSON.
 test('T04-H71 legacy current pointer EIO fails closed without rewriting acknowledged pointer', (t) => {
   const rootDir = tempProject(t, 'dk-v13-h71-pointer-eio-');
   const legacy = writeLegacyAutopilot(rootDir, 2);
