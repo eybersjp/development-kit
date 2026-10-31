@@ -902,7 +902,10 @@ function acknowledgedSnapshotWitness(paths) {
  * Read failures are not evidence of absence. Malformed derived JSON remains
  * rebuildable, as it cannot establish a trustworthy history witness.
  */
-function assertDerivedHistoryWitnesses(paths, canonicalSequence, canonicalHash, fields = ['snapshot', 'index']) {
+function assertDerivedHistoryWitnesses(paths, canonicalEvents, fields = ['snapshot', 'index']) {
+  if (!Array.isArray(canonicalEvents)) {
+    throw new StateEngineError('Canonical events are required for source-bound derived witness validation');
+  }
   for (const field of fields) {
     let bytes;
     try {
@@ -921,22 +924,28 @@ function assertDerivedHistoryWitnesses(paths, canonicalSequence, canonicalHash, 
       if (field === 'snapshot') validateStateSnapshot(witness);
       else validateStateIndex(witness);
     } catch {
-      // Corrupt derived JSON/schema cannot authorize a history regression.
-      // It is rebuildable from the validated canonical ledger.
+      // Malformed derived JSON/schema is rebuildable; unreadable evidence is not.
       continue;
     }
     const sequence = field === 'snapshot' ? witness.lastEventSequence : witness.sourceSequence;
     const hash = field === 'snapshot' ? witness.lastEventHash : witness.sourceHash;
-    if (sequence > canonicalSequence) {
+    if (sequence > canonicalEvents.length) {
       throw new StateEngineError(
         'Canonical state history appears truncated relative to the materialized ' + field + ' witness',
-        { code: 'STATE_CANONICAL_HISTORY_REGRESSION', field, canonicalSequence, witnessedSequence: sequence },
+        { code: 'STATE_CANONICAL_HISTORY_REGRESSION', field,
+          canonicalSequence: canonicalEvents.length, witnessedSequence: sequence },
       );
     }
-    if (sequence === canonicalSequence && hash !== canonicalHash) {
+    // A witness may be older than the proposed ledger after a legitimate
+    // append, but only when it agrees with the hash at its OWN sequence.
+    // Comparing only the proposed final hash would miss a conflicting event
+    // followed by later valid events (T04-H66).
+    const prefixHash = sequence === 0 ? null : canonicalEvents[sequence - 1].eventHash;
+    if (hash !== prefixHash) {
       throw new StateEngineError(
         'Canonical state history hash differs from the materialized ' + field + ' integrity witness',
-        { code: 'STATE_CANONICAL_HISTORY_HASH_CONFLICT', field, canonicalSequence, witnessedHash: hash },
+        { code: 'STATE_CANONICAL_HISTORY_HASH_CONFLICT', field,
+          witnessedSequence: sequence, witnessedHash: hash, canonicalPrefixHash: prefixHash },
       );
     }
   }
@@ -1058,12 +1067,17 @@ function repairUnwitnessedTrailingLedgerSuffixLocked(rootDir) {
       throw new StateEngineError('Materialized snapshot hash disagrees with recoverable canonical prefix');
     }
   }
+  if (witness && witness.lastEventSequence < prefixEvents.length) {
+    const witnessedHash = witness.lastEventSequence === 0
+      ? null : prefixEvents[witness.lastEventSequence - 1].eventHash;
+    if (witness.lastEventHash !== witnessedHash) {
+      throw new StateEngineError('Materialized snapshot hash disagrees with its recoverable canonical prefix');
+    }
+  }
 
   // An index can be the sole surviving acknowledged-history witness when the
   // snapshot is absent or malformed. It must also block destructive truncation.
-  assertDerivedHistoryWitnesses(
-    paths, prefixEvents.length, prefixEvents.at(-1)?.eventHash ?? null, ['index'],
-  );
+  assertDerivedHistoryWitnesses(paths, prefixEvents, ['index']);
   const fd = openVerifiedCanonicalTailRepairFd();
   try {
     fs.ftruncateSync(fd, Buffer.byteLength(prefixContent, 'utf8'));
@@ -1379,8 +1393,9 @@ function repairDerivedLocked(rootDir) {
   // Snapshot repair replays the *current* ledger under the writer lock, never a
   // stale cached history from before another writer committed a later event.
   const paths = ensureStateEngineLayout(rootDir);
-  const canonical = rebuildSnapshotFromEvents(parseLedger(fs.readFileSync(paths.events, 'utf8')));
-  assertDerivedHistoryWitnesses(paths, canonical.lastEventSequence, canonical.lastEventHash);
+  const canonicalEvents = parseLedger(fs.readFileSync(paths.events, 'utf8'));
+  const canonical = rebuildSnapshotFromEvents(canonicalEvents);
+  assertDerivedHistoryWitnesses(paths, canonicalEvents);
   persistDerived(canonical, rootDir);
   return canonical;
 }
@@ -1453,8 +1468,12 @@ export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = t
 
 export function rebuildStateIndex(rootDir = process.cwd()) {
   return withStateLock(rootDir, () => {
-    const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
     const paths = ensureStateEngineLayout(rootDir);
+    // A reader-triggered rebuild is still a filesystem mutation. Preserve an
+    // existing index's acknowledged-history witness before replacing it.
+    const canonicalEvents = loadCanonicalEvents(rootDir);
+    assertDerivedHistoryWitnesses(paths, canonicalEvents);
+    const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
     const index = buildStateIndex(snapshot);
     atomicWrite(paths.index, stablePretty(index));
     return index;
@@ -1662,9 +1681,10 @@ function recoverPendingCommitLocked(rootDir) {
       if (!expectedSuffix.subarray(0, existingSuffix.length).equals(existingSuffix)) {
         throw new StateEngineError('Canonical state suffix conflicts with pending commit; refusing recovery');
       }
-      canonical = rebuildSnapshotFromEvents(
-        parseLedger(Buffer.concat([bytes.subarray(0, pending.previousByteLength), expectedSuffix]).toString('utf8')),
+      const proposedEvents = parseLedger(
+        Buffer.concat([bytes.subarray(0, pending.previousByteLength), expectedSuffix]).toString('utf8'),
       );
+      canonical = rebuildSnapshotFromEvents(proposedEvents);
       // Validate the entire proposed ledger and the materialized snapshot witness
       // before any truncate/append/fsync can mutate canonical crash evidence.
       let witness = null;
@@ -1701,9 +1721,7 @@ function recoverPendingCommitLocked(rootDir) {
       }
       // A surviving index may witness later committed history even when the
       // snapshot is missing or corrupt. Verify it before any ledger mutation.
-      assertDerivedHistoryWitnesses(
-        paths, canonical.lastEventSequence, canonical.lastEventHash, ['index'],
-      );
+      assertDerivedHistoryWitnesses(paths, proposedEvents);
       if (existingSuffix.length < expectedSuffix.length) {
         // Truncate and repair through this FD, never a separately resolved path.
         fs.ftruncateSync(fd, pending.previousByteLength);
@@ -1824,9 +1842,7 @@ function commitPreparedEventsLocked(newEvents, rootDir = process.cwd()) {
       // Inspect both acknowledged derived witnesses against the original
       // canonical prefix, not the proposed post-append sequence: a new event
       // must never conceal a valid truncation of previously accepted history.
-      assertDerivedHistoryWitnesses(
-        paths, existing.length, existing.at(-1)?.eventHash ?? null,
-      );
+      assertDerivedHistoryWitnesses(paths, existing);
       let previous = existing.at(-1) ?? null;
       for (const event of newEvents) {
         validateStateEvent(event, previous);
