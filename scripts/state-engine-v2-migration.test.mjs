@@ -1257,7 +1257,7 @@ test('T04-H68 separate process cannot acknowledge legacy state while migration g
       JSON.stringify(new URL('../runtime/autopilot/state-store.mjs', import.meta.url).href) + ';',
     'const state = JSON.parse(process.argv[2]);',
     'saveStateRevision(state, process.argv[1]);',
-  ].join('\\n');
+  ].join('\n');
   withMigrationGate(rootDir, () => {
     const child = requireSpawnSync(process.execPath,
       ['--input-type=module', '-e', childScript, rootDir, JSON.stringify(state)],
