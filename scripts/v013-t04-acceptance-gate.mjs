@@ -276,6 +276,8 @@ for (const control of requiredControls) {
     Number.isSafeInteger(witness.githubReviewId) &&
     Number.isSafeInteger(witness.workflowRunId),
     'Security control missing independent source-bound witness: ' + control.id);
+  assert.ok(validationRuns.has(witness.workflowRunId),
+    'Security control witness must cite an authenticated full Ubuntu/Windows validation run on the exact reviewed source');
   assert.equal(witness.githubReviewId, authenticatedReviews.get('security-reviewer').id,
     'Security control witnesses must bind the independently approved security review');
   const witnessReview = await api('pulls/92/reviews/' + witness.githubReviewId);
