@@ -12,6 +12,7 @@ import {
   getStateEnginePaths,
   loadCanonicalEvents,
   loadStateSnapshot,
+  rebuildStateSnapshot,
   verifyStateEngineIntegrity,
   recoverAbandonedStateLock,
   ensureStateEngineLayout,
@@ -1406,3 +1407,47 @@ test('T04-H62 failed state-lock release must not silently acknowledge a durable 
     'A durable canonical append must not be rolled back or duplicated after release failure');
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+
+for (const deniedCode of ['EACCES', 'EIO']) {
+  test(`T04-H63 unreadable acknowledged snapshot blocks derived repair (${deniedCode})`, (t) => {
+    const rootDir = tempProject(t);
+    appendMetadataEvent({ rootDir, eventType: 'H63_BASELINE', payload: { step: 1 } });
+    appendMetadataEvent({ rootDir, eventType: 'H63_ACKNOWLEDGED', payload: { step: 2 } });
+    const paths = getStateEnginePaths(rootDir);
+    const snapshotWitness = fs.readFileSync(paths.snapshot);
+    const indexWitness = fs.readFileSync(paths.index);
+    const canonical = fs.readFileSync(paths.events, 'utf8');
+    const firstLine = canonical.slice(0, canonical.indexOf('\n') + 1);
+    fs.writeFileSync(paths.events, firstLine);
+    const truncatedCanonical = fs.readFileSync(paths.events);
+    assert.equal(fs.existsSync(paths.pending), false);
+
+    const originalRead = fs.readFileSync;
+    let injected = 0;
+    fs.readFileSync = function denyDerivedSnapshotWitness(target, ...args) {
+      if (String(target) === paths.snapshot) {
+        injected += 1;
+        const error = new Error(`Synthetic ${deniedCode} reading acknowledged snapshot`);
+        error.code = deniedCode;
+        throw error;
+      }
+      return originalRead.call(this, target, ...args);
+    };
+    try {
+      assert.throws(() => rebuildStateSnapshot(rootDir),
+        /snapshot witness|EACCES|EIO|cannot inspect/i,
+        'A failed witness read must not authorize replacement by an older ledger prefix');
+    } finally {
+      fs.readFileSync = originalRead;
+    }
+    assert.ok(injected > 0, 'Fault injection must reach the actual snapshot witness read');
+    assert.deepEqual(fs.readFileSync(paths.snapshot), snapshotWitness,
+      'The acknowledged snapshot witness must survive failed inspection byte-for-byte');
+    assert.deepEqual(fs.readFileSync(paths.index), indexWitness,
+      'The derived index must not be rewritten after witness inspection fails');
+    assert.deepEqual(fs.readFileSync(paths.events), truncatedCanonical,
+      'The canonical ledger must not be modified by rejected derived repair');
+    assert.equal(fs.existsSync(paths.pending), false);
+  });
+}
