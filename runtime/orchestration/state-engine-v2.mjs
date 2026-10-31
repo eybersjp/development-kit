@@ -1686,12 +1686,29 @@ function withStateLock(rootDir, task) {
   if (ACTIVE_STATE_LOCKS.has(key)) return task();
   const lock = acquireStateLock(rootDir);
   ACTIVE_STATE_LOCKS.add(key);
+  let primaryError = null;
   try {
     recoverPendingCommitLocked(rootDir);
     return task();
+  } catch (error) {
+    primaryError = error;
+    throw error;
   } finally {
     ACTIVE_STATE_LOCKS.delete(key);
-    releaseStateLock(lock);
+    try {
+      releaseStateLock(lock);
+    } catch (releaseError) {
+      if (primaryError) {
+        // A failed transaction must retain its original filesystem/security
+        // cause. Record a secondary release failure without replacing the
+        // primary error or silently claiming the lock was cleaned up.
+        if (primaryError && typeof primaryError === 'object') {
+          primaryError.lockReleaseError = releaseError;
+        }
+      } else {
+        throw releaseError;
+      }
+    }
   }
 }
 
