@@ -328,6 +328,23 @@ test('interrupted temporary state files cannot advance canonical history', (t) =
   assert.equal(fs.readFileSync(paths.events, 'utf8'), before);
 });
 
+test('T04 concurrent temporary cleanup preserves an active writer staging file', (t) => {
+  const rootDir = tempProject(t);
+  ensureStateEngineLayout(rootDir);
+  const paths = getStateEnginePaths(rootDir);
+  const liveStage = path.join(paths.stateRoot, 'events.jsonl.tmp-' + process.pid + '-00000000-0000-4000-8000-000000000001');
+  const staleStage = path.join(paths.stateRoot, 'events.jsonl.tmp-interrupted');
+  fs.writeFileSync(liveStage, 'active writer staging data');
+  fs.writeFileSync(staleStage, 'abandoned data');
+
+  const removed = cleanupOrphanedStateTemps(rootDir);
+  assert.equal(fs.readFileSync(liveStage, 'utf8'), 'active writer staging data',
+    'cleanup must not unlink the temporary file of a still-running writer');
+  assert.ok(!removed.includes(liveStage));
+  assert.ok(removed.includes(staleStage));
+  assert.equal(fs.existsSync(staleStage), false);
+});
+
 test('fresh Autopilot projects use State Engine V2 without legacy revision micro-files', (t) => {
   const rootDir = tempProject(t);
   const first = workflowState(1);
