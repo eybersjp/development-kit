@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -667,5 +668,53 @@ test('T04-H67 read-only index lookup must not publish a missing snapshot', (t) =
 
   const recovered = loadStateIndex(rootDir, { rebuildIfNeeded: true });
   assert.equal(recovered.sourceSequence, 1);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
+
+test('T04-H68 read-only index verification preserves a valid pending journal and missing snapshot', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h68-readonly-pending-');
+  const paths = getStateEnginePaths(rootDir);
+  appendEntityState({
+    rootDir, entityType: 'generic-state', entityId: 'h68',
+    state: { stateRevision: 1, value: 'first' }, actorClass: 'regression',
+  });
+  const acknowledgedPrefix = fs.readFileSync(paths.events);
+  const originalIndex = fs.readFileSync(paths.index);
+  appendEntityState({
+    rootDir, entityType: 'generic-state', entityId: 'h68',
+    state: { stateRevision: 2, value: 'second' }, actorClass: 'regression',
+  });
+  const completeLedger = fs.readFileSync(paths.events);
+  const pendingSuffix = completeLedger.subarray(acknowledgedPrefix.length).toString('utf8');
+  assert.ok(pendingSuffix.endsWith('\\n'));
+  fs.writeFileSync(paths.events, acknowledgedPrefix);
+  fs.writeFileSync(paths.index, originalIndex);
+  fs.unlinkSync(paths.snapshot);
+  const pending = {
+    schemaVersion: '1.0.0',
+    previousByteLength: acknowledgedPrefix.length,
+    previousHash: 'sha256:' + crypto.createHash('sha256').update(acknowledgedPrefix).digest('hex'),
+    suffix: pendingSuffix,
+  };
+  fs.writeFileSync(paths.pending, JSON.stringify(pending) + '\\n');
+  const journalBefore = fs.readFileSync(paths.pending);
+
+  assert.throws(
+    () => loadStateIndex(rootDir, { rebuildIfNeeded: false }),
+    /pending|recovery|read.only/i,
+    'read-only verification must refuse to recover an interrupted commit',
+  );
+  assert.deepEqual(fs.readFileSync(paths.events), acknowledgedPrefix,
+    'read-only verification must not append pending suffix');
+  assert.deepEqual(fs.readFileSync(paths.pending), journalBefore,
+    'read-only verification must not retire recovery journal');
+  assert.equal(fs.existsSync(paths.snapshot), false,
+    'read-only verification must not materialize missing snapshot');
+  assert.deepEqual(fs.readFileSync(paths.index), originalIndex,
+    'read-only verification must not replace index witness');
+
+  const recovered = loadStateIndex(rootDir, { rebuildIfNeeded: true });
+  assert.equal(recovered.sourceSequence, 2);
+  assert.equal(fs.existsSync(paths.pending), false);
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
