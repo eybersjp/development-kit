@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0.0",
+  "reviewedCommit": null,
+  "reviews": [],
+  "validationRunIds": [],
+  "windowsPhysicalPowerLoss": null,
+  "status": "PENDING_INDEPENDENT_REVIEWS",
+  "policy": "Risk-3 requires three distinct authenticated exact-source GitHub approvals, two full cross-platform runs, physical NTFS power-loss evidence and a canonical persisted Development Contract ACCEPTED verdict."
+}
