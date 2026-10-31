@@ -808,14 +808,26 @@ function parseLedger(content) {
 }
 
 function acknowledgedSnapshotWitness(paths) {
-  if (!fs.existsSync(paths.snapshot)) return null;
+  let raw;
   try {
-    const snapshot = JSON.parse(fs.readFileSync(paths.snapshot, 'utf8'));
+    raw = fs.readFileSync(paths.snapshot, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    // Unreadable materialized evidence may witness an acknowledged later
+    // event. Never treat permission/I/O failure as an absent disposable view
+    // and truncate the canonical ledger without inspecting that witness.
+    throw new StateEngineError(
+      'Cannot inspect materialized snapshot witness before ledger tail repair: ' +
+        (error.code || error.message),
+    );
+  }
+  try {
+    const snapshot = JSON.parse(raw);
     validateStateSnapshot(snapshot);
     return snapshot;
   } catch {
-    // A corrupt disposable/materialized snapshot cannot authorize destructive
-    // canonical-ledger repair. It will be rebuilt after canonical recovery.
+    // Malformed derived JSON/schema is disposable; filesystem read errors
+    // above are not and must retain the original torn canonical evidence.
     return null;
   }
 }
@@ -834,8 +846,11 @@ function repairUnwitnessedTrailingLedgerSuffixLocked(rootDir) {
   if (!initialEntry.isFile() || initialEntry.isSymbolicLink() || initialEntry.nlink !== 1n) {
     throw new StateEngineError('Canonical ledger tail repair requires a single-link regular file');
   }
-  const content = fs.readFileSync(paths.events, 'utf8');
-  const expectedBytes = Buffer.from(content, 'utf8');
+  // Preserve the exact on-disk bytes. Decoding an incomplete multibyte
+  // trailing character inserts U+FFFD; re-encoding that string must never be
+  // used as the descriptor witness or to decide that raw bytes changed.
+  const expectedBytes = fs.readFileSync(paths.events);
+  const content = expectedBytes.toString('utf8');
 
   function verifyCanonicalTailRepairFd(fd) {
     const opened = fs.fstatSync(fd, { bigint: true });
