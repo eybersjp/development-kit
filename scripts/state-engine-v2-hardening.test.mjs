@@ -1451,3 +1451,42 @@ for (const deniedCode of ['EACCES', 'EIO']) {
     assert.equal(fs.existsSync(paths.pending), false);
   });
 }
+
+
+test('T04-H64 a missing canonical ledger cannot be silently recreated over acknowledged snapshot history', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H64_ACKNOWLEDGED', payload: { critical: true } });
+  const paths = getStateEnginePaths(rootDir);
+  const canonicalWitness = fs.readFileSync(paths.events);
+  const snapshotWitness = fs.readFileSync(paths.snapshot);
+  const indexWitness = fs.readFileSync(paths.index);
+  assert.ok(canonicalWitness.length > 0);
+  assert.ok(JSON.parse(snapshotWitness.toString('utf8')).lastEventSequence > 0);
+
+  // Model loss of the directory entry after a completed, acknowledged commit.
+  // No pending journal is required to prove this is not a fresh project:
+  // the durable snapshot/index are existing witnesses of committed history.
+  fs.unlinkSync(paths.events);
+  assert.equal(fs.existsSync(paths.pending), false);
+
+  for (const [label, action] of [
+    ['canonical reader', () => loadCanonicalEvents(rootDir)],
+    ['snapshot reader', () => loadStateSnapshot(rootDir)],
+    ['layout initializer', () => ensureStateEngineLayout(rootDir)],
+    ['new writer', () => appendMetadataEvent({
+      rootDir, eventType: 'H64_MUST_NOT_REPLACE_HISTORY', payload: { critical: false },
+    })],
+  ]) {
+    assert.throws(action, /missing|absent|incomplete|integrity|canonical|ledger/i,
+      label + ' must fail closed instead of accepting an empty canonical history');
+    assert.equal(fs.existsSync(paths.events), false,
+      label + ' must not manufacture a replacement canonical ledger');
+    assert.deepEqual(fs.readFileSync(paths.snapshot), snapshotWitness);
+    assert.deepEqual(fs.readFileSync(paths.index), indexWitness);
+  }
+
+  // The original canonical bytes remain sufficient to restore the authority
+  // through a separate, evidence-preserving operator recovery operation.
+  fs.writeFileSync(paths.events, canonicalWitness);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
