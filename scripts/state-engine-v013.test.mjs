@@ -893,3 +893,100 @@ test('V13-API-PROJECTION-03 V2 metadata alone does not hide valid unmigrated leg
     await service.stop();
   }
 });
+
+
+/**
+ * W73-8DOT3: Use the actual Windows GetShortPathNameW API. These fixtures
+ * skip only when the test volume does not generate 8.3 aliases; a synthetic
+ * string-only alias would not prove NTFS directory identity.
+ */
+function getExistingNtfsShortPath(directory) {
+  const script = [
+    "$ErrorActionPreference='Stop'",
+    "$code='using System; using System.Text; using System.Runtime.InteropServices; public static class DkfShortPath { [DllImport(\"kernel32.dll\", CharSet=CharSet.Unicode, SetLastError=true)] public static extern uint GetShortPathName(string input, StringBuilder output, uint length); }'",
+    'Add-Type -TypeDefinition $code',
+    '$buffer = New-Object System.Text.StringBuilder(32768)',
+    '$size = [DkfShortPath]::GetShortPathName($env:DKF_TEST_SHORT_PATH, $buffer, [uint32]$buffer.Capacity)',
+    'if ($size -eq 0 -or $size -ge $buffer.Capacity) { exit 2 }',
+    '[Console]::Out.Write($buffer.ToString())',
+  ].join('; ');
+  const result = spawnSync('powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-Command', script],
+    { encoding: 'utf8', windowsHide: true, shell: false, timeout: 20000,
+      env: { ...process.env, DKF_TEST_SHORT_PATH: directory } });
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
+test('W73-8DOT3-01 NTFS ancestor short alias cannot bypass a retained transaction journal', (t) => {
+  if (process.platform !== 'win32') { t.skip('Requires NTFS Windows'); return; }
+  const { backupPath } = createLegacyBackupFixture(t);
+  const container = tempDir(t, 'dk-v013-83-journal-');
+  const parent = path.join(container, 'LongDirectoryNameForAlias');
+  fs.mkdirSync(parent);
+  const shortParent = getExistingNtfsShortPath(parent);
+  if (!shortParent || !path.basename(shortParent).includes('~')) {
+    t.skip('NTFS 8.3 names are not enabled on this volume'); return;
+  }
+  const targetRoot = path.join(parent, 'project');
+  const aliasRoot = path.join(shortParent, 'project');
+  fs.mkdirSync(targetRoot);
+  fs.writeFileSync(path.join(targetRoot, 'original.txt'), 'ORIGINAL-83-WITNESS');
+  const restored = restoreLegacyBackup({
+    backupPath, targetRoot, overwrite: true, confirmOffline: true,
+  });
+  const journalBefore = fs.readFileSync(restored.transactionLog);
+  const displacedPublication = path.join(parent, 'lost-publication');
+  fs.renameSync(targetRoot, displacedPublication);
+  assert.throws(() => restoreLegacyBackup({
+    backupPath, targetRoot: aliasRoot, overwrite: true, confirmOffline: true,
+  }), /restore.*(alias|witness|transaction|incomplete)|terminal.*root/i);
+  assert.deepEqual(fs.readFileSync(restored.transactionLog), journalBefore,
+    'Short-name retry must not append or rewrite the existing hash-chained journal');
+  assert.equal(fs.existsSync(targetRoot), false);
+  assert.equal(fs.readFileSync(path.join(restored.displacedOriginal, 'original.txt'), 'utf8'),
+    'ORIGINAL-83-WITNESS');
+});
+
+test('W73-8DOT3-02 signed long/short destination aliases cannot overwrite staged backup bytes', (t) => {
+  if (process.platform !== 'win32') { t.skip('Requires NTFS Windows'); return; }
+  const container = tempDir(t, 'dk-v013-83-stage-');
+  const probe = path.join(container, 'LongDirectoryNameForAlias');
+  fs.mkdirSync(probe);
+  const shortProbe = getExistingNtfsShortPath(probe);
+  if (!shortProbe || !path.basename(shortProbe).includes('~')) {
+    t.skip('NTFS 8.3 names are not enabled on this volume'); return;
+  }
+  const shortLeaf = path.basename(shortProbe);
+  fs.rmdirSync(probe);
+  const makeEntry = (relative, content) => {
+    const bytes = Buffer.from(content);
+    return {
+      path: relative, bytes: bytes.length, contentBase64: bytes.toString('base64'),
+      fingerprint: 'sha256:' + crypto.createHash('sha256').update(bytes).digest('hex'),
+    };
+  };
+  const files = [
+    makeEntry('LongDirectoryNameForAlias/file.json', 'FIRST-SIGNED-BYTES'),
+    makeEntry(shortLeaf + '/file.json', 'SECOND-SIGNED-BYTES'),
+  ];
+  const manifest = files.map(({ path: name, bytes, fingerprint }) => ({
+    bytes, fingerprint, path: name,
+  }));
+  const bundle = {
+    schemaVersion: '1.0.0', fileCount: files.length, files,
+    sourceFingerprint: 'sha256:' +
+      crypto.createHash('sha256').update(JSON.stringify(manifest)).digest('hex'),
+  };
+  const backupPath = path.join(container, 'signed-backup.json');
+  fs.writeFileSync(backupPath, JSON.stringify(bundle));
+  const targetRoot = path.join(container, 'restored');
+  assert.throws(() => restoreLegacyBackup({
+    backupPath, targetRoot, confirmOffline: true,
+  }), /Duplicate physical restore destination alias/i,
+  'A second signed entry must not replace the same physical staged inode');
+  assert.equal(fs.existsSync(targetRoot), false,
+    'Rejected alias collision must not publish a candidate root');
+  assert.deepEqual(fs.readdirSync(container).filter(name =>
+    name.startsWith('.dk-legacy-restore-stage-')), [],
+    'Rejected prepublication stage must be removed without touching any original root');
+});
