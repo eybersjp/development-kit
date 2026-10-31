@@ -9,12 +9,14 @@ export function assertCurrentRoleApproval(approval, submittedReviews, reviewedCo
     'Authenticated role review ID is required');
   assert.equal(approval.state, 'APPROVED', 'Role review must be approved');
   assert.equal(approval.commit_id, reviewedCommit, 'Role approval source is stale');
-  const login = approval.user?.login;
-  assert.ok(typeof login === 'string' && login.length > 0,
-    'Role reviewer identity is missing');
+  // GitHub logins are mutable and case-insensitive; the numeric account ID is
+  // stable across renames and must bind every later decisive submission.
+  const accountId = approval.user?.id;
+  assert.ok(Number.isSafeInteger(accountId) && accountId > 0,
+    'Immutable authenticated GitHub reviewer ID is required');
   assert.ok(Array.isArray(submittedReviews), 'Authenticated PR review timeline is unavailable');
   const decisive = submittedReviews.filter(review =>
-    review?.user?.login?.toLowerCase() === login.toLowerCase() &&
+    review?.user?.id === accountId &&
     ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(review.state));
   assert.ok(decisive.length > 0, 'Role approval absent from authenticated review timeline');
   for (const review of decisive) {

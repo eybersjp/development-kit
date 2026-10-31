@@ -85,6 +85,8 @@ assert.equal(pr.state, 'open');
 assert.equal(pr.head.sha, event.pull_request.head.sha, 'Stale PR event/source');
 assert.equal(pr.base.ref, 'main');
 assert.equal(pr.head.repo.full_name, REPO);
+assert.ok(Number.isSafeInteger(pr.user?.id) && pr.user.id > 0,
+  'Immutable authenticated PR author ID required');
 
 // Distinct GitHub-authored, post-source reviews. Self-authored PASS strings are
 // never an approval. Each review must explicitly identify its role and SHA.
@@ -111,10 +113,11 @@ for (const role of ROLES) {
   const review = await api('pulls/92/reviews/' + receipt.githubReviewId);
   assert.equal(review.commit_id, reviewedCommit, 'Review is stale');
   assert.equal(review.state, 'APPROVED', 'Only authenticated GitHub approval is PASS');
-  assert.ok(review.user?.login && review.user.login !== pr.user.login,
-    'Author cannot independently approve their own code');
-  assert.ok(!reviewers.has(review.user.login), 'Distinct reviewer identity required for each role');
-  reviewers.add(review.user.login);
+  assert.ok(Number.isSafeInteger(review.user?.id) && review.user.id > 0 &&
+    review.user.id !== pr.user.id,
+    'Author cannot independently approve their own code, including after account rename');
+  assert.ok(!reviewers.has(review.user.id), 'Distinct immutable reviewer ID required for each role');
+  reviewers.add(review.user.id);
   assertCurrentRoleApproval(review, allSubmittedReviews, reviewedCommit);
   authenticatedReviews.set(role, review);
   assert.ok((review.body || '').includes('DKF130-T04 ' + role + ' ' + reviewedCommit),
@@ -160,7 +163,8 @@ assert.ok(physical && physical.reviewedCommit === reviewedCommit
   'Independent, source-bound physical NTFS power-loss evidence is mandatory');
 const physicalReview = await api('pulls/92/reviews/' + physical.independentReviewId);
 assert.equal(physicalReview.state, 'APPROVED');
-assert.ok(physicalReview.user?.login && physicalReview.user.login !== pr.user.login,
+assert.ok(Number.isSafeInteger(physicalReview.user?.id) && physicalReview.user.id > 0 &&
+  physicalReview.user.id !== pr.user.id,
   'Physical NTFS power-loss reviewer must be independent of the source author');
 assert.equal(physicalReview.commit_id, reviewedCommit);
 // A previously approved physical test may later be revoked or superseded.

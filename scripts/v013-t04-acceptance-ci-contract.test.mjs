@@ -103,7 +103,7 @@ test('T04-A19 later review revocation or stale reapproval cannot be hidden by an
   const sha = 'a'.repeat(40);
   const other = 'b'.repeat(40);
   const approval = { id: 101, state: 'APPROVED', commit_id: sha,
-    user: { login: 'independent-code-reviewer' }, submitted_at: '2026-10-30T10:00:00Z' };
+    user: { id: 90322, login: 'independent-code-reviewer' }, submitted_at: '2026-10-30T10:00:00Z' };
   const comment = { ...approval, id: 102, state: 'COMMENTED',
     submitted_at: '2026-10-30T10:30:00Z' };
   const revoked = { ...approval, id: 103, state: 'CHANGES_REQUESTED',
@@ -160,7 +160,7 @@ test('T04-A23 physical NTFS power-loss approval must remain effective after late
   const { assertCurrentRoleApproval } = await import('./v013-t04-review-provenance.mjs');
   const sha = 'a'.repeat(40);
   const approval = { id: 901, state: 'APPROVED', commit_id: sha,
-    user: { login: 'independent-ntfs-reviewer' }, submitted_at: '2026-10-31T08:00:00Z' };
+    user: { id: 90323, login: 'independent-ntfs-reviewer' }, submitted_at: '2026-10-31T08:00:00Z' };
   const revoked = { ...approval, id: 902, state: 'CHANGES_REQUESTED',
     submitted_at: '2026-10-31T08:30:00Z' };
   const staleReapproval = { ...approval, id: 903, commit_id: 'b'.repeat(40),
