@@ -232,6 +232,12 @@ test('AC-016: implicit legacy lifecycle rehydrates stable persisted snapshot wit
   state.currentStage = 'REVIEW';
   state.completedStages = ['UNDERSTAND', 'DEFINE', 'DESIGN', 'PLAN', 'IMPLEMENT', 'VERIFY'];
   state.stateRevision = 3;
+  // This fixture specifically exercises an existing, unmigrated legacy state
+  // authority. Fresh v0.13 projects intentionally use the canonical ledger;
+  // seed an actual legacy revision before invoking the compatibility adapter.
+  const legacyStateDir = path.join(rootDir, '.development-kit', 'autopilot', 'state');
+  fs.mkdirSync(legacyStateDir, { recursive: true });
+  fs.writeFileSync(path.join(legacyStateDir, 'revision-000003.json'), JSON.stringify(state, null, 2));
   saveStateRevision(state, rootDir);
   const pointer = path.join(rootDir, '.development-kit', 'autopilot', 'state', 'current.json');
   const previous = fs.readFileSync(pointer);
