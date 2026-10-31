@@ -93,3 +93,32 @@ test('T04-A18 acceptance gate binds validation receipts to authentic full CI wor
   assert.match(gate, /step\.conclusion === 'success'/,
     'the existence of a named validation step is insufficient without its successful conclusion');
 });
+
+test('T04-A19 later review revocation or stale reapproval cannot be hidden by an earlier receipt', async () => {
+  const { assertCurrentRoleApproval } = await import('./v013-t04-review-provenance.mjs');
+  const gate = fs.readFileSync(path.join(root, 'scripts/v013-t04-acceptance-gate.mjs'), 'utf8');
+  assert.match(gate, /assertCurrentRoleApproval\(review, allSubmittedReviews, reviewedCommit\)/,
+    'production acceptance must validate the latest effective GitHub review, not only the receipt ID');
+
+  const sha = 'a'.repeat(40);
+  const other = 'b'.repeat(40);
+  const approval = { id: 101, state: 'APPROVED', commit_id: sha,
+    user: { login: 'independent-code-reviewer' }, submitted_at: '2026-10-30T10:00:00Z' };
+  const comment = { ...approval, id: 102, state: 'COMMENTED',
+    submitted_at: '2026-10-30T10:30:00Z' };
+  const revoked = { ...approval, id: 103, state: 'CHANGES_REQUESTED',
+    submitted_at: '2026-10-30T11:00:00Z' };
+  const staleReapproval = { ...approval, id: 104, commit_id: other,
+    submitted_at: '2026-10-30T12:00:00Z' };
+  assert.doesNotThrow(() => assertCurrentRoleApproval(approval, [approval, comment], sha));
+  assert.throws(() => assertCurrentRoleApproval(approval, [approval, revoked], sha),
+    /superseded|revoked|effective/i);
+  assert.throws(() => assertCurrentRoleApproval(approval, [approval, staleReapproval], sha),
+    /superseded|stale|effective/i);
+  assert.throws(() => assertCurrentRoleApproval(approval,
+    [{ ...approval, state: 'DISMISSED' }], sha), /approved|dismissed|effective/i);
+  assert.throws(() => assertCurrentRoleApproval(approval, [approval, {
+    ...approval, id: 105, state: 'CHANGES_REQUESTED',
+    submitted_at: '2026-10-30T13:00:00Z',
+  }], sha), /superseded|revoked|effective/i);
+});
