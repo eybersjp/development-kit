@@ -23,6 +23,7 @@ import {
 } from '../runtime/orchestration/state-engine-migration.mjs';
 import {
   getCurrentState,
+  recoverLatestValidState,
   saveStateRevision,
 } from '../runtime/autopilot/state-store.mjs';
 import {
@@ -1270,4 +1271,49 @@ test('T04-H68 separate process cannot acknowledge legacy state while migration g
   // A separate-process denial must not poison the gate after safe release.
   saveStateRevision(state, rootDir);
   assert.equal(getCurrentState(rootDir).stateRevision, 2);
+});
+
+test('T04-H69 explicit legacy recovery cannot rewrite pointer during migration cutover', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h69-explicit-recovery-');
+  const legacy = writeLegacyAutopilot(rootDir, 1);
+  const pointerPath = path.join(legacy.stateDir, 'current.json');
+  const originalPointer = fs.readFileSync(pointerPath);
+  const backupPath = getLegacyBackupPath(rootDir);
+  const originalRename = fs.renameSync;
+  let injected = false;
+  try {
+    fs.renameSync = function (from, to) {
+      const result = originalRename.call(fs, from, to);
+      if (!injected && path.resolve(to) === path.resolve(backupPath)) {
+        injected = true;
+        assert.throws(() => recoverLatestValidState(rootDir),
+          /migration|cutover|gate|orphaned/i);
+        assert.deepEqual(fs.readFileSync(pointerPath), originalPointer,
+          'recovery must not modify acknowledged legacy pointer during cutover');
+      }
+      return result;
+    };
+    const migrated = migrateLegacyStateToV2({ rootDir });
+    assert.equal(migrated.semanticEquivalence, true);
+  } finally {
+    fs.renameSync = originalRename;
+  }
+  assert.equal(injected, true);
+  assert.deepEqual(fs.readFileSync(pointerPath), originalPointer);
+  assert.equal(getCurrentState(rootDir).stateRevision, 1);
+});
+
+test('T04-H69 automatic pointer recovery cannot bypass held migration gate', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h69-automatic-recovery-');
+  const legacy = writeLegacyAutopilot(rootDir, 1);
+  const pointerPath = path.join(legacy.stateDir, 'current.json');
+  const broken = '{"corrupted":true}\\n';
+  fs.writeFileSync(pointerPath, broken);
+  withMigrationGate(rootDir, () => {
+    assert.throws(() => getCurrentState(rootDir), /migration|cutover|gate|orphaned/i);
+    assert.equal(fs.readFileSync(pointerPath, 'utf8'), broken,
+      'automatic recovery must not rewrite pointer while another migration owns the gate');
+  });
+  assert.equal(getCurrentState(rootDir).stateRevision, 1,
+    'after safe gate release, normal recovery may repair the legacy pointer');
 });
