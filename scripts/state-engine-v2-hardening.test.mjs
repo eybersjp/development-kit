@@ -1154,3 +1154,52 @@ test('T04-H56 pending recovery preserves canonical evidence when snapshot witnes
   assert.equal(fs.existsSync(paths.pending), true,
     'Failed witness read must retain the pending journal for operator recovery');
 });
+
+/**
+ * T04-H57: a canonical ledger may be swapped for an external hard link
+ * after the recovery preflight but before the repair opens it for mutation.
+ * Both newline completion and torn-tail truncation must fail closed.
+ */
+for (const repairMode of ['missing-terminal-newline', 'torn-trailing-json']) {
+  test('T04-H57 ledger tail repair rejects a swapped hard link (' + repairMode + ')', (t) => {
+    const rootDir = tempProject(t);
+    const outsideRoot = tempProject(t);
+    appendMetadataEvent({ rootDir, eventType: 'BASELINE_EVENT', payload: { value: 1 } });
+    const paths = getStateEnginePaths(rootDir);
+    const baseline = fs.readFileSync(paths.events, 'utf8');
+    const damaged = repairMode === 'missing-terminal-newline'
+      ? baseline.slice(0, -1)
+      : baseline + '{"incomplete":';
+    fs.writeFileSync(paths.events, damaged, 'utf8');
+    const outsideFile = path.join(outsideRoot, 'unrelated-evidence.jsonl');
+    fs.writeFileSync(outsideFile, damaged, 'utf8');
+
+    const originalOpen = fs.openSync;
+    let swaps = 0;
+    fs.openSync = function injectHardLinkAtRepairOpen(target, flags, ...args) {
+      const writeRepair = flags === 'r+' ||
+        (typeof flags === 'number' &&
+          (flags & fs.constants.O_RDWR) === fs.constants.O_RDWR);
+      if (target === paths.events && writeRepair) {
+        swaps += 1;
+        fs.unlinkSync(paths.events);
+        fs.linkSync(outsideFile, paths.events);
+      }
+      return originalOpen.call(this, target, flags, ...args);
+    };
+    try {
+      assert.throws(
+        () => loadCanonicalEvents(rootDir),
+        /canonical ledger|hard.?link|integrity|identity|unsafe/i,
+        'A post-preflight hard-link substitution must be rejected before repair writes',
+      );
+    } finally {
+      fs.openSync = originalOpen;
+    }
+    assert.equal(swaps, 1, 'Fault injection must intercept the repair descriptor open');
+    assert.equal(fs.readFileSync(outsideFile, 'utf8'), damaged,
+      'Recovery must never append to or truncate unrelated external evidence');
+    assert.equal(fs.readFileSync(paths.events, 'utf8'), damaged,
+      'Rejected repair must not alter the substituted canonical path');
+  });
+}
