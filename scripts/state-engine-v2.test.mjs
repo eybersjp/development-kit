@@ -640,3 +640,32 @@ test('T04-SEC-JSON-01 rejects non-lossless JSON state before canonical commit', 
       label + ' must not be acknowledged or committed to the canonical ledger');
   }
 });
+
+
+test('T04-H67 read-only index lookup must not publish a missing snapshot', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h67-index-readonly-');
+  appendEntityState({
+    rootDir, entityType: 'generic-state', entityId: 'h67',
+    state: { stateRevision: 1, value: 'acknowledged' },
+    actorClass: 'regression',
+  });
+  const paths = getStateEnginePaths(rootDir);
+  const ledgerBefore = fs.readFileSync(paths.events);
+  const indexBefore = fs.readFileSync(paths.index);
+  fs.unlinkSync(paths.snapshot);
+
+  // rebuildIfNeeded:false is a read-only verification boundary. It must not
+  // silently regenerate a missing materialized snapshot or return an index
+  // whose source snapshot is absent.
+  assert.equal(loadStateIndex(rootDir, { rebuildIfNeeded: false }), null);
+  assert.equal(fs.existsSync(paths.snapshot), false,
+    'read-only index lookup must not recreate the missing snapshot');
+  assert.deepEqual(fs.readFileSync(paths.events), ledgerBefore,
+    'canonical acknowledged ledger must remain untouched');
+  assert.deepEqual(fs.readFileSync(paths.index), indexBefore,
+    'existing index witness must remain untouched');
+
+  const recovered = loadStateIndex(rootDir, { rebuildIfNeeded: true });
+  assert.equal(recovered.sourceSequence, 1);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
