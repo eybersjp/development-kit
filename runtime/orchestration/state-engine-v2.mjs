@@ -716,6 +716,26 @@ function createInitialStateFile(filePath, content) {
   }
 }
 
+/**
+ * The canonical ledger must never be reinitialized after a committed history
+ * has left a snapshot or index witness. An interrupted first initializer may
+ * have only its schema; published derived state always follows ledger creation.
+ * Loss of the ledger without a pending journal is still a recovery fault.
+ */
+function assertMissingCanonicalLedgerHasNoStateWitness(paths) {
+  if (fs.existsSync(paths.pending)) {
+    throw new StateEngineError(
+      'State Engine events.jsonl is missing while pending-commit.json is present; state integrity compromised',
+    );
+  }
+  if (fs.existsSync(paths.snapshot) || fs.existsSync(paths.index)) {
+    throw new StateEngineError(
+      'State Engine canonical events.jsonl is missing while snapshot/index history witness remains; offline recovery required',
+      { code: 'STATE_CANONICAL_LEDGER_MISSING' },
+    );
+  }
+}
+
 export function ensureStateEngineLayout(rootDir = process.cwd()) {
   const paths = statePaths(rootDir);
   fs.mkdirSync(paths.stateRoot, { recursive: true });
@@ -728,9 +748,7 @@ export function ensureStateEngineLayout(rootDir = process.cwd()) {
   }
 
   if (!fs.existsSync(paths.events)) {
-    if (fs.existsSync(paths.pending)) {
-      throw new StateEngineError('State Engine events.jsonl is missing while pending-commit.json is present; state integrity compromised');
-    }
+    assertMissingCanonicalLedgerHasNoStateWitness(paths);
     createInitialStateFile(paths.events, '');
   }
   if (!fs.existsSync(paths.snapshot)) {
@@ -1007,9 +1025,7 @@ function repairUnwitnessedTrailingLedgerSuffixLocked(rootDir) {
 export function loadCanonicalEvents(rootDir = process.cwd()) {
   const paths = statePaths(rootDir);
   if (!fs.existsSync(paths.events)) {
-    if (fs.existsSync(paths.pending)) {
-      throw new StateEngineError('State Engine events.jsonl is missing while pending-commit.json is present; state integrity compromised');
-    }
+    assertMissingCanonicalLedgerHasNoStateWitness(paths);
     return [];
   }
   if (fs.existsSync(paths.pending)) {
@@ -1356,9 +1372,7 @@ export function rebuildStateSnapshot(rootDir = process.cwd()) {
 export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = true } = {}) {
   const paths = statePaths(rootDir);
   if (!fs.existsSync(paths.events)) {
-    if (fs.existsSync(paths.pending)) {
-      throw new StateEngineError('State Engine events.jsonl is missing while pending-commit.json is present; state integrity compromised');
-    }
+    assertMissingCanonicalLedgerHasNoStateWitness(paths);
     return null;
   }
   const canonical = rebuildSnapshotFromEvents(loadCanonicalEvents(rootDir));
