@@ -1586,3 +1586,24 @@ test('T04-H65 a failed snapshot witness read cannot authorize a metadata append'
   assert.deepEqual(fs.readFileSync(paths.index), originalIndex);
   assert.equal(fs.existsSync(paths.pending), false);
 });
+
+test('T04-H65 index-only acknowledged history prevents destructive torn-tail recovery', (t) => {
+  const rootDir = tempProject(t);
+  appendMetadataEvent({ rootDir, eventType: 'H65_FIRST', payload: { order: 1 } });
+  appendMetadataEvent({ rootDir, eventType: 'H65_ACKNOWLEDGED', payload: { order: 2 } });
+  const paths = getStateEnginePaths(rootDir);
+  const ledger = fs.readFileSync(paths.events, 'utf8');
+  const indexWitness = fs.readFileSync(paths.index);
+  const first = ledger.slice(0, ledger.indexOf('\n') + 1);
+  const torn = first + '{"schemaVersion":"1.0.0","sequence":2,';
+  fs.writeFileSync(paths.events, torn, 'utf8');
+  fs.unlinkSync(paths.snapshot);
+  assert.throws(
+    () => loadCanonicalEvents(rootDir),
+    /index|witness|canonical|truncat|history/i,
+    'The surviving index must prevent discarding bytes potentially belonging to an acknowledged event',
+  );
+  assert.equal(fs.readFileSync(paths.events, 'utf8'), torn);
+  assert.deepEqual(fs.readFileSync(paths.index), indexWitness);
+  assert.equal(fs.existsSync(paths.pending), false);
+});
