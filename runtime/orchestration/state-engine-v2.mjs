@@ -1843,12 +1843,32 @@ export function cleanupOrphanedStateTemps(rootDir = process.cwd()) {
   if (!fs.existsSync(paths.stateRoot)) return [];
   const removed = [];
   for (const name of fs.readdirSync(paths.stateRoot)) {
-    if (!name.includes('.tmp-')) continue;
-    const candidate = path.join(paths.stateRoot, name);
-    if (fs.statSync(candidate).isFile()) {
-      fs.unlinkSync(candidate);
-      removed.push(candidate);
+    // Only internal publication stages may be garbage-collected. In
+    // particular, never delete a live writer's temporary file: a concurrent
+    // atomic rename would then fail after its bytes were already fsynced.
+    if (!/^(?:events\.jsonl|snapshot\.json|index\.db|schema\.json|pending-commit\.json)\.tmp-/.test(name)) continue;
+    const owner = /\.tmp-([1-9][0-9]*)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.exec(name);
+    if (owner) {
+      const pid = Number(owner[1]);
+      if (!Number.isSafeInteger(pid)) continue;
+      try {
+        process.kill(pid, 0);
+        continue; // Owner exists: do not interfere with its publication.
+      } catch (error) {
+        if (error.code !== 'ESRCH') continue; // Unknown/denied = live.
+      }
     }
+    const candidate = path.join(paths.stateRoot, name);
+    let stat;
+    try { stat = fs.lstatSync(candidate); }
+    catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw error;
+    }
+    // Hardlinked bootstrap witnesses require their own validated recovery.
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) continue;
+    fs.unlinkSync(candidate);
+    removed.push(candidate);
   }
   return removed;
 }
