@@ -1505,3 +1505,38 @@ test('T04-H72 junctioned legacy state root cannot publish a fingerprint for exte
   assert.equal(fs.existsSync(path.join(external, 'revision-000001.json')), true,
     'rejected migration must retain original revision bytes');
 });
+
+
+test('T04-H73 orphaned Autopilot pointer cannot be silently certified as empty legacy history', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h73-orphan-autopilot-');
+  const legacy = writeLegacyAutopilot(rootDir, 1);
+  const pointer = path.join(legacy.stateDir, 'current.json');
+  const original = fs.readFileSync(pointer);
+  fs.unlinkSync(path.join(legacy.stateDir, 'revision-000001.json'));
+
+  assert.throws(() => inspectLegacyState(rootDir),
+    /Autopilot|revision|orphan|incomplete|missing/i,
+    'a surviving current pointer without its revision is incomplete legacy input, not an empty history');
+  assert.throws(() => migrateLegacyStateToV2({ rootDir }),
+    /Autopilot|revision|orphan|incomplete|missing/i);
+  assert.deepEqual(fs.readFileSync(pointer), original, 'the original pointer witness must remain intact');
+  assert.equal(fs.existsSync(path.join(rootDir, '.development-kit', 'state')), false,
+    'an orphaned legacy pointer must not publish a canonical migration-completed event');
+});
+
+test('T04-H73 orphaned orchestration revisions without immutable manifest cannot be certified', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h73-orphan-run-');
+  const legacy = writeLegacyRun(rootDir);
+  const revision = path.join(legacy.runDir, 'state-revisions', '00000003.json');
+  const before = fs.readFileSync(revision);
+  fs.unlinkSync(path.join(legacy.runDir, 'manifest.json'));
+
+  assert.throws(() => inspectLegacyState(rootDir),
+    /orchestration|manifest|orphan|incomplete|missing/i,
+    'a surviving revision/pointer without the immutable manifest is an incomplete run');
+  assert.throws(() => migrateLegacyStateToV2({ rootDir }),
+    /orchestration|manifest|orphan|incomplete|missing/i);
+  assert.deepEqual(fs.readFileSync(revision), before, 'surviving original revisions must remain intact');
+  assert.equal(fs.existsSync(path.join(rootDir, '.development-kit', 'state')), false,
+    'orphaned orchestration history must not be recorded as migrated');
+});
