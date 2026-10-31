@@ -1481,7 +1481,11 @@ export function rebuildStateIndex(rootDir = process.cwd()) {
 }
 
 export function loadStateIndex(rootDir = process.cwd(), { rebuildIfNeeded = true } = {}) {
-  const snapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded: true }) ?? emptySnapshot();
+  // Honor the caller's read-only boundary: index verification must not
+  // silently materialize a missing snapshot when rebuilding is disabled.
+  const loadedSnapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded });
+  if (!loadedSnapshot && !rebuildIfNeeded) return null;
+  const snapshot = loadedSnapshot ?? emptySnapshot();
   const paths = statePaths(rootDir);
   if (!fs.existsSync(paths.index)) {
     return rebuildIfNeeded ? rebuildStateIndex(rootDir) : null;
