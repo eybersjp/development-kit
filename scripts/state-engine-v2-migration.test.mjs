@@ -1189,3 +1189,41 @@ test('W73-28 Unicode uppercase-folded restore aliases fail closed before publica
   assert.equal(fs.existsSync(path.join(targetRoot, relativeDir, 's.json')), false,
     'Rejected backup must not publish the staged candidate');
 });
+
+
+test('T04-H68 migration cannot acknowledge stale legacy history after concurrent legacy commit', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h68-legacy-cutover-');
+  const legacy = writeLegacyAutopilot(rootDir, 1);
+  const backupPath = getLegacyBackupPath(rootDir);
+  const originalRename = fs.renameSync;
+  let injected = false;
+  let migrationError = null;
+  try {
+    fs.renameSync = function (from, to) {
+      const result = originalRename.call(fs, from, to);
+      if (!injected && path.resolve(to) === path.resolve(backupPath)) {
+        injected = true;
+        // Interleave a successful legacy writer after inspection and backup
+        // publication, before the migration's completion event. A migration
+        // must serialize this writer or reject the changed legacy authority.
+        saveStateRevision(workflowState(2, legacy.workflowId), rootDir);
+      }
+      return result;
+    };
+    try {
+      migrateLegacyStateToV2({ rootDir, completedAt: '2026-10-31T19:00:00.000Z' });
+    } catch (error) {
+      migrationError = error;
+    }
+  } finally {
+    fs.renameSync = originalRename;
+  }
+
+  assert.equal(injected, true, 'the interleaved legacy revision must be acknowledged');
+  assert.ok(migrationError, 'migration must fail closed rather than publish stale completion');
+  assert.equal(getCurrentState(rootDir).stateRevision, 2,
+    'legacy revision 2 must remain the current authority after failed cutover');
+  assert.equal(loadCanonicalEvents(rootDir).some((event) =>
+    event.eventType === 'MIGRATION_COMPLETED'), false,
+  'no migration-completed event may acknowledge an obsolete inspection');
+});
