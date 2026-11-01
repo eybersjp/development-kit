@@ -285,7 +285,7 @@ export class RuntimeApiService {
       let v2Active = false;
       let v2Invalid = false;
       try {
-        v2Active = isStateEngineV2Active(this.rootDir);
+        v2Active = isStateEngineV2Active(this.rootDir, { readOnly: true });
       } catch {
         v2Invalid = true;
       }
