@@ -195,6 +195,17 @@ function validateBackupBundle(bundle) {
       throw new StateMigrationError('Legacy backup path contains ill-formed Unicode');
     }
     const pathParts = entry.path.split(/[/\\]+/).filter(Boolean);
+    // Backups must restore safely on the supported Windows NTFS profile,
+    // even when validated on a POSIX host. Win32 interprets ':' as an
+    // alternate-data-stream separator and reserves DOS device basenames,
+    // including the superscript-digit COM/LPT aliases. Reject these before
+    // creating any stage, journal, or destination directory.
+    // https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file
+    const reservedDevice = /^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)/i;
+    if (pathParts.some((part) =>
+      /[<>:"|?*\x00-\x1f]/u.test(part) || reservedDevice.test(part))) {
+      throw new StateMigrationError('Unsafe Windows restore path component: ' + entry.path);
+    }
     if (pathParts.some((part) => part !== '.' && part !== '..' && (part.endsWith('.') || part.endsWith(' ')))) {
       throw new StateMigrationError('Legacy backup path contains trailing dot or space: ' + entry.path);
     }
