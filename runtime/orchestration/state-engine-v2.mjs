@@ -104,7 +104,7 @@ function stateRevision(value, { allowNull = false } = {}) {
   return value;
 }
 
-function statePaths(rootDir = process.cwd()) {
+function statePaths(rootDir = process.cwd(), { allowBootstrapRecovery = true } = {}) {
   const root = path.resolve(rootDir);
   const stateRoot = path.resolve(root, STATE_ENGINE_ROOT);
   const relative = path.relative(root, stateRoot);
@@ -123,7 +123,7 @@ function statePaths(rootDir = process.cwd()) {
   });
   if (fs.existsSync(stateRoot)) {
     assertStateRootRealpathSafe(paths);
-    assertStateFilesNotLinks(paths);
+    assertStateFilesNotLinks(paths, { allowBootstrapRecovery });
   }
   return paths;
 }
@@ -138,7 +138,7 @@ function assertStateRootRealpathSafe(paths) {
   return stateReal;
 }
 
-function assertStateFilesNotLinks(paths) {
+function assertStateFilesNotLinks(paths, { allowBootstrapRecovery = true } = {}) {
   for (const field of ['events', 'snapshot', 'index', 'schema', 'pending', 'lock']) {
     try {
       const stat = fs.lstatSync(paths[field]);
@@ -149,7 +149,7 @@ function assertStateFilesNotLinks(paths) {
         // The common path must not pay for extra filesystem probes on every
         // state read/write. Reconcile only an actual multiply-linked bootstrap
         // schema/snapshot/index; all other hard links remain forbidden.
-        if (['schema', 'snapshot', 'index'].includes(field)) {
+        if (allowBootstrapRecovery && ['schema', 'snapshot', 'index'].includes(field)) {
           recoverInterruptedBootstrapPublication(paths);
         }
         if (fs.lstatSync(paths[field]).nlink > 1) {
@@ -761,8 +761,8 @@ export function ensureStateEngineLayout(rootDir = process.cwd()) {
   return paths;
 }
 
-export function isStateEngineV2Active(rootDir = process.cwd()) {
-  const paths = statePaths(rootDir);
+export function isStateEngineV2Active(rootDir = process.cwd(), { readOnly = false } = {}) {
+  const paths = statePaths(rootDir, { allowBootstrapRecovery: !readOnly });
   if (!fs.existsSync(paths.stateRoot)) return false;
 
   const schemaExists = fs.existsSync(paths.schema);
@@ -1090,7 +1090,7 @@ function repairUnwitnessedTrailingLedgerSuffixLocked(rootDir) {
 }
 
 export function loadCanonicalEvents(rootDir = process.cwd(), { recoverIfNeeded = true } = {}) {
-  const paths = statePaths(rootDir);
+  const paths = statePaths(rootDir, { allowBootstrapRecovery: recoverIfNeeded });
   if (!fs.existsSync(paths.events)) {
     assertMissingCanonicalLedgerHasNoStateWitness(paths);
     return [];
@@ -1414,12 +1414,17 @@ export function rebuildStateSnapshot(rootDir = process.cwd()) {
 }
 
 export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = true } = {}) {
-  const paths = statePaths(rootDir);
+  const paths = statePaths(rootDir, { allowBootstrapRecovery: rebuildIfNeeded });
   if (!fs.existsSync(paths.events)) {
     assertMissingCanonicalLedgerHasNoStateWitness(paths);
     return null;
   }
-  const canonical = rebuildSnapshotFromEvents(loadCanonicalEvents(rootDir, { recoverIfNeeded: rebuildIfNeeded }));
+  const canonicalEvents = loadCanonicalEvents(rootDir, { recoverIfNeeded: rebuildIfNeeded });
+  // A surviving index may witness acknowledged history beyond a rolled-back
+  // ledger and snapshot. Check that witness before returning any projection.
+  // This is read-only and preserves all evidence on mismatch.
+  assertDerivedHistoryWitnesses(paths, canonicalEvents, ['index']);
+  const canonical = rebuildSnapshotFromEvents(canonicalEvents);
 
   if (!fs.existsSync(paths.snapshot)) {
     if (!rebuildIfNeeded) return null;
