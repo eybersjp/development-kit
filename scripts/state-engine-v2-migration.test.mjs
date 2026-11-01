@@ -1607,3 +1607,51 @@ test('T04-H78 signed backup rejects NTFS alternate streams and reserved device n
       'rejected Windows-unsafe name must not create a staging tree');
   }
 });
+
+
+test('T04-H80 interrupted promotion must not acknowledge a missing restored descendant', async (t) => {
+  const source = tempProject(t, 'dk-v13-h80-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const targetRoot = tempProject(t, 'dk-v13-h80-target-');
+  fs.writeFileSync(path.join(targetRoot, 'original-sentinel.txt'), 'ORIGINAL');
+  const originalWrite = fs.writeFileSync;
+  let injected = false;
+  fs.writeFileSync = function injectPostPublicationCrash(fd, content, ...args) {
+    const result = originalWrite.call(this, fd, content, ...args);
+    if (!injected && typeof fd === 'number' &&
+      String(content).includes('"phase":"CANDIDATE_PUBLISHED"')) {
+      injected = true;
+      throw new Error('H80 injected interruption before promotion acknowledgement');
+    }
+    return result;
+  };
+  try {
+    assert.throws(
+      () => restoreLegacyBackup({ backupPath: migrated.backupPath, targetRoot, confirmOffline: true }),
+      /H80 injected interruption/);
+  } finally {
+    fs.writeFileSync = originalWrite;
+  }
+  assert.equal(injected, true, 'fault injection must reach the post-promotion boundary');
+  const restored = path.join(targetRoot, '.development-kit', 'autopilot', 'state', 'revision-000001.json');
+  assert.equal(fs.existsSync(restored), true, 'candidate must have been published before injection');
+  fs.unlinkSync(restored); // Model loss of a staged descendant after interrupted namespace publication.
+
+  const { createHash } = await import('node:crypto');
+  const journal = path.join(path.dirname(targetRoot), '.dk-restore-transaction-' +
+    createHash('sha256').update(path.resolve(targetRoot)).digest('hex').slice(0, 24) + '.jsonl');
+  const journalBefore = fs.readFileSync(journal);
+  const prepared = JSON.parse(journalBefore.toString('utf8').split('\n')[0]);
+  const displaced = path.join(path.dirname(targetRoot), prepared.stageName + '-original');
+  assert.equal(fs.readFileSync(path.join(displaced, 'original-sentinel.txt'), 'utf8'), 'ORIGINAL');
+  assert.throws(
+    () => recoverLegacyRestore({ targetRoot, confirmOffline: true }),
+    /candidate|fingerprint|content|integrity/i,
+    'recovery must not acknowledge a candidate whose restored files are missing');
+  assert.deepEqual(fs.readFileSync(journal), journalBefore,
+    'rejected recovery must retain the exact hash-chained journal without an acknowledgement');
+  assert.equal(fs.existsSync(targetRoot), true, 'rejected candidate remains for offline examination');
+  assert.equal(fs.readFileSync(path.join(displaced, 'original-sentinel.txt'), 'utf8'), 'ORIGINAL',
+    'displaced original must remain intact after rejected recovery');
+});
