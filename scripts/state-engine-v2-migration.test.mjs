@@ -1584,6 +1584,7 @@ test('T04-H78 signed backup rejects NTFS alternate streams and reserved device n
     '.development-kit/autopilot/state/revision-000001.json:evil',
     '.development-kit/autopilot/state/CON',
     '.development-kit/autopilot/state/AUX.txt',
+    '.development-kit/autopilot/state/COM¹.txt',
     '.development-kit/autopilot/state/bad?.json',
   ];
   for (const [i, unsafePath] of paths.entries()) {
