@@ -1568,3 +1568,41 @@ test('T04-H74 orphaned orchestration current pointer with no revision files cann
   assert.equal(fs.existsSync(path.join(rootDir, '.development-kit', 'state')), false,
     'rejected migration must not publish canonical layout or completion event');
 });
+
+
+test('T04-H78 signed backup rejects NTFS alternate streams and reserved device names before staging on every host', async (t) => {
+  const source = tempProject(t, 'dk-v13-h78-unsafe-winpath-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const original = JSON.parse(fs.readFileSync(migrated.backupPath, 'utf8'));
+  const { createHash } = await import('node:crypto');
+  const canonical = (value) => Array.isArray(value) ? value.map(canonical)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]))
+      : value;
+  const paths = [
+    '.development-kit/autopilot/state/revision-000001.json:evil',
+    '.development-kit/autopilot/state/CON',
+    '.development-kit/autopilot/state/AUX.txt',
+    '.development-kit/autopilot/state/bad?.json',
+  ];
+  for (const [i, unsafePath] of paths.entries()) {
+    const bundle = structuredClone(original);
+    bundle.files[0].path = unsafePath;
+    const manifest = bundle.files.map(({ path: entryPath, fingerprint, bytes }) =>
+      ({ path: entryPath, fingerprint, bytes }));
+    bundle.sourceFingerprint = 'sha256:' +
+      createHash('sha256').update(JSON.stringify(canonical(manifest))).digest('hex');
+    const backup = path.join(source, 'h78-unsafe-' + i + '.json');
+    const targetRoot = path.join(source, 'h78-target-' + i);
+    fs.writeFileSync(backup, JSON.stringify(bundle));
+    assert.throws(
+      () => restoreLegacyBackup({ backupPath: backup, targetRoot, confirmOffline: true }),
+      /unsafe Windows restore path component/i,
+      'portable restore must reject ' + unsafePath + ' before stage creation');
+    assert.equal(fs.existsSync(targetRoot), false,
+      'rejected Windows-unsafe name must not publish a target tree');
+    assert.equal(fs.readdirSync(source).some((name) => name.startsWith('.dk-legacy-restore-stage-')), false,
+      'rejected Windows-unsafe name must not create a staging tree');
+  }
+});
