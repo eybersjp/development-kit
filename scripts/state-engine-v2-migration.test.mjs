@@ -1720,3 +1720,40 @@ test('T04-H80 interrupted promotion must not acknowledge a candidate with lost o
       'candidate must be preserved without destructive repair');
   }
 });
+
+ 
+// T04-H79 is a filesystem attribute regression, not physical power-loss evidence.
+// Windows fs.cpSync retains the read-only attribute on unrelated target files;
+// staging and post-ACL flush must not require a permanently writable copy.
+test('T04-H79 offline restore retains unrelated read-only file and its attributes', (t) => {
+  const source = tempProject(t, 'dk-v13-h79-source-');
+  writeLegacyAutopilot(source, 1);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+
+  const targetRoot = tempProject(t, 'dk-v13-h79-target-');
+  const unrelated = path.join(targetRoot, 'unrelated-readonly.txt');
+  const original = 'ORIGINAL-READONLY-CONTENT-H79\\n';
+  fs.writeFileSync(unrelated, original);
+  fs.chmodSync(unrelated, 0o444);
+  const before = fs.statSync(unrelated);
+  assert.equal(before.mode & 0o222, 0, 'fixture must be read-only before restore');
+
+  const restored = restoreLegacyBackup({
+    backupPath: migrated.backupPath,
+    targetRoot,
+    overwrite: true,
+    confirmOffline: true,
+  });
+
+  assert.equal(fs.readFileSync(unrelated, 'utf8'), original,
+    'unrelated read-only file contents must survive promotion');
+  assert.equal(fs.statSync(unrelated).mode & 0o222, 0,
+    'read-only attributes must survive staged durability and ACL operations');
+  assert.equal(fs.readFileSync(path.join(restored.displacedOriginal, 'unrelated-readonly.txt'), 'utf8'), original,
+    'original displaced tree must remain intact');
+  assert.equal(fs.statSync(path.join(restored.displacedOriginal, 'unrelated-readonly.txt')).mode & 0o222, 0,
+    'original read-only metadata must remain unchanged');
+  assert.ok(fs.existsSync(path.join(targetRoot, '.development-kit', 'autopilot', 'state', 'revision-000001.json')),
+    'complete legacy state must be restored alongside unrelated read-only content');
+  assert.ok(fs.existsSync(restored.transactionLog), 'hash-chained journal must remain discoverable');
+});
