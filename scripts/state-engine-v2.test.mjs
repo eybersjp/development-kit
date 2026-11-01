@@ -745,3 +745,58 @@ test('T04-H68 read-only index verification never truncates an unacknowledged tor
   assert.equal(repaired.sourceSequence, 1);
   assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
 });
+
+ 
+// T04-H82: read-only index verification must not recover a dead initializer's
+// hard-link staging evidence even when it appears after snapshot validation.
+test('T04-H82 read-only index lookup preserves a concurrent interrupted bootstrap index link', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h81-index-readonly-');
+  const paths = ensureStateEngineLayout(rootDir);
+  const ledgerBefore = fs.readFileSync(paths.events);
+  const snapshotBefore = fs.readFileSync(paths.snapshot);
+  const indexBefore = fs.readFileSync(paths.index);
+  const originalReadFileSync = fs.readFileSync;
+  let injected = false;
+  fs.readFileSync = function (file, ...args) {
+    const contents = originalReadFileSync.call(fs, file, ...args);
+    if (!injected && typeof file === 'string' && path.resolve(file) === paths.snapshot) {
+      injected = true;
+      // The child publishes the exact empty-index bootstrap image and exits
+      // after linkSync, leaving a genuinely dead PID and two hard links.
+      const childCode = [
+        'const fs = require("node:fs");',
+        'const path = require("node:path");',
+        'const root = process.argv[1];',
+        'const stage = path.join(root, "index.db.tmp-" + process.pid + "-00000000-0000-4000-8000-000000000001");',
+        'fs.linkSync(path.join(root, "index.db"), stage);',
+        'process.exit(77);',
+      ].join('\n');
+      const child = spawnSync(process.execPath, ['-e', childCode, paths.stateRoot],
+        { encoding: 'utf8', timeout: 20000 });
+      assert.equal(child.status, 77, 'Bootstrap child must terminate after publication: ' + child.stderr);
+    }
+    return contents;
+  };
+  try {
+    assert.throws(
+      () => loadStateIndex(rootDir, { rebuildIfNeeded: false }),
+      /multiple hard links|hard links|read.only|recovery/i,
+      'read-only index preflight must refuse a dead bootstrap publisher without deleting its evidence',
+    );
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+  }
+  assert.equal(injected, true, 'Race injection must occur after snapshot read');
+  const staged = fs.readdirSync(paths.stateRoot).filter((name) => name.startsWith('index.db.tmp-'));
+  assert.equal(staged.length, 1, 'Read-only index lookup must retain interrupted staging link');
+  assert.equal(fs.statSync(paths.index).nlink, 2, 'Read-only lookup must retain both index links');
+  assert.deepEqual(fs.readFileSync(paths.events), ledgerBefore);
+  assert.deepEqual(fs.readFileSync(paths.snapshot), snapshotBefore);
+  assert.deepEqual(fs.readFileSync(paths.index), indexBefore);
+  // An explicit recovery-enabled reader is permitted to reconcile the
+  // precisely identified dead bootstrap publisher after the read-only check.
+  const recovered = loadStateIndex(rootDir, { rebuildIfNeeded: true });
+  assert.equal(recovered.sourceSequence, 0);
+  assert.equal(fs.existsSync(path.join(paths.stateRoot, staged[0])), false);
+  assert.equal(verifyStateEngineIntegrity(rootDir).valid, true);
+});
