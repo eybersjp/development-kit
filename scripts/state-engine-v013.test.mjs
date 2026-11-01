@@ -990,3 +990,52 @@ test('W73-8DOT3-02 signed long/short destination aliases cannot overwrite staged
     name.startsWith('.dk-legacy-restore-stage-')), [],
     'Rejected prepublication stage must be removed without touching any original root');
 });
+
+
+test('V13-API-PROJECTION-04 interrupted V2 commit must not be recovered by read-only scale-context', async (t) => {
+  const rootDir = tempDir(t, 'dk-v013-api-pending-readonly-');
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, rootDir);
+  saveStateRevision(state, rootDir);
+  const paths = getStateEnginePaths(rootDir);
+  const baseline = captureMaterialized(paths);
+
+  const nextState = { ...state, stateRevision: state.stateRevision + 1,
+    updatedAt: new Date(Date.parse(state.updatedAt) + 1000).toISOString() };
+  saveStateRevision(nextState, rootDir);
+  const fullEvents = fs.readFileSync(paths.events, 'utf8');
+  const suffix = fullEvents.slice(baseline.events.length);
+  assert.ok(suffix.endsWith('\\n') && suffix.length > 0);
+
+  restoreMaterialized(paths, baseline);
+  const pending = JSON.stringify({
+    schemaVersion: '1.0.0',
+    previousByteLength: Buffer.byteLength(baseline.events),
+    previousHash: 'sha256:' + crypto.createHash('sha256').update(baseline.events).digest('hex'),
+    suffix,
+  }) + '\\n';
+  fs.writeFileSync(paths.pending, pending, 'utf8');
+  const before = {
+    events: fs.readFileSync(paths.events),
+    snapshot: fs.readFileSync(paths.snapshot),
+    index: fs.readFileSync(paths.index),
+    pending: fs.readFileSync(paths.pending),
+  };
+
+  const service = new RuntimeApiService({ rootDir });
+  const info = await service.start();
+  try {
+    const response = await fetch(info.url + '/v1/scale-context');
+    assert.equal(response.status, 200);
+    const projection = await response.json();
+    assert.ok(['recovery-required', 'degraded'].includes(projection.stateHealth),
+      'Read-only GET must expose recovery-required/degraded, not silently commit pending state');
+    assert.equal(projection.state.active, false,
+      'Unrecovered canonical state must not be projected as a verified workflow');
+    for (const [name, bytes] of Object.entries(before)) {
+      assert.deepEqual(fs.readFileSync(paths[name]), bytes,
+        'Read-only GET must preserve exact ' + name + ' evidence');
+    }
+  } finally {
+    await service.stop();
+  }
+});
