@@ -770,7 +770,7 @@ test('T04-H81 read-only index lookup preserves a concurrent interrupted bootstra
         'const stage = path.join(root, "index.db.tmp-" + process.pid + "-00000000-0000-4000-8000-000000000001");',
         'fs.linkSync(path.join(root, "index.db"), stage);',
         'process.exit(77);',
-      ].join('\\n');
+      ].join('\n');
       const child = spawnSync(process.execPath, ['-e', childCode, paths.stateRoot],
         { encoding: 'utf8', timeout: 20000 });
       assert.equal(child.status, 77, 'Bootstrap child must terminate after publication: ' + child.stderr);
