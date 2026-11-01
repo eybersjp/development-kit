@@ -1039,3 +1039,72 @@ test('V13-API-PROJECTION-04 interrupted V2 commit must not be recovered by read-
     await service.stop();
   }
 });
+
+
+test('V13-API-PROJECTION-05 bootstrap staging hard link is never retired by read-only GET', async (t) => {
+  const rootDir = tempDir(t, 'dk-v013-api-bootstrap-readonly-');
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, rootDir);
+  saveStateRevision(state, rootDir);
+  const paths = getStateEnginePaths(rootDir);
+  const staging = path.join(paths.stateRoot,
+    'schema.json.tmp-99999999-' + crypto.randomUUID());
+  fs.linkSync(paths.schema, staging);
+  assert.equal(fs.lstatSync(paths.schema).nlink, 2);
+  const schemaBefore = fs.readFileSync(paths.schema);
+  const entriesBefore = fs.readdirSync(paths.stateRoot).sort();
+
+  const service = new RuntimeApiService({ rootDir });
+  const info = await service.start();
+  try {
+    const response = await fetch(info.url + '/v1/scale-context');
+    assert.equal(response.status, 200);
+    const projection = await response.json();
+    assert.equal(projection.stateHealth, 'degraded',
+      'Read-only GET must report an ambiguous bootstrap hard link, not repair it');
+    assert.deepEqual(fs.readdirSync(paths.stateRoot).sort(), entriesBefore,
+      'Read-only GET must not remove the staging link');
+    assert.equal(fs.lstatSync(paths.schema).nlink, 2);
+    assert.equal(fs.lstatSync(staging).nlink, 2);
+    assert.deepEqual(fs.readFileSync(paths.schema), schemaBefore);
+  } finally {
+    await service.stop();
+  }
+});
+
+test('V13-API-PROJECTION-06 surviving index witness blocks rolled-back canonical snapshot on GET', async (t) => {
+  const rootDir = tempDir(t, 'dk-v013-api-index-witness-');
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, rootDir);
+  saveStateRevision(state, rootDir);
+  const paths = getStateEnginePaths(rootDir);
+  const baseline = captureMaterialized(paths);
+  const nextState = { ...state, stateRevision: state.stateRevision + 1,
+    updatedAt: new Date(Date.parse(state.updatedAt) + 1000).toISOString() };
+  saveStateRevision(nextState, rootDir);
+  const newerIndex = fs.readFileSync(paths.index);
+  fs.writeFileSync(paths.events, baseline.events, 'utf8');
+  fs.writeFileSync(paths.snapshot, baseline.snapshot, 'utf8');
+  assert.ok(JSON.parse(newerIndex.toString('utf8')).sourceSequence >
+    JSON.parse(baseline.snapshot).lastEventSequence);
+  const before = {
+    events: fs.readFileSync(paths.events),
+    snapshot: fs.readFileSync(paths.snapshot),
+    index: fs.readFileSync(paths.index),
+  };
+
+  const service = new RuntimeApiService({ rootDir });
+  const info = await service.start();
+  try {
+    const response = await fetch(info.url + '/v1/scale-context');
+    assert.equal(response.status, 200);
+    const projection = await response.json();
+    assert.equal(projection.stateHealth, 'degraded',
+      'A later acknowledged index witness must block a rolled-back ledger/snapshot');
+    assert.equal(projection.state.active, false);
+    for (const [name, bytes] of Object.entries(before)) {
+      assert.deepEqual(fs.readFileSync(paths[name]), bytes,
+        'Read-only GET must preserve original ' + name + ' evidence');
+    }
+  } finally {
+    await service.stop();
+  }
+});
