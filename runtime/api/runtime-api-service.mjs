@@ -285,7 +285,9 @@ export class RuntimeApiService {
       let v2Active = false;
       let v2Invalid = false;
       try {
-        v2Active = isStateEngineV2Active(this.rootDir);
+        // Read-only Control Center preflight must never clean up a terminated
+        // bootstrap staging hard link or consume its crash-recovery evidence.
+        v2Active = isStateEngineV2Active(this.rootDir, { recoverIfNeeded: false });
       } catch {
         v2Invalid = true;
       }
