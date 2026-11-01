@@ -661,6 +661,34 @@ const RESTORE_PHASES = Object.freeze([
   RESTORE_TERMINAL_PHASE,
 ]);
 
+/**
+ * A POSIX symlinked ancestor can give one physical restore root two textual
+ * journal digests. Reject that alias before journal discovery or staging so
+ * interrupted recovery cannot be bypassed with a second path spelling.
+ * Windows retains its separate physical/case/8.3 alias protections.
+ */
+function assertNoPosixRestoreAncestorSymlinks(targetRoot) {
+  if (process.platform === 'win32') return;
+  let current = path.resolve(targetRoot);
+  for (;;) {
+    let stat;
+    try {
+      stat = fs.lstatSync(current);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    if (stat?.isSymbolicLink()) {
+      throw new StateMigrationError(
+        'Legacy restore path contains a symbolic link ancestor; use the canonical physical root',
+        { code: 'RESTORE_SYMLINK_ANCESTOR', path: current },
+      );
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+}
+
 function restoreJournalDigest(targetRoot) {
   return crypto.createHash('sha256').update(path.resolve(targetRoot)).digest('hex').slice(0, 24);
 }
@@ -1505,6 +1533,7 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
 
   const root = path.resolve(targetRoot);
   const parent = path.dirname(root);
+  assertNoPosixRestoreAncestorSymlinks(root);
   assertNoWindowsCaseAliasedRestoreJournal(root);
   assertNoWindowsOrphanRestoreStages(root);
   const legacyJournal = legacyRestoreJournalPath(root);
@@ -1715,6 +1744,7 @@ export function restoreLegacyBackup({
 
   const resolvedRoot = path.resolve(targetRoot);
   const parent = path.dirname(resolvedRoot);
+  assertNoPosixRestoreAncestorSymlinks(resolvedRoot);
   assertNoUnjournaledRestoreWitness(resolvedRoot);
 
   const legacyJournal = legacyRestoreJournalPath(resolvedRoot);
