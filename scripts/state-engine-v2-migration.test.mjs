@@ -1699,6 +1699,11 @@ test('T04-H81 POSIX ancestor symlink cannot bypass an interrupted restore journa
     /symlink|symbolic link|ancestor|alias|journal|canonical/i,
     'a different spelling of the same physical root must not create a second transaction',
   );
+  assert.throws(
+    () => recoverLegacyRestore({ targetRoot: aliasRoot, confirmOffline: true }),
+    /symlink|symbolic link|ancestor|alias|canonical/i,
+    'recovery must reject the same ancestor alias before looking for a different journal',
+  );
   assert.equal(fs.readFileSync(first.transactionLog, 'utf8'), interrupted,
     'existing interrupted hash-chained journal must remain untouched');
   assert.equal(fs.lstatSync(targetRoot, { bigint: true }).ino, candidateBefore.ino,
