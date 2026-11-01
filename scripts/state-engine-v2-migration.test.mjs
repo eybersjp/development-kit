@@ -1540,3 +1540,31 @@ test('T04-H73 orphaned orchestration revisions without immutable manifest cannot
   assert.equal(fs.existsSync(path.join(rootDir, '.development-kit', 'state')), false,
     'orphaned orchestration history must not be recorded as migrated');
 });
+
+
+test('T04-H74 orphaned orchestration current pointer with no revision files cannot certify manifest-only migration', (t) => {
+  const rootDir = tempProject(t, 'dk-v13-h74-orphan-run-pointer-');
+  const legacy = writeLegacyRun(rootDir);
+  const pointer = path.join(legacy.runDir, 'current-state.json');
+  const pointerBytes = fs.readFileSync(pointer);
+  const manifest = path.join(legacy.runDir, 'manifest.json');
+  const manifestBytes = fs.readFileSync(manifest);
+  const revisionDir = path.join(legacy.runDir, 'state-revisions');
+  for (const name of fs.readdirSync(revisionDir)) fs.unlinkSync(path.join(revisionDir, name));
+  // Remove the final-state cross-check so the only surviving revision witness
+  // is the acknowledged current-state pointer. A manifest alone is revision 1,
+  // not proof that the later current revision can be silently discarded.
+  fs.unlinkSync(path.join(legacy.runDir, 'final-state.json'));
+
+  assert.throws(() => inspectLegacyState(rootDir),
+    /orchestration|pointer|revision|orphan|incomplete|missing/i,
+    'surviving pointer to absent revisions must not be certified as manifest-only history');
+  assert.throws(() => migrateLegacyStateToV2({ rootDir }),
+    /orchestration|pointer|revision|orphan|incomplete|missing/i);
+  assert.deepEqual(fs.readFileSync(pointer), pointerBytes,
+    'rejected migration must preserve original current pointer');
+  assert.deepEqual(fs.readFileSync(manifest), manifestBytes,
+    'rejected migration must preserve immutable manifest');
+  assert.equal(fs.existsSync(path.join(rootDir, '.development-kit', 'state')), false,
+    'rejected migration must not publish canonical layout or completion event');
+});
