@@ -1142,6 +1142,68 @@ test('W73-27 Windows 8.3 ancestor alias cannot bypass an interrupted restore jou
 });
 
 
+test('T04-H81 POSIX ancestor symlink cannot fork an interrupted restore journal', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('POSIX ancestor symlink journal identity is tested on Linux/macOS; Windows alias guard has W73-27');
+    return;
+  }
+  const source = tempProject(t, 'dk-h81-source-');
+  writeLegacyAutopilot(source, 2);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const parent = tempProject(t, 'dk-h81-physical-parent-');
+  const targetRoot = path.join(parent, 'target');
+  fs.mkdirSync(targetRoot);
+  const original = path.join(targetRoot, 'original.txt');
+  fs.writeFileSync(original, 'PRESERVE-ORIGINAL-H81');
+
+  const aliasHome = tempProject(t, 'dk-h81-alias-home-');
+  const aliasParent = path.join(aliasHome, 'physical-parent-alias');
+  fs.symlinkSync(parent, aliasParent, 'dir');
+  const aliasRoot = path.join(aliasParent, 'target');
+  assert.equal(fs.realpathSync(aliasRoot), fs.realpathSync(targetRoot));
+
+  const crashScript = [
+    'import fs from "node:fs";',
+    'import {restoreLegacyBackup} from ' +
+      JSON.stringify(new URL('../runtime/orchestration/state-engine-migration.mjs', import.meta.url).href) + ';',
+    'const originalWrite=fs.writeFileSync;',
+    'fs.writeFileSync=function(file, data, ...rest) {',
+    ' const result=originalWrite.call(this, file, data, ...rest);',
+    ' if(typeof file==="number" && String(data).includes(\'"phase":"PREPARED"\')) process.exit(91);',
+    ' return result;',
+    '};',
+    'restoreLegacyBackup({backupPath:process.argv[1],targetRoot:process.argv[2],confirmOffline:true});',
+  ].join('\n');
+  const crashed = requireSpawnSync(process.execPath,
+    ['--input-type=module', '-e', crashScript, migrated.backupPath, targetRoot],
+    { encoding: 'utf8', timeout: 120_000 });
+  assert.equal(crashed.status, 91, crashed.stderr || crashed.stdout);
+  const journals = fs.readdirSync(parent).filter(name =>
+    /^\\.dk-restore-transaction-[a-f0-9]{24}\\.jsonl$/.test(name));
+  assert.equal(journals.length, 1, 'PREPARED crash must retain a discoverable journal');
+  const journalPath = path.join(parent, journals[0]);
+  const beforeJournal = fs.readFileSync(journalPath);
+  const beforeOriginal = fs.readFileSync(original);
+  const beforeEntries = fs.readdirSync(parent).sort();
+
+  assert.throws(() => restoreLegacyBackup({
+    backupPath: migrated.backupPath, targetRoot: aliasRoot,
+    overwrite: true, confirmOffline: true,
+  }), /symbolic link|symlink/i,
+  'A symlinked ancestor must be rejected before starting a second physical restore');
+  assert.throws(() => recoverLegacyRestore({
+    targetRoot: aliasRoot, confirmOffline: true,
+  }), /symbolic link|symlink/i,
+  'Recovery must not bypass the original journal through an ancestor alias');
+
+  assert.deepEqual(fs.readFileSync(journalPath), beforeJournal,
+    'Rejected alias must not change the original hash-chained journal');
+  assert.deepEqual(fs.readFileSync(original), beforeOriginal,
+    'Rejected alias must not replace or mutate the original tree');
+  assert.deepEqual(fs.readdirSync(parent).sort(), beforeEntries,
+    'Rejected alias must not create a second stage or journal');
+});
+
 test('W73-28 Unicode uppercase-folded restore aliases fail closed before publication on every OS', async (t) => {
   // NTFS case-insensitive name comparison uses an uppercase mapping. A
   // conservative preflight must also reject these aliases on POSIX so the
