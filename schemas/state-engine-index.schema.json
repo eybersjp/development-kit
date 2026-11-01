@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://development-kit.dev/schemas/state-engine-index.schema.json",
+  "title": "Development Kit State Engine V2 Disposable Index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sourceSequence",
+    "sourceHash",
+    "recordCount",
+    "records",
+    "byContract",
+    "byTask",
+    "byRun",
+    "byLifecycle"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "sourceSequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sourceHash": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "recordCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "byContract": {
+      "type": "object"
+    },
+    "byTask": {
+      "type": "object"
+    },
+    "byRun": {
+      "type": "object"
+    },
+    "byLifecycle": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
+  }
+}
