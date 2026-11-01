@@ -1039,3 +1039,5 @@ test('V13-API-PROJECTION-04 interrupted V2 commit must not be recovered by read-
     await service.stop();
   }
 });
+
+// T04-H75 test-only RED diagnostic: production source intentionally unchanged.
