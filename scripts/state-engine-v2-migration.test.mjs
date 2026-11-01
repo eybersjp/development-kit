@@ -1658,3 +1658,51 @@ test('T04-H80 interrupted promotion must not acknowledge a candidate with lost o
       'candidate must be preserved without destructive repair');
   }
 });
+
+
+test('T04-H81 POSIX ancestor symlink cannot bypass an interrupted restore journal', (t) => {
+  if (process.platform === 'win32') {
+    t.skip('POSIX ancestor alias regression; Windows case/8.3 guards have separate fixtures');
+    return;
+  }
+  const source = tempProject(t, 'dk-v13-h81-source-');
+  writeLegacyAutopilot(source, 1);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+  const parent = tempProject(t, 'dk-v13-h81-parent-');
+  const realParent = path.join(parent, 'real-parent');
+  const aliasParent = path.join(parent, 'alias-parent');
+  fs.mkdirSync(realParent);
+  fs.symlinkSync(realParent, aliasParent, 'dir');
+  const targetRoot = path.join(realParent, 'target');
+  fs.mkdirSync(targetRoot);
+  fs.writeFileSync(path.join(targetRoot, 'original.txt'), 'original bytes\n');
+  const first = restoreLegacyBackup({
+    backupPath: migrated.backupPath, targetRoot, overwrite: true, confirmOffline: true,
+  });
+  const journalLines = fs.readFileSync(first.transactionLog, 'utf8').trimEnd().split('\n');
+  const prepared = journalLines.findIndex((line) => {
+    const record = JSON.parse(line);
+    return record.transactionId === first.transactionId && record.phase === 'PREPARED';
+  });
+  assert.ok(prepared >= 0);
+  const interrupted = journalLines.slice(0, prepared + 1).join('\n') + '\n';
+  fs.writeFileSync(first.transactionLog, interrupted);
+  const candidateBefore = fs.lstatSync(targetRoot, { bigint: true });
+  const originalBefore = fs.readFileSync(path.join(first.displacedOriginal, 'original.txt'));
+  const aliasRoot = path.join(aliasParent, 'target');
+
+  assert.throws(
+    () => restoreLegacyBackup({
+      backupPath: migrated.backupPath, targetRoot: aliasRoot,
+      overwrite: true, confirmOffline: true,
+    }),
+    /symlink|symbolic link|ancestor|alias|journal|canonical/i,
+    'a different spelling of the same physical root must not create a second transaction',
+  );
+  assert.equal(fs.readFileSync(first.transactionLog, 'utf8'), interrupted,
+    'existing interrupted hash-chained journal must remain untouched');
+  assert.equal(fs.lstatSync(targetRoot, { bigint: true }).ino, candidateBefore.ino,
+    'the candidate must not be displaced via an ancestor alias');
+  assert.deepEqual(fs.readFileSync(path.join(first.displacedOriginal, 'original.txt')), originalBefore,
+    'original root must remain intact');
+});
