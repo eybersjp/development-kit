@@ -104,7 +104,7 @@ function stateRevision(value, { allowNull = false } = {}) {
   return value;
 }
 
-function statePaths(rootDir = process.cwd()) {
+function statePaths(rootDir = process.cwd(), { recoverBootstrapIfNeeded = true } = {}) {
   const root = path.resolve(rootDir);
   const stateRoot = path.resolve(root, STATE_ENGINE_ROOT);
   const relative = path.relative(root, stateRoot);
@@ -123,7 +123,7 @@ function statePaths(rootDir = process.cwd()) {
   });
   if (fs.existsSync(stateRoot)) {
     assertStateRootRealpathSafe(paths);
-    assertStateFilesNotLinks(paths);
+    assertStateFilesNotLinks(paths, { recoverBootstrapIfNeeded });
   }
   return paths;
 }
@@ -138,7 +138,7 @@ function assertStateRootRealpathSafe(paths) {
   return stateReal;
 }
 
-function assertStateFilesNotLinks(paths) {
+function assertStateFilesNotLinks(paths, { recoverBootstrapIfNeeded = true } = {}) {
   for (const field of ['events', 'snapshot', 'index', 'schema', 'pending', 'lock']) {
     try {
       const stat = fs.lstatSync(paths[field]);
@@ -149,7 +149,7 @@ function assertStateFilesNotLinks(paths) {
         // The common path must not pay for extra filesystem probes on every
         // state read/write. Reconcile only an actual multiply-linked bootstrap
         // schema/snapshot/index; all other hard links remain forbidden.
-        if (['schema', 'snapshot', 'index'].includes(field)) {
+        if (recoverBootstrapIfNeeded && ['schema', 'snapshot', 'index'].includes(field)) {
           recoverInterruptedBootstrapPublication(paths);
         }
         if (fs.lstatSync(paths[field]).nlink > 1) {
@@ -761,8 +761,8 @@ export function ensureStateEngineLayout(rootDir = process.cwd()) {
   return paths;
 }
 
-export function isStateEngineV2Active(rootDir = process.cwd()) {
-  const paths = statePaths(rootDir);
+export function isStateEngineV2Active(rootDir = process.cwd(), { recoverIfNeeded = true } = {}) {
+  const paths = statePaths(rootDir, { recoverBootstrapIfNeeded: recoverIfNeeded });
   if (!fs.existsSync(paths.stateRoot)) return false;
 
   const schemaExists = fs.existsSync(paths.schema);
@@ -1090,7 +1090,7 @@ function repairUnwitnessedTrailingLedgerSuffixLocked(rootDir) {
 }
 
 export function loadCanonicalEvents(rootDir = process.cwd(), { recoverIfNeeded = true } = {}) {
-  const paths = statePaths(rootDir);
+  const paths = statePaths(rootDir, { recoverBootstrapIfNeeded: recoverIfNeeded });
   if (!fs.existsSync(paths.events)) {
     assertMissingCanonicalLedgerHasNoStateWitness(paths);
     return [];
@@ -1414,12 +1414,26 @@ export function rebuildStateSnapshot(rootDir = process.cwd()) {
 }
 
 export function loadStateSnapshot(rootDir = process.cwd(), { rebuildIfNeeded = true } = {}) {
-  const paths = statePaths(rootDir);
+  const paths = statePaths(rootDir, { recoverBootstrapIfNeeded: rebuildIfNeeded });
   if (!fs.existsSync(paths.events)) {
     assertMissingCanonicalLedgerHasNoStateWitness(paths);
     return null;
   }
-  const canonical = rebuildSnapshotFromEvents(loadCanonicalEvents(rootDir, { recoverIfNeeded: rebuildIfNeeded }));
+  // An index can independently witness a later acknowledged event even when
+  // both events.jsonl and snapshot.json have regressed to an older prefix.
+  // Check it before returning any snapshot, including read-only projections.
+  // On a concurrent writer's publication, retry only the canonical read;
+  // a persistent mismatch remains a hard integrity failure, never a rebuild.
+  let canonicalEvents = loadCanonicalEvents(rootDir, { recoverIfNeeded: rebuildIfNeeded });
+  try {
+    assertDerivedHistoryWitnesses(paths, canonicalEvents, ['index']);
+  } catch (error) {
+    if (!['STATE_CANONICAL_HISTORY_REGRESSION', 'STATE_CANONICAL_HISTORY_HASH_CONFLICT']
+      .includes(error.details?.code)) throw error;
+    canonicalEvents = loadCanonicalEvents(rootDir, { recoverIfNeeded: rebuildIfNeeded });
+    assertDerivedHistoryWitnesses(paths, canonicalEvents, ['index']);
+  }
+  const canonical = rebuildSnapshotFromEvents(canonicalEvents);
 
   if (!fs.existsSync(paths.snapshot)) {
     if (!rebuildIfNeeded) return null;
