@@ -714,6 +714,16 @@ function validateRestoreRecord(record, previous = null) {
   if (!/^\d+$/.test(record.stageDev || '') || !/^\d+$/.test(record.stageIno || '')) {
     throw new StateMigrationError('Restore transaction stage identity is invalid');
   }
+  // Older v2 journals remain readable; nonterminal candidate promotion from
+  // one without a content witness must fail closed during recovery.
+  if (record.candidateFingerprint != null &&
+      !/^sha256:[a-f0-9]{64}$/.test(record.candidateFingerprint)) {
+    throw new StateMigrationError('Restore candidate content fingerprint is invalid');
+  }
+  if (previous?.transactionId === record.transactionId &&
+      (previous.candidateFingerprint ?? null) !== (record.candidateFingerprint ?? null)) {
+    throw new StateMigrationError('Restore candidate fingerprint changed within transaction');
+  }
   if (record.existed && (!/^\d+$/.test(record.originalDev || '') || !/^\d+$/.test(record.originalIno || ''))) {
     throw new StateMigrationError('Restore transaction original identity is invalid');
   }
@@ -811,6 +821,7 @@ function appendRestoreTransactionRecord({
     originalIno: transaction.originalIno,
     stageDev: transaction.stageDev,
     stageIno: transaction.stageIno,
+    candidateFingerprint: transaction.candidateFingerprint ?? null,
     outcome,
     previousRecordHash: previous?.recordHash ?? null,
   };
@@ -1245,6 +1256,64 @@ function durableRestoreRollbackRename(from, to) {
  * the promotion journal becomes durable. A rename alone does not durably
  * commit nested directory entries after sudden power loss.
  */
+/**
+ * Content-bound witness for a staged candidate. Directory inode identity is
+ * insufficient after a crash: descendants may be missing or corrupted.
+ * Hash sorted relative names, object types, symlink text and streamed file
+ * bytes, never following symlinks. No timestamps or mutable access metadata
+ * enter the witness, so restoring original metadata cannot change its value.
+ *
+ * This is a deterministic recovery-integrity check, not physical power-loss
+ * evidence or protection from arbitrary same-UID mutation.
+ */
+function fingerprintRestoreCandidate(root) {
+  const treeHash = crypto.createHash('sha256');
+  const add = (entry) => treeHash.update(JSON.stringify(entry) + '\n');
+  const buffer = Buffer.allocUnsafe(64 * 1024);
+  const visit = (directory, prefix = '') => {
+    for (const name of fs.readdirSync(directory).sort()) {
+      const absolute = path.join(directory, name);
+      const relative = prefix ? prefix + '/' + name : name;
+      const stat = fs.lstatSync(absolute, { bigint: true });
+      if (stat.isSymbolicLink()) {
+        add(['symlink', relative, fs.readlinkSync(absolute)]);
+      } else if (stat.isDirectory()) {
+        add(['directory', relative]);
+        visit(absolute, relative);
+      } else if (stat.isFile()) {
+        const flags = fs.constants.O_RDONLY |
+          (process.platform === 'win32' ? 0 : (fs.constants.O_NOFOLLOW || 0));
+        const fd = fs.openSync(absolute, flags);
+        const fileHash = crypto.createHash('sha256');
+        let bytes = 0n;
+        try {
+          const opened = fs.fstatSync(fd, { bigint: true });
+          if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino) {
+            throw new StateMigrationError('Restore candidate file changed identity during fingerprint');
+          }
+          let count;
+          while ((count = fs.readSync(fd, buffer, 0, buffer.length, null)) !== 0) {
+            fileHash.update(buffer.subarray(0, count));
+            bytes += BigInt(count);
+          }
+          const finished = fs.fstatSync(fd, { bigint: true });
+          if (finished.size !== stat.size || bytes !== stat.size ||
+              finished.dev !== stat.dev || finished.ino !== stat.ino) {
+            throw new StateMigrationError('Restore candidate file changed during fingerprint');
+          }
+        } finally {
+          fs.closeSync(fd);
+        }
+        add(['file', relative, bytes.toString(), fileHash.digest('hex')]);
+      } else {
+        throw new StateMigrationError('Restore candidate contains unsupported filesystem object: ' + relative);
+      }
+    }
+  };
+  visit(root);
+  return 'sha256:' + treeHash.digest('hex');
+}
+
 function syncRestoreTree(directory) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const item = path.join(directory, entry.name);
@@ -1512,6 +1581,15 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
   if (sameRestoreIdentity(atRoot, tx.stageDev, tx.stageIno)
       && ((!tx.existed && !inDisplaced)
         || (tx.existed && inDisplaced))) {
+    // An inode-only PREPARED record cannot prove that the candidate's
+    // descendants survived. Never acknowledge or retire a nonterminal
+    // transaction without a hash-chained content witness matching the tree.
+    if (!/^sha256:[a-f0-9]{64}$/.test(tx.candidateFingerprint || '')) {
+      throw new StateMigrationError('Interrupted restore lacks a candidate content witness; preserving journal and original');
+    }
+    if (fingerprintRestoreCandidate(root) !== tx.candidateFingerprint) {
+      throw new StateMigrationError('Interrupted restore candidate content fingerprint mismatch; preserving original and journal');
+    }
     // The candidate may be visible after a successful rename whose parent
     // directory flush failed or never ran before process death. Retry the
     // publication namespace barrier *before* appending acknowledgement or
@@ -1768,6 +1846,9 @@ export function restoreLegacyBackup({
       restored.push(entry.path);
     }
 
+    // Capture the complete candidate content before restoring original atime
+    // and ACL metadata; this hash is persisted in PREPARED before any rename.
+    const candidateFingerprint = fingerprintRestoreCandidate(stage);
     syncRestoreTree(stage);
     if (rootStat) applyRestoreMetadata(stage, originalMetadata);
     if (process.platform === 'win32' && originalRootExists) {
@@ -1788,6 +1869,7 @@ export function restoreLegacyBackup({
       originalIno: rootIdentity?.ino.toString() ?? null,
       stageDev: stageStat.dev.toString(),
       stageIno: stageStat.ino.toString(),
+      candidateFingerprint,
     };
 
     // W73-01: durable discoverable recovery intent precedes every destructive

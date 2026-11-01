@@ -1607,3 +1607,54 @@ test('T04-H78 signed backup rejects NTFS alternate streams and reserved device n
       'rejected Windows-unsafe name must not create a staging tree');
   }
 });
+
+
+// H80 negative control intentionally models an interrupted journal prefix; it does not assert hardware power-loss durability.
+
+test('T04-H80 interrupted promotion must not acknowledge a candidate with lost or altered descendants', (t) => {
+  const source = tempProject(t, 'dk-v13-h80-source-');
+  writeLegacyAutopilot(source, 1);
+  const migrated = migrateLegacyStateToV2({ rootDir: source });
+
+  for (const fault of ['missing-descendant', 'altered-descendant']) {
+    const targetRoot = tempProject(t, 'dk-v13-h80-target-');
+    const originalFile = path.join(targetRoot, 'original-preserved.txt');
+    fs.writeFileSync(originalFile, 'original root must survive recovery\n');
+    const result = restoreLegacyBackup({
+      backupPath: migrated.backupPath,
+      targetRoot,
+      confirmOffline: true,
+      overwrite: true,
+    });
+    const candidateFile = path.join(targetRoot, '.development-kit', 'autopilot', 'state', 'revision-000001.json');
+    const journalPath = result.transactionLog;
+    const records = fs.readFileSync(journalPath, 'utf8').trimEnd().split('\n');
+    const preparedIndex = records.findIndex((line) => {
+      const record = JSON.parse(line);
+      return record.transactionId === result.transactionId && record.phase === 'PREPARED';
+    });
+    assert.ok(preparedIndex >= 0, 'durable PREPARED witness must exist');
+    // Deterministic process-death model: retain only the valid journal prefix
+    // through PREPARED, with the candidate already renamed into the root.
+    // This is not a physical power-loss test.
+    const interruptedJournal = records.slice(0, preparedIndex + 1).join('\n') + '\n';
+    fs.writeFileSync(journalPath, interruptedJournal);
+    if (fault === 'missing-descendant') fs.unlinkSync(candidateFile);
+    else fs.writeFileSync(candidateFile, '{"tampered":true}\n');
+    const candidateAfterFault = fs.existsSync(candidateFile) ? fs.readFileSync(candidateFile) : null;
+    const displacedOriginal = path.join(result.displacedOriginal, 'original-preserved.txt');
+    assert.equal(fs.readFileSync(displacedOriginal, 'utf8'), 'original root must survive recovery\n');
+
+    assert.throws(
+      () => recoverLegacyRestore({ targetRoot, confirmOffline: true }),
+      /candidate|fingerprint|content|integrity|witness|missing/i,
+      'recovery must fail closed before acknowledging a corrupted candidate: ' + fault,
+    );
+    assert.equal(fs.readFileSync(journalPath, 'utf8'), interruptedJournal,
+      'recovery must not append a terminal acknowledgement for ' + fault);
+    assert.equal(fs.readFileSync(displacedOriginal, 'utf8'), 'original root must survive recovery\n',
+      'original displaced tree must remain available');
+    assert.deepEqual(fs.existsSync(candidateFile) ? fs.readFileSync(candidateFile) : null, candidateAfterFault,
+      'candidate must be preserved without destructive repair');
+  }
+});
