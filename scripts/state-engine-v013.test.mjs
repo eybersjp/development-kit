@@ -1004,7 +1004,7 @@ test('V13-API-PROJECTION-04 interrupted V2 commit must not be recovered by read-
   saveStateRevision(nextState, rootDir);
   const fullEvents = fs.readFileSync(paths.events, 'utf8');
   const suffix = fullEvents.slice(baseline.events.length);
-  assert.ok(suffix.endsWith('\\n') && suffix.length > 0);
+  assert.ok(suffix.endsWith('\n') && suffix.length > 0);
 
   restoreMaterialized(paths, baseline);
   const pending = JSON.stringify({
@@ -1012,7 +1012,7 @@ test('V13-API-PROJECTION-04 interrupted V2 commit must not be recovered by read-
     previousByteLength: Buffer.byteLength(baseline.events),
     previousHash: 'sha256:' + crypto.createHash('sha256').update(baseline.events).digest('hex'),
     suffix,
-  }) + '\\n';
+  }) + '\n';
   fs.writeFileSync(paths.pending, pending, 'utf8');
   const before = {
     events: fs.readFileSync(paths.events),
