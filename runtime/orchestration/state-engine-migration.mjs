@@ -717,6 +717,12 @@ function validateRestoreRecord(record, previous = null) {
   if (record.existed && (!/^\d+$/.test(record.originalDev || '') || !/^\d+$/.test(record.originalIno || ''))) {
     throw new StateMigrationError('Restore transaction original identity is invalid');
   }
+  // Older retained journals lack this witness. They remain readable, but
+  // cannot authorize a new nonterminal promotion acknowledgement without it.
+  if (record.candidateFingerprint !== undefined && record.candidateFingerprint !== null &&
+      !/^sha256:[a-f0-9]{64}$/.test(record.candidateFingerprint)) {
+    throw new StateMigrationError('Restore transaction candidate fingerprint is invalid');
+  }
   if (previous === null) {
     if (record.sequence !== 1 || record.previousRecordHash !== null) {
       throw new StateMigrationError('First restore record chain witness is invalid');
@@ -811,6 +817,7 @@ function appendRestoreTransactionRecord({
     originalIno: transaction.originalIno,
     stageDev: transaction.stageDev,
     stageIno: transaction.stageIno,
+    candidateFingerprint: transaction.candidateFingerprint ?? null,
     outcome,
     previousRecordHash: previous?.recordHash ?? null,
   };
@@ -1245,6 +1252,47 @@ function durableRestoreRollbackRename(from, to) {
  * the promotion journal becomes durable. A rename alone does not durably
  * commit nested directory entries after sudden power loss.
  */
+/**
+ * Hash the complete staged candidate namespace before PREPARED. Recovery
+ * checks the same content witness after interrupted promotion, before writing
+ * any acknowledgement. Include empty directories and symlink targets; never
+ * follow symlinks. Do not include root basename, which changes on promotion.
+ * This is a logical content/namespace check, NOT NTFS physical power-loss
+ * assurance or a substitute for ACL verification.
+ */
+function fingerprintRestoreCandidate(directory) {
+  const records = [];
+  function visit(absolute, relative) {
+    const stat = fs.lstatSync(absolute);
+    const name = relative.split(path.sep).join('/');
+    if (stat.isSymbolicLink()) {
+      records.push({ path: name, kind: 'symlink', target: fs.readlinkSync(absolute) });
+    } else if (stat.isDirectory()) {
+      records.push({ path: name, kind: 'directory' });
+      for (const child of fs.readdirSync(absolute).sort()) {
+        visit(path.join(absolute, child), relative ? path.join(relative, child) : child);
+      }
+    } else if (stat.isFile()) {
+      const hash = crypto.createHash('sha256');
+      const fd = fs.openSync(absolute, 'r');
+      try {
+        const chunk = Buffer.allocUnsafe(64 * 1024);
+        let read;
+        while ((read = fs.readSync(fd, chunk, 0, chunk.length, null)) > 0) {
+          hash.update(chunk.subarray(0, read));
+        }
+      } finally {
+        fs.closeSync(fd);
+      }
+      records.push({ path: name, kind: 'file', contentHash: 'sha256:' + hash.digest('hex') });
+    } else {
+      throw new StateMigrationError('Restore candidate contains unsupported filesystem object');
+    }
+  }
+  visit(directory, '');
+  return sha256(JSON.stringify(stable(records)));
+}
+
 function syncRestoreTree(directory) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const item = path.join(directory, entry.name);
@@ -1512,6 +1560,17 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
   if (sameRestoreIdentity(atRoot, tx.stageDev, tx.stageIno)
       && ((!tx.existed && !inDisplaced)
         || (tx.existed && inDisplaced))) {
+    // A matching root inode does not prove its descendants survived a
+    // crash. A nonterminal promotion must be bound to the full staged tree
+    // witnessed before PREPARED, not acknowledged on inode identity alone.
+    // Missing witnesses in older journals require explicit offline review.
+    if (!/^sha256:[a-f0-9]{64}$/.test(tx.candidateFingerprint || '')) {
+      throw new StateMigrationError('Missing candidate content fingerprint; refusing restore acknowledgement');
+    }
+    const observedFingerprint = fingerprintRestoreCandidate(root);
+    if (observedFingerprint !== tx.candidateFingerprint) {
+      throw new StateMigrationError('Promoted candidate content fingerprint mismatch; preserving original and journal');
+    }
     // The candidate may be visible after a successful rename whose parent
     // directory flush failed or never ran before process death. Retry the
     // publication namespace barrier *before* appending acknowledgement or
@@ -1788,6 +1847,7 @@ export function restoreLegacyBackup({
       originalIno: rootIdentity?.ino.toString() ?? null,
       stageDev: stageStat.dev.toString(),
       stageIno: stageStat.ino.toString(),
+      candidateFingerprint: fingerprintRestoreCandidate(stage),
     };
 
     // W73-01: durable discoverable recovery intent precedes every destructive
