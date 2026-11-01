@@ -22,7 +22,7 @@ import { resolveMemoryIdentity } from '../intelligence/memory-identity.mjs';
 import { resolveEffectiveSettings } from '../intelligence/settings.mjs';
 import { LocalMemoryProvider } from '../intelligence/local-memory-provider.mjs';
 import { getCurrentState } from '../autopilot/state-store.mjs';
-import { isStateEngineV2Active, hasCompletedStateMigration, loadLatestEntityState } from '../orchestration/state-engine-v2.mjs';
+import { isStateEngineV2Active, loadStateSnapshot } from '../orchestration/state-engine-v2.mjs';
 import { validateWorkflowState } from '../autopilot/validators.mjs';
 import { loadWorkspaceTargetRegistry } from '../orchestration/workspace-targets.mjs';
 import { loadCostRecords } from '../orchestration/cost-observatory.mjs';
@@ -293,24 +293,33 @@ export class RuntimeApiService {
       // Selecting legacy authority must use the non-mutating pointer projection
       // below: getCurrentState() can repair current.json as a side effect.
       let v2WorkflowAuthority = v2Active;
+      let v2Snapshot = null;
       if (v2Active) {
         try {
+          // An observing GET must not replay a pending commit, rebuild derived
+          // state, or retire crash evidence while selecting V2 authority.
+          v2Snapshot = loadStateSnapshot(this.rootDir, { rebuildIfNeeded: false });
+          if (!v2Snapshot) throw new Error('V2 snapshot is unavailable for read-only projection');
           const hasLegacyRevisions = fs.existsSync(directory) &&
             fs.readdirSync(directory).some((name) => /^revision-\d{6}\.json$/.test(name));
           if (hasLegacyRevisions) {
-            v2WorkflowAuthority = hasCompletedStateMigration(this.rootDir) &&
-              loadLatestEntityState('autopilot-workflow', this.rootDir) !== null;
+            const migrated = v2Snapshot.migrations.some((item) => item.semanticEquivalence === true);
+            const workflowRecords = v2Snapshot.entities['autopilot-workflow'] ?? {};
+            v2WorkflowAuthority = migrated && Object.keys(workflowRecords).length > 0;
           }
         } catch {
-          // An unreadable V2 migration witness cannot authorize fallback.
-          v2Active = false;
+          // An interrupted or unreadable V2 authority cannot authorize legacy
+          // fallback, and read-only GET must leave all evidence untouched.
           v2Invalid = true;
           v2WorkflowAuthority = false;
         }
       }
       if (v2WorkflowAuthority) {
         try {
-          const revision = getCurrentState(this.rootDir);
+          const workflowRecords = v2Snapshot.entities['autopilot-workflow'] ?? {};
+          const revision = Object.entries(workflowRecords)
+            .sort((a, b) => b[1].lastEventSequence - a[1].lastEventSequence ||
+              a[0].localeCompare(b[0]))[0]?.[1]?.state ?? null;
           if (revision) {
             validateWorkflowState(revision);
             stateHealth = 'unverified';
