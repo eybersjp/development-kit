@@ -1609,6 +1609,8 @@ test('T04-H78 signed backup rejects NTFS alternate streams and reserved device n
 });
 
 
+// H80 negative control intentionally models an interrupted journal prefix; it does not assert hardware power-loss durability.
+
 test('T04-H80 interrupted promotion must not acknowledge a candidate with lost or altered descendants', (t) => {
   const source = tempProject(t, 'dk-v13-h80-source-');
   writeLegacyAutopilot(source, 1);
