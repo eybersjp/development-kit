@@ -661,6 +661,35 @@ const RESTORE_PHASES = Object.freeze([
   RESTORE_TERMINAL_PHASE,
 ]);
 
+/**
+ * A POSIX ancestor symlink gives the same physical target multiple lexical
+ * spellings and therefore different journal/stage digests. A second restore
+ * could otherwise supersede an interrupted transaction under the alias.
+ * This offline-only boundary rejects such aliases before journal discovery
+ * or staging. It is not a defence against a hostile same-UID race after
+ * preflight; recovery must run in an exclusively controlled workspace.
+ */
+function assertNoPosixRestoreAncestorSymlinks(targetRoot) {
+  if (process.platform === 'win32') return;
+  let ancestor = path.dirname(path.resolve(targetRoot));
+  for (;;) {
+    const stat = fs.lstatSync(ancestor);
+    if (stat.isSymbolicLink()) {
+      throw new StateMigrationError('Legacy restore parent contains a symbolic link: ' + ancestor, {
+        code: 'RESTORE_PARENT_SYMLINK',
+      });
+    }
+    if (!stat.isDirectory()) {
+      throw new StateMigrationError('Legacy restore parent is not an ordinary directory: ' + ancestor, {
+        code: 'RESTORE_PARENT_NOT_DIRECTORY',
+      });
+    }
+    const next = path.dirname(ancestor);
+    if (next === ancestor) break;
+    ancestor = next;
+  }
+}
+
 function restoreJournalDigest(targetRoot) {
   return crypto.createHash('sha256').update(path.resolve(targetRoot)).digest('hex').slice(0, 24);
 }
@@ -1505,6 +1534,7 @@ export function recoverLegacyRestore({ targetRoot, confirmOffline = false } = {}
 
   const root = path.resolve(targetRoot);
   const parent = path.dirname(root);
+  assertNoPosixRestoreAncestorSymlinks(root);
   assertNoWindowsCaseAliasedRestoreJournal(root);
   assertNoWindowsOrphanRestoreStages(root);
   const legacyJournal = legacyRestoreJournalPath(root);
@@ -1715,6 +1745,7 @@ export function restoreLegacyBackup({
 
   const resolvedRoot = path.resolve(targetRoot);
   const parent = path.dirname(resolvedRoot);
+  assertNoPosixRestoreAncestorSymlinks(resolvedRoot);
   assertNoUnjournaledRestoreWitness(resolvedRoot);
 
   const legacyJournal = legacyRestoreJournalPath(resolvedRoot);
