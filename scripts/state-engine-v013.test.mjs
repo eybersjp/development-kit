@@ -1039,3 +1039,74 @@ test('V13-API-PROJECTION-04 interrupted V2 commit must not be recovered by read-
     await service.stop();
   }
 });
+
+
+test('V13-API-PROJECTION-05 read-only preflight preserves terminated bootstrap staging hard link', async (t) => {
+  const rootDir = tempDir(t, 'dk-v013-api-bootstrap-readonly-');
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, rootDir);
+  saveStateRevision(state, rootDir);
+  const paths = getStateEnginePaths(rootDir);
+  const before = captureMaterialized(paths);
+  const schemaBytes = fs.readFileSync(paths.schema);
+  const service = new RuntimeApiService({ rootDir });
+  const info = await service.start();
+  const deadPid = 2000000000;
+  const stage = paths.schema + '.tmp-' + deadPid + '-' + crypto.randomUUID();
+  try {
+    fs.linkSync(paths.schema, stage);
+    assert.equal(fs.statSync(paths.schema).nlink, 2, 'Fixture must reproduce the interrupted bootstrap hard link');
+    const response = await fetch(info.url + '/v1/scale-context');
+    assert.equal(response.status, 200);
+    const projection = await response.json();
+    assert.ok(['recovery-required', 'degraded'].includes(projection.stateHealth),
+      'A read-only projection must not complete bootstrap recovery');
+    assert.equal(projection.state.active, false);
+    assert.equal(fs.existsSync(stage), true, 'GET must retain the exact staging-link crash witness');
+    assert.equal(fs.statSync(paths.schema).nlink, 2, 'GET must not unlink a bootstrap staging hard link');
+    assert.deepEqual(fs.readFileSync(paths.schema), schemaBytes);
+    for (const [field, bytes] of Object.entries(before)) {
+      assert.equal(fs.readFileSync(paths[field], 'utf8'), bytes,
+        'GET must preserve ' + field + ' bytes');
+    }
+  } finally {
+    await service.stop();
+  }
+});
+
+test('V13-API-PROJECTION-06 surviving index must block a read-only canonical history regression', async (t) => {
+  const rootDir = tempDir(t, 'dk-v013-api-index-witness-');
+  const state = createInitialState({ autonomy: 'guided-autopilot' }, rootDir);
+  saveStateRevision(state, rootDir);
+  const paths = getStateEnginePaths(rootDir);
+  const revisionOne = captureMaterialized(paths);
+  const next = { ...state, stateRevision: state.stateRevision + 1,
+    updatedAt: new Date(Date.parse(state.updatedAt) + 1000).toISOString() };
+  saveStateRevision(next, rootDir);
+  const acknowledgedIndex = fs.readFileSync(paths.index);
+  const service = new RuntimeApiService({ rootDir });
+  const info = await service.start();
+  try {
+    fs.writeFileSync(paths.events, revisionOne.events);
+    fs.writeFileSync(paths.snapshot, revisionOne.snapshot);
+    const before = {
+      events: fs.readFileSync(paths.events),
+      snapshot: fs.readFileSync(paths.snapshot),
+      index: fs.readFileSync(paths.index),
+    };
+    assert.deepEqual(before.index, acknowledgedIndex, 'Later index witness must survive');
+    const response = await fetch(info.url + '/v1/scale-context');
+    assert.equal(response.status, 200);
+    const projection = await response.json();
+    assert.ok(['recovery-required', 'degraded'].includes(projection.stateHealth),
+      'A later index witness must prevent projection of rolled-back history');
+    assert.equal(projection.state.active, false);
+    assert.throws(() => loadStateSnapshot(rootDir, { rebuildIfNeeded: false }),
+      /canonical.*(truncated|witness|regression)|index.*witness/i);
+    for (const [field, bytes] of Object.entries(before)) {
+      assert.deepEqual(fs.readFileSync(paths[field]), bytes,
+        'Read-only verification must preserve ' + field + ' evidence');
+    }
+  } finally {
+    await service.stop();
+  }
+});
