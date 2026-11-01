@@ -1350,10 +1350,38 @@ function syncRestoreTree(directory) {
     if (entry.isDirectory()) {
       syncRestoreTree(item);
     } else if (entry.isFile()) {
-      // FlushFileBuffers on Windows requires a write-capable handle; a
-      // read-only descriptor can fail EPERM even when the file is writable.
-      const fd = fs.openSync(item, process.platform === 'win32' ? 'r+' : 'r');
-      try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+      // FlushFileBuffers on Windows requires a write-capable handle, but
+      // cpSync correctly preserves read-only attributes on unrelated files.
+      // Temporarily clear only the staged copy's read-only bit, flush, then
+      // restore its exact mode even if opening or syncing fails. A denied
+      // chmod/open remains a hard failure; never fall back to an unflushed
+      // promotion or alter the original target tree.
+      const staged = fs.lstatSync(item, { bigint: true });
+      if (!staged.isFile() || staged.isSymbolicLink()) {
+        throw new StateMigrationError('Legacy restore stage file changed type during durability flush');
+      }
+      const originalMode = Number(staged.mode & 0o7777n);
+      const temporaryWrite = process.platform === 'win32' && (originalMode & 0o200) === 0;
+      let fd;
+      let changedMode = false;
+      try {
+        if (temporaryWrite) {
+          fs.chmodSync(item, originalMode | 0o200);
+          changedMode = true;
+        }
+        fd = fs.openSync(item, process.platform === 'win32' ? 'r+' : 'r');
+        const opened = fs.fstatSync(fd, { bigint: true });
+        if (!opened.isFile() || opened.dev !== staged.dev || opened.ino !== staged.ino) {
+          throw new StateMigrationError('Legacy restore stage file changed identity during durability flush');
+        }
+        fs.fsyncSync(fd);
+      } finally {
+        try {
+          if (fd !== undefined) fs.closeSync(fd);
+        } finally {
+          if (changedMode) fs.chmodSync(item, originalMode);
+        }
+      }
     } else {
       throw new StateMigrationError('Legacy restore stage contains an unsupported special file');
     }
