@@ -1828,6 +1828,9 @@ export function restoreLegacyBackup({
     }
 
     syncRestoreTree(stage);
+    // Fingerprint content before restoring historical atimes: walking the
+    // staged tree to hash bytes would otherwise advance its access times.
+    const candidateFingerprint = fingerprintRestoreCandidate(stage);
     if (rootStat) applyRestoreMetadata(stage, originalMetadata);
     if (process.platform === 'win32' && originalRootExists) {
       // Child ACLs are installed while the stage root is still private.
@@ -1847,7 +1850,7 @@ export function restoreLegacyBackup({
       originalIno: rootIdentity?.ino.toString() ?? null,
       stageDev: stageStat.dev.toString(),
       stageIno: stageStat.ino.toString(),
-      candidateFingerprint: fingerprintRestoreCandidate(stage),
+      candidateFingerprint,
     };
 
     // W73-01: durable discoverable recovery intent precedes every destructive
