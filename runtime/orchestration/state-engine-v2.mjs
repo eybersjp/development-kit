@@ -1509,7 +1509,11 @@ export function loadStateIndex(rootDir = process.cwd(), { rebuildIfNeeded = true
   const loadedSnapshot = loadStateSnapshot(rootDir, { rebuildIfNeeded });
   if (!loadedSnapshot && !rebuildIfNeeded) return null;
   const snapshot = loadedSnapshot ?? emptySnapshot();
-  const paths = statePaths(rootDir);
+  // A read-only index lookup must not reclaim an interrupted bootstrap
+  // publisher's hard-link staging evidence between the snapshot read and
+  // this second path preflight. Only an explicitly recovery-enabled lookup
+  // may reconcile a positively identified dead bootstrap owner.
+  const paths = statePaths(rootDir, { recoverBootstrapIfNeeded: rebuildIfNeeded });
   if (!fs.existsSync(paths.index)) {
     return rebuildIfNeeded ? rebuildStateIndex(rootDir) : null;
   }
