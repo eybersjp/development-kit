@@ -140,12 +140,20 @@ function legacyStateFixture(revisions = 26) {
   const root = tempProject('legacy-state');
   try {
     const state = createInitialState({ autonomy: 'guided-autopilot' }, root);
+    // This is a *historical legacy micro-file* baseline, not a measurement of
+    // the v0.13 canonical ledger. Explicitly seed a valid legacy revision so
+    // the compatibility adapter exercises the old persistence authority.
+    // The first save overwrites this seed and writes the normal current.json
+    // pointer; the measured file count remains exactly revisions + 1.
+    const stateDir = getStateDir(root);
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(path.join(stateDir, 'revision-000001.json'),
+      JSON.stringify({ ...state, stateRevision: 1 }, null, 2));
     for (let revision = 1; revision <= revisions; revision += 1) {
       state.stateRevision = revision;
       state.updatedAt = new Date(Date.parse(state.createdAt) + revision * 1000).toISOString();
       saveStateRevision(state, root);
     }
-    const stateDir = getStateDir(root);
     const files = fs.readdirSync(stateDir).filter((name) => fs.statSync(path.join(stateDir, name)).isFile());
     const revisionFiles = files.filter((name) => /^revision-\d{6}\.json$/.test(name));
     const bytes = files.reduce((sum, name) => sum + fs.statSync(path.join(stateDir, name)).size, 0);
