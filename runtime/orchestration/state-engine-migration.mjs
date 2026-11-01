@@ -383,6 +383,14 @@ function orchestrationHistories(rootDir) {
       }
 
       if (states.length === 0) {
+        // A surviving legacy pointer is an acknowledged revision witness.
+        // Never downgrade it to manifest-only revision 1 when its immutable
+        // revision files are missing, even if final-state.json is absent.
+        if (fs.existsSync(path.join(runDir, 'current-state.json'))) {
+          throw new StateMigrationError(
+            'Legacy orchestration current pointer exists without revision history',
+          );
+        }
         // Fresh v0.13 runs retain immutable manifests but persist revisions in
         // the canonical V2 ledger. A manifest without legacy revision files
         // is not a legacy revision-1 history when that run already exists in V2.
