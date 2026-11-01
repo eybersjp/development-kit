@@ -747,9 +747,9 @@ test('T04-H68 read-only index verification never truncates an unacknowledged tor
 });
 
  
-// T04-H81: read-only index verification must not recover a dead initializer's
+// T04-H82: read-only index verification must not recover a dead initializer's
 // hard-link staging evidence even when it appears after snapshot validation.
-test('T04-H81 read-only index lookup preserves a concurrent interrupted bootstrap index link', (t) => {
+test('T04-H82 read-only index lookup preserves a concurrent interrupted bootstrap index link', (t) => {
   const rootDir = tempProject(t, 'dk-v13-h81-index-readonly-');
   const paths = ensureStateEngineLayout(rootDir);
   const ledgerBefore = fs.readFileSync(paths.events);
