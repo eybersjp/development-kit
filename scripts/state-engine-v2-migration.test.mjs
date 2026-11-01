@@ -1179,7 +1179,7 @@ test('T04-H81 POSIX ancestor symlink cannot fork an interrupted restore journal'
     { encoding: 'utf8', timeout: 120_000 });
   assert.equal(crashed.status, 91, crashed.stderr || crashed.stdout);
   const journals = fs.readdirSync(parent).filter(name =>
-    /^\\.dk-restore-transaction-[a-f0-9]{24}\\.jsonl$/.test(name));
+    /^\.dk-restore-transaction-[a-f0-9]{24}\.jsonl$/.test(name));
   assert.equal(journals.length, 1, 'PREPARED crash must retain a discoverable journal');
   const journalPath = path.join(parent, journals[0]);
   const beforeJournal = fs.readFileSync(journalPath);
