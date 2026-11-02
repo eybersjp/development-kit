@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, test/t04-acceptance-readiness-20261029]
   pull_request:
 
 permissions:
