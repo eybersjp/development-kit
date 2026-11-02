@@ -195,6 +195,7 @@
 * [phase04-workspace-target-engine-contract](03-reference/scripts/phase04-workspace-target-engine-contract.md)
 * [phase05-execution-capsule-contract](03-reference/scripts/phase05-execution-capsule-contract.md)
 * [phase06-state-engine-v2-contract](03-reference/scripts/phase06-state-engine-v2-contract.md)
+* [phase07-lifecycle-instances-contract](03-reference/scripts/phase07-lifecycle-instances-contract.md)
 * [state-engine-v2-benchmark](03-reference/scripts/state-engine-v2-benchmark.md)
 * [t04-hardening-acceptance-gate](03-reference/scripts/t04-hardening-acceptance-gate.md)
 * [t04-review-thread-blockers](03-reference/scripts/t04-review-thread-blockers.md)
